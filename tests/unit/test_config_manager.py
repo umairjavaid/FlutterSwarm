@@ -19,7 +19,28 @@ class TestConfigManager:
     def sample_config_data(self):
         """Sample configuration data for testing."""
         return {
+            'system': {
+                'name': 'FlutterSwarm',
+                'version': '1.0.0',
+                'logging': {
+                    'level': 'INFO',
+                    'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                }
+            },
+            'project': {
+                'defaults': {
+                    'output_directory': './flutter_projects',
+                    'backup_directory': './backups'
+                }
+            },
             'agents': {
+                'llm': {
+                    'primary': {
+                        'model': 'claude-3-5-sonnet-20241022',
+                        'temperature': 0.7,
+                        'max_tokens': 4000
+                    }
+                },
                 'orchestrator': {
                     'capabilities': ['coordination', 'planning'],
                     'timeout': 60,
@@ -95,11 +116,15 @@ class TestConfigManager:
         }
         
         def mock_file_open(filename, mode='r', encoding=None):
-            if filename in files:
-                from io import StringIO
-                return StringIO(files[filename])
-            else:
-                raise FileNotFoundError(f"File {filename} not found")
+            # Convert Path objects to strings and normalize
+            filename_str = str(filename)
+            # Check if the filename ends with one of our expected files
+            for file_key in files.keys():
+                if filename_str.endswith(file_key) or filename_str == file_key:
+                    from io import StringIO
+                    return StringIO(files[file_key])
+            
+            raise FileNotFoundError(f"File {filename} not found")
         
         return mock_file_open
     
@@ -109,8 +134,14 @@ class TestConfigManager:
             with patch('os.path.exists', return_value=True):
                 config = ConfigManager()
                 
-                assert config.main_config is not None
-                assert config.agent_config is not None
+                # Check that the configuration was loaded successfully
+                assert config._loaded is True
+                assert config._config is not None
+                assert config._agent_configs is not None
+                
+                # Test that we can access some configuration values
+                assert config.get('system.name') == 'FlutterSwarm'
+                assert config.get('system.version') == '1.0.0'
                 
     def test_get_nested_value(self, mock_config_files, sample_config_data):
         """Test getting nested configuration values."""

@@ -94,26 +94,56 @@ class TestBaseAgent:
         
         assert not test_agent.is_running
         
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  
     async def test_think_method(self, clean_shared_state):
         """Test the think method (AI reasoning)."""
-        # Create a test agent with proper mocking
-        with patch('langchain_anthropic.ChatAnthropic') as mock_llm_class:
+        # Mock all dependencies before creating the agent
+        with patch('agents.base_agent.get_config') as mock_get_config, \
+             patch('agents.base_agent.ChatAnthropic') as mock_llm_class, \
+             patch('agents.base_agent.ToolManager') as mock_tool_manager_class, \
+             patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
+            
+            # Setup mock config with proper return values
+            mock_config = MagicMock()
+            mock_config.get_agent_config.return_value = {
+                'name': 'test_agent',
+                'role': 'test role', 
+                'capabilities': ['test_capability']
+            }
+            mock_config.get_llm_config.return_value = {}
+            mock_config.get_log_config.return_value = {
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'level': 'INFO',
+                'console': True
+            }
+            # Mock the get method to return reasonable defaults
+            def mock_get(key, default=None):
+                if 'tools' in key:
+                    return []
+                return default
+            mock_config.get.side_effect = mock_get
+            mock_get_config.return_value = mock_config
+            
+            # Setup mock tool manager
+            mock_tool_manager = MagicMock()
+            mock_tool_manager.create_agent_toolbox.return_value = MagicMock()
+            mock_tool_manager_class.return_value = mock_tool_manager
+            
+            # Setup mock LLM
             mock_llm_instance = AsyncMock()
             mock_response = MagicMock()
             mock_response.content = "2 + 2 equals 4"
             mock_llm_instance.ainvoke.return_value = mock_response
             mock_llm_class.return_value = mock_llm_instance
             
-            with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-                # Create agent which will use the mocked LLM
-                test_agent = TestAgentImpl("test_agent")
-                
-                prompt = "What is 2 + 2?"
-                result = await test_agent.think(prompt)
-                
-                assert result == "2 + 2 equals 4"
-                mock_llm_instance.ainvoke.assert_called_once()
+            # Now create agent with all mocks in place
+            test_agent = TestAgentImpl("test_agent")
+            
+            prompt = "What is 2 + 2?"
+            result = await test_agent.think(prompt)
+            
+            assert result == "2 + 2 equals 4"
+            mock_llm_instance.ainvoke.assert_called_once()
         
     @pytest.mark.asyncio
     async def test_execute_tool(self, test_agent):
@@ -179,42 +209,45 @@ class TestBaseAgent:
         
     def test_send_message_to_agent(self, test_agent, clean_shared_state):
         """Test sending messages to other agents."""
-        # Register recipient agent
-        clean_shared_state.register_agent("recipient", ["capability"])
-        
-        message_id = test_agent.send_message_to_agent(
-            to_agent="recipient",
-            message_type=MessageType.TASK_REQUEST,
-            content={"task": "test_task"},
-            priority=3
-        )
-        
-        assert message_id is not None
-        
-        # Check message was queued
-        messages = clean_shared_state.get_messages("recipient")
-        assert len(messages) == 1
-        assert messages[0].from_agent == "test_agent"
-        assert messages[0].content["task"] == "test_task"
+        # Patch the shared_state import in base_agent to use our clean instance
+        with patch('agents.base_agent.shared_state', clean_shared_state):
+            # Register recipient agent
+            clean_shared_state.register_agent("recipient", ["capability"])
+            
+            message_id = test_agent.send_message_to_agent(
+                to_agent="recipient",
+                message_type=MessageType.TASK_REQUEST,
+                content={"task": "test_task"},
+                priority=3
+            )
+            
+            assert message_id is not None
+            
+            # Check message was queued
+            messages = clean_shared_state.get_messages("recipient")
+            assert len(messages) == 1
+            assert messages[0].from_agent == "test_agent"
+            assert messages[0].content["task"] == "test_task"
         
     def test_broadcast_message(self, test_agent, clean_shared_state):
         """Test broadcasting messages to all agents."""
-        # Register multiple agents
-        for i in range(3):
-            clean_shared_state.register_agent(f"agent_{i}", ["capability"])
-        
-        message_id = test_agent.send_message_to_agent(
-            to_agent=None,  # Broadcast
-            message_type=MessageType.STATUS_UPDATE,
-            content={"status": "active"}
-        )
-        
-        assert message_id is not None
-        
-        # Check all agents received the message
-        for i in range(3):
-            messages = clean_shared_state.get_messages(f"agent_{i}")
-            assert len(messages) == 1
+        # Patch the shared_state import in base_agent to use our clean instance
+        with patch('agents.base_agent.shared_state', clean_shared_state):
+            # Register multiple agents
+            for i in range(3):
+                clean_shared_state.register_agent(f"agent_{i}", ["capability"])
+            
+            message_id = test_agent.broadcast_message(
+                message_type=MessageType.STATUS_UPDATE,
+                content={"status": "active"}
+            )
+            
+            assert message_id is not None
+            
+            # Check all agents received the message
+            for i in range(3):
+                messages = clean_shared_state.get_messages(f"agent_{i}")
+                assert len(messages) == 1
             
     @pytest.mark.asyncio
     async def test_process_message_implementation(self, test_agent):
@@ -303,13 +336,49 @@ class TestBaseAgent:
         assert agent_state.progress == 0.5
         
     @pytest.mark.asyncio
-    async def test_error_handling_in_think(self, test_agent):
+    async def test_error_handling_in_think(self, clean_shared_state):
         """Test error handling in the think method."""
-        # Mock LLM to raise an exception
-        test_agent.llm.ainvoke = AsyncMock(side_effect=Exception("LLM Error"))
-        
-        with pytest.raises(Exception, match="LLM Error"):
-            await test_agent.think("test prompt")
+        # Mock all dependencies and make LLM raise an exception
+        with patch('agents.base_agent.get_config') as mock_get_config, \
+             patch('agents.base_agent.ChatAnthropic') as mock_llm_class, \
+             patch('agents.base_agent.ToolManager') as mock_tool_manager_class, \
+             patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
+            
+            # Setup mock config
+            mock_config = MagicMock()
+            mock_config.get_agent_config.return_value = {
+                'name': 'test_agent',
+                'role': 'test role', 
+                'capabilities': ['test_capability']
+            }
+            mock_config.get_llm_config.return_value = {}
+            mock_config.get_log_config.return_value = {
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'level': 'INFO',
+                'console': True
+            }
+            def mock_get(key, default=None):
+                if 'tools' in key:
+                    return []
+                return default
+            mock_config.get.side_effect = mock_get
+            mock_get_config.return_value = mock_config
+            
+            # Setup mock tool manager
+            mock_tool_manager = MagicMock()
+            mock_tool_manager.create_agent_toolbox.return_value = MagicMock()
+            mock_tool_manager_class.return_value = mock_tool_manager
+            
+            # Setup mock LLM to raise an exception
+            mock_llm_instance = AsyncMock()
+            mock_llm_instance.ainvoke.side_effect = Exception("LLM Error")
+            mock_llm_class.return_value = mock_llm_instance
+            
+            # Create agent and test error handling
+            test_agent = TestAgentImpl("test_agent")
+            
+            with pytest.raises(Exception, match="LLM Error"):
+                await test_agent.think("test prompt")
             
     @pytest.mark.asyncio
     async def test_error_handling_in_tool_execution(self, test_agent):
