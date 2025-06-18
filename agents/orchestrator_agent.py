@@ -29,6 +29,8 @@ class OrchestratorAgent(BaseAgent):
         """Execute orchestration tasks."""
         if "create_project" in task_description.lower():
             return await self._create_flutter_project(task_data)
+        elif "initiate_project_workflow" in task_description.lower():
+            return await self._initiate_project_workflow_task(task_data)
         elif "coordinate_phase" in task_description.lower():
             return await self._coordinate_phase(task_data)
         elif "assign_task" in task_description.lower():
@@ -59,23 +61,44 @@ class OrchestratorAgent(BaseAgent):
             await self._advance_to_next_phase(change_data)
     
     async def _create_flutter_project(self, project_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new Flutter project and initiate the workflow."""
+        """Initiate the workflow for an existing Flutter project."""
         name = project_data["name"]
-        description = project_data["description"]
-        requirements = project_data.get("requirements", [])
         
-        # Create project in shared state
-        project_id = shared_state.create_project(name, description, requirements)
+        # Find existing project by name
+        project_id = None
+        for pid, project in shared_state._projects.items():
+            if project.name == name:
+                project_id = pid
+                break
+        
+        if not project_id:
+            # Project doesn't exist, create it
+            description = project_data["description"]
+            requirements = project_data.get("requirements", [])
+            project_id = shared_state.create_project(name, description, requirements)
         
         # Start the workflow
         await self._initiate_project_workflow(project_id)
         
         return {
             "project_id": project_id,
-            "status": "created",
+            "status": "workflow_initiated",
             "next_phase": "planning"
         }
     
+    async def _initiate_project_workflow_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initiate workflow for an existing project."""
+        project_id = task_data["project_id"]
+        
+        # Initiate the workflow for the existing project
+        await self._initiate_project_workflow(project_id)
+        
+        return {
+            "project_id": project_id,
+            "status": "workflow_initiated",
+            "next_phase": "planning"
+        }
+
     async def _initiate_project_workflow(self, project_id: str) -> None:
         """Initiate the Flutter project development workflow."""
         project = shared_state.get_project_state(project_id)

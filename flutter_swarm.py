@@ -159,25 +159,21 @@ class FlutterSwarm:
             build_monitor.start_monitoring(project_id)
         
         try:
-            # Send initial task to orchestrator
+            # Execute initial task via orchestrator
             orchestrator = self.agents["orchestrator"]
-            task_id = orchestrator.send_message_to_agent(
-                to_agent="orchestrator",
-                message_type=MessageType.TASK_REQUEST,
-                content={
-                    "task_description": "create_project",
-                    "task_data": {
-                        "name": project.name,
-                        "description": project.description,
-                        "requirements": project.requirements,
-                        "platforms": platforms,
-                        "ci_system": ci_system
-                    }
-                },
-                priority=5
+            
+            # Directly execute the workflow initiation task
+            result = await orchestrator.execute_task(
+                task_description="initiate_project_workflow", 
+                task_data={
+                    "project_id": project_id,
+                    "platforms": platforms,
+                    "ci_system": ci_system
+                }
             )
             
-            print(f"📋 Assigned build task {task_id} to orchestrator")
+            print(f"📋 Orchestrator initiated build process for project {project.name}")
+            print(f"🎯 Initial result: {result.get('status', 'unknown')}")
             
             # Monitor progress
             result = await self._monitor_build_progress(project_id)
