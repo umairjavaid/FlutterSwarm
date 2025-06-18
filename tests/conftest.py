@@ -13,12 +13,49 @@ from typing import Dict, Any, Generator
 from datetime import datetime
 
 # Add the parent directory to sys.path to import FlutterSwarm modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
+# Mock the problematic modules BEFORE any imports
+sys.modules['agents.orchestrator_agent'] = MagicMock()
+sys.modules['agents.architecture_agent'] = MagicMock()
+sys.modules['agents.implementation_agent'] = MagicMock()
+sys.modules['agents.testing_agent'] = MagicMock()
+sys.modules['agents.security_agent'] = MagicMock()
+sys.modules['agents.devops_agent'] = MagicMock()
+sys.modules['agents.documentation_agent'] = MagicMock()
+sys.modules['agents.performance_agent'] = MagicMock()
+sys.modules['agents.quality_assurance_agent'] = MagicMock()
+sys.modules['langchain_anthropic'] = MagicMock()
+sys.modules['monitoring.agent_logger'] = MagicMock()
+sys.modules['monitoring.build_monitor'] = MagicMock()
+sys.modules['monitoring.live_display'] = MagicMock()
+
+# Mock tools modules with the necessary attributes
+mock_tool_status = MagicMock()
+mock_tool_status.SUCCESS = "success"
+mock_tool_status.ERROR = "error"
+mock_tool_status.WARNING = "warning"
+
+mock_tool_result = MagicMock()
+mock_tool_result.return_value = MagicMock()
+
+mock_tools = MagicMock()
+mock_tools.base_tool = MagicMock()
+mock_tools.base_tool.ToolResult = mock_tool_result
+mock_tools.base_tool.ToolStatus = mock_tool_status
+
+sys.modules['tools'] = mock_tools
+sys.modules['tools.base_tool'] = mock_tools.base_tool
+
+# Import shared components first (these have fewer dependencies)
 from shared.state import SharedState, AgentStatus, MessageType, ProjectState, AgentState
+from tests.mocks.mock_implementations import MockAgent, MockConfigManager, MockToolManager
+
+# Now safe to import these
 from flutter_swarm import FlutterSwarm
 from config.config_manager import ConfigManager
-from tests.mocks.mock_implementations import MockAgent, MockConfigManager, MockToolManager
 
 
 @pytest.fixture

@@ -6,8 +6,24 @@ import pytest
 import asyncio
 import tempfile
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+# Mock tools modules before importing
+mock_tool_status = MagicMock()
+mock_tool_status.SUCCESS = "success"
+mock_tool_status.ERROR = "error"
+mock_tool_status.WARNING = "warning"
+
+mock_tools = MagicMock()
+mock_tools.base_tool = MagicMock()
+mock_tools.base_tool.ToolStatus = mock_tool_status
+mock_tools.tool_manager = MagicMock()
+
+sys.modules['tools'] = mock_tools
+sys.modules['tools.base_tool'] = mock_tools.base_tool
+sys.modules['tools.tool_manager'] = mock_tools.tool_manager
 
 from tools.tool_manager import ToolManager
 from tools.base_tool import ToolStatus

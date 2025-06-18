@@ -7,7 +7,7 @@ import asyncio
 import os
 import re
 from typing import Dict, List, Any, Optional, Set
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
 class QualityAssuranceAgent(BaseAgent):

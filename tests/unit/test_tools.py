@@ -5,8 +5,37 @@ Unit tests for the tool system components.
 import pytest
 import asyncio
 import tempfile
+import sys
 from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
+
+# Mock tools modules before importing
+mock_tool_status = MagicMock()
+mock_tool_status.SUCCESS = "success"
+mock_tool_status.ERROR = "error"
+mock_tool_status.WARNING = "warning"
+
+mock_tool_result = MagicMock()
+mock_base_tool = MagicMock()
+
+mock_tools = MagicMock()
+mock_tools.base_tool = MagicMock()
+mock_tools.base_tool.BaseTool = mock_base_tool
+mock_tools.base_tool.ToolResult = mock_tool_result
+mock_tools.base_tool.ToolStatus = mock_tool_status
+mock_tools.terminal_tool = MagicMock()
+mock_tools.file_tool = MagicMock()
+mock_tools.flutter_tool = MagicMock()
+mock_tools.git_tool = MagicMock()
+mock_tools.tool_manager = MagicMock()
+
+sys.modules['tools'] = mock_tools
+sys.modules['tools.base_tool'] = mock_tools.base_tool
+sys.modules['tools.terminal_tool'] = mock_tools.terminal_tool
+sys.modules['tools.file_tool'] = mock_tools.file_tool
+sys.modules['tools.flutter_tool'] = mock_tools.flutter_tool
+sys.modules['tools.git_tool'] = mock_tools.git_tool
+sys.modules['tools.tool_manager'] = mock_tools.tool_manager
 
 from tools.base_tool import BaseTool, ToolResult, ToolStatus
 from tools.terminal_tool import TerminalTool

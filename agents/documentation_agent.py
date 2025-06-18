@@ -4,7 +4,7 @@ Documentation Agent - Generates comprehensive documentation for Flutter applicat
 
 import asyncio
 from typing import Dict, List, Any, Optional
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
 class DocumentationAgent(BaseAgent):
