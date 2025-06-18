@@ -95,6 +95,19 @@ agents:
       - memory_management
       - load_testing
 
+  quality_assurance:
+    name: "Quality Assurance Agent"
+    role: "Code quality monitoring and issue detection"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.3
+    max_tokens: 4000
+    capabilities:
+      - code_quality_analysis
+      - issue_detection
+      - fix_coordination
+      - validation_testing
+      - consistency_checking
+
 workflow:
   phases:
     - planning

@@ -17,6 +17,7 @@ from agents.security_agent import SecurityAgent
 from agents.devops_agent import DevOpsAgent
 from agents.documentation_agent import DocumentationAgent
 from agents.performance_agent import PerformanceAgent
+from agents.quality_assurance_agent import QualityAssuranceAgent
 
 # Import shared state
 from shared.state import shared_state, AgentStatus, MessageType
@@ -45,7 +46,8 @@ class FlutterSwarm:
             "security": SecurityAgent(),
             "devops": DevOpsAgent(),
             "documentation": DocumentationAgent(),
-            "performance": PerformanceAgent()
+            "performance": PerformanceAgent(),
+            "quality_assurance": QualityAssuranceAgent()
         }
         
         print(f"✅ Initialized {len(self.agents)} agents")

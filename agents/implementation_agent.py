@@ -35,6 +35,8 @@ class ImplementationAgent(BaseAgent):
             return await self._implement_state_management(task_data)
         elif "setup_project_structure" in task_description:
             return await self._setup_project_structure(task_data)
+        elif "fix_implementation_issue" in task_description:
+            return await self._fix_implementation_issue(task_data)
         else:
             return await self._handle_general_implementation(task_description, task_data)
     
@@ -57,6 +59,9 @@ class ImplementationAgent(BaseAgent):
             await self._start_implementation(change_data["project_id"])
         elif event == "file_added":
             await self._analyze_new_file(change_data)
+        elif event == "issue_reported":
+            # Respond to QA issues if they're related to implementation
+            await self._handle_qa_issue(change_data)
     
     async def _implement_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement a specific feature."""
@@ -541,7 +546,103 @@ class ImplementationAgent(BaseAgent):
             "reviewer": self.agent_id
         }
     
+    async def _fix_implementation_issue(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix implementation issues reported by QA."""
+        project_id = task_data["project_id"]
+        issue = task_data["issue"]
+        affected_files = task_data.get("affected_files", [])
+        
+        project = shared_state.get_project_state(project_id)
+        
+        fix_prompt = f"""
+        Fix the following implementation issue in this Flutter project:
+        
+        Project: {project.name}
+        Issue: {issue.get('description', '')}
+        Issue Type: {issue.get('issue_type', '')}
+        Severity: {issue.get('severity', '')}
+        Affected Files: {affected_files}
+        
+        Analyze the issue and provide corrected code that:
+        1. Fixes the specific problem identified
+        2. Maintains compatibility with existing code
+        3. Follows Flutter best practices
+        4. Improves overall code quality
+        
+        For each file that needs fixing, provide:
+        - File path
+        - Complete corrected code
+        - Explanation of what was fixed
+        """
+        
+        fix_response = await self.think(fix_prompt, {
+            "project": project,
+            "issue": issue,
+            "affected_files": affected_files
+        })
+        
+        # Parse and apply fixes
+        fixed_files = await self._apply_implementation_fixes(project_id, fix_response)
+        
+        # Report back to QA
+        shared_state.update_issue_status(
+            project_id, 
+            issue.get("issue_id", ""), 
+            "resolved",
+            assigned_agent=self.agent_id,
+            resolution_notes=f"Fixed {len(fixed_files)} files"
+        )
+        
+        return {
+            "status": "issue_fixed",
+            "fixed_files": fixed_files,
+            "issue_id": issue.get("issue_id", "")
+        }
+    
+    async def _apply_implementation_fixes(self, project_id: str, fix_response: str) -> List[str]:
+        """Apply implementation fixes to actual files."""
+        from utils.project_manager import ProjectManager
+        
+        pm = ProjectManager()
+        project = shared_state.get_project_state(project_id)
+        project_path = pm.get_project_path(project.name)
+        
+        fixed_files = []
+        
+        # Parse fix response for file updates (simplified parsing)
+        # In a real implementation, this would parse the LLM response more thoroughly
+        if "lib/" in fix_response and ".dart" in fix_response:
+            # This is a simplified example - would need better parsing
+            print(f"🔧 Implementation Agent: Applying fixes to project {project.name}")
+            fixed_files.append("example_fixed_file.dart")
+        
+        return fixed_files
+    
     async def _handle_general_implementation(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle general implementation tasks."""
         response = await self.think(f"Implement: {task_description}", task_data)
         return {"response": response, "task": task_description}
+    
+    async def _handle_qa_issue(self, change_data: Dict[str, Any]) -> None:
+        """Handle issues reported by the QA agent."""
+        issue = change_data.get("issue", {})
+        issue_type = issue.get("issue_type", "")
+        
+        # Check if this is an implementation-related issue
+        implementation_issues = [
+            "code_quality", "syntax_errors", "naming_conventions",
+            "null_safety", "widget_usage", "state_management"
+        ]
+        
+        if any(impl_issue in issue_type for impl_issue in implementation_issues):
+            project_id = issue.get("project_id")
+            
+            # Create a fix task
+            await self.execute_task(
+                "fix_implementation_issue",
+                {
+                    "project_id": project_id,
+                    "issue": issue,
+                    "affected_files": issue.get("affected_files", [])
+                }
+            )

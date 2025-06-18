@@ -64,6 +64,21 @@ class ProjectState:
     documentation: Dict[str, str]
     deployment_config: Dict[str, Any]
 
+@dataclass
+class IssueReport:
+    issue_id: str
+    project_id: str
+    reporter_agent: str
+    issue_type: str
+    severity: str  # critical, high, medium, low
+    description: str
+    affected_files: List[str]
+    fix_suggestions: List[str]
+    status: str  # open, in_progress, resolved, ignored
+    timestamp: datetime
+    assigned_agent: Optional[str] = None
+    resolution_notes: Optional[str] = None
+
 class SharedState:
     """
     Central shared state manager for all agents.
@@ -78,6 +93,7 @@ class SharedState:
         self._message_queue: Dict[str, List[AgentMessage]] = {}
         self._subscribers: Dict[str, List[Callable]] = {}
         self._current_project_id: Optional[str] = None
+        self._issues: Dict[str, List[IssueReport]] = {}  # project_id -> issues
         
     def register_agent(self, agent_id: str, capabilities: List[str]) -> None:
         """Register a new agent with the shared state."""
@@ -284,6 +300,77 @@ class SharedState:
                 "requesting_agent": requesting_agent,
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def report_issue(self, project_id: str, issue_data: Dict[str, Any]) -> str:
+        """Report a new issue found by an agent."""
+        with self._lock:
+            if project_id not in self._issues:
+                self._issues[project_id] = []
+            
+            issue = IssueReport(
+                issue_id=issue_data.get("id", f"issue_{len(self._issues[project_id]) + 1}"),
+                project_id=project_id,
+                reporter_agent=issue_data.get("reporter_agent", "unknown"),
+                issue_type=issue_data.get("type", "general"),
+                severity=issue_data.get("severity", "medium"),
+                description=issue_data.get("description", ""),
+                affected_files=issue_data.get("affected_files", []),
+                fix_suggestions=issue_data.get("fix_suggestions", []),
+                status="open",
+                timestamp=datetime.now(),
+                assigned_agent=issue_data.get("assigned_agent"),
+                resolution_notes=None
+            )
+            
+            self._issues[project_id].append(issue)
+            
+            # Notify all agents about the new issue
+            self._broadcast_message(
+                from_agent="shared_state",
+                message_type=MessageType.STATUS_UPDATE,
+                content={
+                    "event": "issue_reported",
+                    "project_id": project_id,
+                    "issue": asdict(issue)
+                }
+            )
+            
+            return issue.issue_id
+    
+    def get_project_issues(self, project_id: str, status: str = None) -> List[IssueReport]:
+        """Get all issues for a project, optionally filtered by status."""
+        with self._lock:
+            issues = self._issues.get(project_id, [])
+            if status:
+                return [issue for issue in issues if issue.status == status]
+            return issues
+    
+    def update_issue_status(self, project_id: str, issue_id: str, status: str, 
+                           assigned_agent: str = None, resolution_notes: str = None) -> bool:
+        """Update the status of an issue."""
+        with self._lock:
+            issues = self._issues.get(project_id, [])
+            for issue in issues:
+                if issue.issue_id == issue_id:
+                    issue.status = status
+                    if assigned_agent:
+                        issue.assigned_agent = assigned_agent
+                    if resolution_notes:
+                        issue.resolution_notes = resolution_notes
+                    
+                    # Notify agents about issue status change
+                    self._broadcast_message(
+                        from_agent="shared_state",
+                        message_type=MessageType.STATUS_UPDATE,
+                        content={
+                            "event": "issue_status_changed",
+                            "project_id": project_id,
+                            "issue_id": issue_id,
+                            "new_status": status
+                        }
+                    )
+                    return True
+            return False
 
 # Global shared state instance
 shared_state = SharedState()
