@@ -1,6 +1,7 @@
 # FlutterSwarm Generated Projects
 flutter_projects/*
 
+build_report_*
 
 # FlutterSwarm Cache and Temporary Files
 .flutterswarm_cache/

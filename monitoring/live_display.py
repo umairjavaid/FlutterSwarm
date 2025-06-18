@@ -160,10 +160,10 @@ class LiveDisplay:
     def _build_header(self) -> List[str]:
         """Build header section."""
         lines = []
-        lines.append(f"{Style.BRIGHT}{Fore.CYAN}=" * self.config.terminal_width + Style.RESET_ALL)
+        lines.append(f"{Style.BRIGHT}{Fore.CYAN}{'─' * 50}{Style.RESET_ALL}")
         lines.append(f"{Style.BRIGHT}{Fore.CYAN}🐝 FlutterSwarm Live Monitor{Style.RESET_ALL}")
         lines.append(f"{Fore.WHITE}Last Update: {self.last_update.strftime('%H:%M:%S')}{Style.RESET_ALL}")
-        lines.append(f"{Style.BRIGHT}{Fore.CYAN}=" * self.config.terminal_width + Style.RESET_ALL)
+        lines.append(f"{Style.BRIGHT}{Fore.CYAN}{'─' * 50}{Style.RESET_ALL}")
         
         return lines
     
@@ -265,7 +265,7 @@ class LiveDisplay:
     def _build_footer(self) -> List[str]:
         """Build footer section."""
         lines = []
-        lines.append(f"\n{Style.BRIGHT}{Fore.CYAN}=" * self.config.terminal_width + Style.RESET_ALL)
+        lines.append(f"\n{Style.BRIGHT}{Fore.CYAN}{'─' * 50}{Style.RESET_ALL}")
         lines.append(f"{Fore.WHITE}Press Ctrl+C to stop monitoring{Style.RESET_ALL}")
         
         return lines

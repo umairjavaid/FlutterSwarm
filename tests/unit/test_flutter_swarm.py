@@ -172,23 +172,26 @@ class TestFlutterSwarm:
             project.progress = 0.9
             clean_shared_state._agents.clear()  # No active agents
             
-        # Run monitoring with mocked progress
-        progress_task = asyncio.create_task(mock_progress())
-        result_task = asyncio.create_task(swarm._monitor_build_progress(project_id))
-        
-        await asyncio.gather(progress_task, result_task)
-        result = result_task.result()
-        
-        assert result["status"] == "completed"
-        assert result["project_id"] == project_id
+        # Patch the shared_state in the swarm instance
+        with patch('flutter_swarm.shared_state', clean_shared_state):
+            # Run monitoring with mocked progress
+            progress_task = asyncio.create_task(mock_progress())
+            result_task = asyncio.create_task(swarm._monitor_build_progress(project_id))
+            
+            await asyncio.gather(progress_task, result_task)
+            result = result_task.result()
+            
+            assert result["status"] == "completed"
+            assert result["project_id"] == project_id
         
     def test_get_project_status(self, flutter_swarm_instance, clean_shared_state):
         """Test getting project status."""
         swarm = flutter_swarm_instance
         
         # Test non-existent project
-        status = swarm.get_project_status("nonexistent")
-        assert "error" in status
+        with patch('flutter_swarm.shared_state', clean_shared_state):
+            status = swarm.get_project_status("nonexistent")
+            assert "error" in status
         
         # Create a project and test status
         from shared.state import ProjectState, AgentState, AgentStatus
@@ -222,13 +225,14 @@ class TestFlutterSwarm:
         clean_shared_state._projects[project_id] = project
         clean_shared_state._agents["test_agent"] = agent_state
         
-        status = swarm.get_project_status(project_id)
-        
-        assert "project" in status
-        assert "agents" in status
-        assert status["project"]["id"] == project_id
-        assert status["project"]["name"] == "Test Project"
-        assert "test_agent" in status["agents"]
+        with patch('flutter_swarm.shared_state', clean_shared_state):
+            status = swarm.get_project_status(project_id)
+            
+            assert "project" in status
+            assert "agents" in status
+            assert status["project"]["id"] == project_id
+            assert status["project"]["name"] == "Test Project"
+            assert "test_agent" in status["agents"]
         
     def test_list_projects(self, flutter_swarm_instance, clean_shared_state):
         """Test listing projects."""

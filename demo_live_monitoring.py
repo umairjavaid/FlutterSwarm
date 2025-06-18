@@ -97,9 +97,9 @@ class MonitoringDemo:
     
     def _display_final_results(self, result: dict):
         """Display final build results and monitoring summary."""
-        console.print("\n" + "="*60)
+        console.print("\n" + "─"*50)
         console.print("📊 [bold blue]FINAL MONITORING SUMMARY[/bold blue]")
-        console.print("="*60)
+        console.print("─"*50)
         
         # Build results
         console.print(f"✅ Status: {result.get('status', 'Unknown')}")

@@ -57,7 +57,7 @@ class AgentLogger:
         """Setup the logging configuration."""
         # Create logger
         self.logger = logging.getLogger('FlutterSwarm')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)  # Set to INFO to reduce excessive debug output
         
         # Clear existing handlers
         self.logger.handlers.clear()
