@@ -11,8 +11,10 @@ from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from shared.state import shared_state, AgentStatus, MessageType, AgentMessage
+from config.config_manager import get_config
 import os
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
@@ -22,10 +24,13 @@ class BaseAgent(ABC):
     Provides common functionality and enforces the agent interface.
     """
     
-    def __init__(self, agent_id: str, config_path: str = "config/agent_config.yaml"):
+    def __init__(self, agent_id: str):
         self.agent_id = agent_id
-        self.config = self._load_config(config_path)
-        self.agent_config = self.config["agents"][agent_id]
+        self._config_manager = get_config()
+        self.agent_config = self._config_manager.get_agent_config(agent_id)
+        
+        # Setup logging
+        self._setup_logging()
         
         # Initialize LLM with configuration
         self.llm = self._initialize_llm()
@@ -33,32 +38,63 @@ class BaseAgent(ABC):
         # Register with shared state
         shared_state.register_agent(
             agent_id=self.agent_id,
-            capabilities=self.agent_config["capabilities"]
+            capabilities=self.agent_config.get("capabilities", [])
         )
         
         self.is_running = False
         self.current_task = None
         
-        print(f"🤖 {self.agent_config['name']} initialized")
+        self.logger.info(f"🤖 {self.agent_config.get('name', agent_id)} initialized")
     
-    def _load_config(self, config_path: str) -> Dict[str, Any]:
-        """Load agent configuration from YAML file."""
-        try:
-            with open(config_path, 'r') as file:
-                return yaml.safe_load(file)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    def _setup_logging(self) -> None:
+        """Setup agent-specific logging."""
+        log_config = self._config_manager.get_log_config()
+        self.logger = logging.getLogger(f"flutterswarm.{self.agent_id}")
+        
+        if not self.logger.handlers:
+            # Create console handler if enabled
+            if log_config.get('console', True):
+                console_handler = logging.StreamHandler()
+                formatter = logging.Formatter(log_config.get('format', 
+                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                console_handler.setFormatter(formatter)
+                self.logger.addHandler(console_handler)
+            
+            # Set log level
+            level = getattr(logging, log_config.get('level', 'INFO').upper())
+            self.logger.setLevel(level)
     
     def _initialize_llm(self) -> ChatAnthropic:
         """Initialize the LangChain LLM with agent-specific configuration."""
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Get LLM configuration (primary by default, with agent-specific overrides)
+        llm_config = self._config_manager.get_llm_config()
+        agent_llm_config = self.agent_config.get('llm', {})
+        
+        # Merge configurations
+        final_config = {**llm_config, **agent_llm_config}
+        
+        # Get API key from environment
+        api_key_env = final_config.get('api_key_env', 'ANTHROPIC_API_KEY')
+        api_key = final_config.get('api_key') or os.getenv(api_key_env)
+        
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+            # Try fallback configuration
+            fallback_config = self._config_manager.get_llm_config(fallback=True)
+            fallback_api_key_env = fallback_config.get('api_key_env', 'OPENAI_API_KEY')
+            api_key = os.getenv(fallback_api_key_env)
+            
+            if not api_key:
+                raise ValueError(f"No API key found in environment variables: {api_key_env}, {fallback_api_key_env}")
+        
+        # Get default model from config
+        default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
+        default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
+        default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
         
         return ChatAnthropic(
-            model=self.agent_config.get("model", "claude-3-5-sonnet-20241022"),
-            temperature=self.agent_config.get("temperature", 0.7),
-            max_tokens=self.agent_config.get("max_tokens", 4000),
+            model=final_config.get("model", default_model),
+            temperature=final_config.get("temperature", default_temperature),
+            max_tokens=final_config.get("max_tokens", default_max_tokens),
             anthropic_api_key=api_key
         )
     
@@ -67,7 +103,11 @@ class BaseAgent(ABC):
         self.is_running = True
         shared_state.update_agent_status(self.agent_id, AgentStatus.IDLE)
         
-        print(f"🚀 {self.agent_config['name']} started")
+        self.logger.info(f"🚀 {self.agent_config.get('name', self.agent_id)} started")
+        
+        # Get performance configuration
+        perf_config = self._config_manager.get_performance_config()
+        heartbeat_interval = perf_config.get('heartbeat_interval', 30)
         
         while self.is_running:
             try:
@@ -79,23 +119,28 @@ class BaseAgent(ABC):
                 # Perform periodic tasks
                 await self._periodic_task()
                 
-                # Small delay to prevent CPU spinning
-                await asyncio.sleep(1)
+                # Use configurable sync interval
+                sync_interval = self._config_manager.get('system.performance.state_sync_interval', 2)
+                await asyncio.sleep(sync_interval)
                 
             except Exception as e:
-                print(f"❌ Error in {self.agent_id}: {str(e)}")
+                self.logger.error(f"❌ Error in {self.agent_id}: {str(e)}")
                 shared_state.update_agent_status(
                     self.agent_id, 
                     AgentStatus.ERROR,
                     metadata={"error": str(e)}
                 )
-                await asyncio.sleep(5)  # Wait before retrying
+                
+                # Get retry configuration
+                error_config = self._config_manager.get('system.error_handling', {})
+                retry_delay = error_config.get('retry_delay', 5)
+                await asyncio.sleep(retry_delay)
     
     async def stop(self) -> None:
         """Stop the agent."""
         self.is_running = False
         shared_state.update_agent_status(self.agent_id, AgentStatus.IDLE)
-        print(f"🛑 {self.agent_config['name']} stopped")
+        self.logger.info(f"🛑 {self.agent_config.get('name', self.agent_id)} stopped")
     
     async def _handle_message(self, message: AgentMessage) -> None:
         """Handle incoming messages."""
@@ -109,7 +154,7 @@ class BaseAgent(ABC):
             else:
                 await self._handle_custom_message(message)
         except Exception as e:
-            print(f"❌ Error handling message in {self.agent_id}: {str(e)}")
+            self.logger.error(f"❌ Error handling message in {self.agent_id}: {str(e)}")
     
     async def _handle_task_request(self, message: AgentMessage) -> None:
         """Handle task requests."""

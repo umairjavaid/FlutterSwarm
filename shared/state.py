@@ -6,12 +6,13 @@ Provides real-time synchronization and communication between all agents.
 import asyncio
 import json
 import uuid
+import threading
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, asdict
 from enum import Enum
-import threading
 from pydantic import BaseModel
+from config.config_manager import get_config
 
 class AgentStatus(Enum):
     IDLE = "idle"
@@ -86,6 +87,7 @@ class SharedState:
     """
     
     def __init__(self):
+        self._config = get_config()
         self._lock = threading.RLock()
         self._agents: Dict[str, AgentState] = {}
         self._projects: Dict[str, ProjectState] = {}
@@ -94,6 +96,11 @@ class SharedState:
         self._subscribers: Dict[str, List[Callable]] = {}
         self._current_project_id: Optional[str] = None
         self._issues: Dict[str, List[IssueReport]] = {}  # project_id -> issues
+        
+        # Configure limits from config
+        self._max_messages = self._config.get('communication.messaging.queue_size', 500)
+        self._message_ttl = self._config.get('communication.messaging.message_ttl', 3600)
+        self._max_collaborations = self._config.get('communication.collaboration.max_concurrent_collaborations', 5)
         
     def register_agent(self, agent_id: str, capabilities: List[str]) -> None:
         """Register a new agent with the shared state."""
@@ -293,10 +300,13 @@ class SharedState:
     def get_collaboration_context(self, requesting_agent: str) -> Dict[str, Any]:
         """Get full context for agent collaboration."""
         with self._lock:
+            # Get max recent messages from config
+            max_recent_messages = self._config.get('communication.messaging.max_recent_messages', 10)
+            
             return {
                 "agents": {aid: asdict(state) for aid, state in self._agents.items()},
                 "current_project": asdict(self.get_project_state()) if self.get_project_state() else None,
-                "recent_messages": [asdict(msg) for msg in self._messages[-10:]],
+                "recent_messages": [asdict(msg) for msg in self._messages[-max_recent_messages:]],
                 "requesting_agent": requesting_agent,
                 "timestamp": datetime.now().isoformat()
             }

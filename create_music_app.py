@@ -11,14 +11,30 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flutter_swarm import FlutterSwarm
+from config.config_manager import get_config
 
 async def create_music_app():
     """Create a comprehensive music streaming application using FlutterSwarm."""
-    print("🎵 FlutterSwarm Music App Creation")
-    print("=" * 60)
+    # Get configuration
+    config = get_config()
+    app_config = config.get_application_config()
+    music_config = app_config.get('examples', {}).get('music_app', {})
+    messages = config.get_messages_config()
+    
+    welcome_msg = messages.get('welcome', '🎵 Welcome to FlutterSwarm!')
+    print(welcome_msg.replace('FlutterSwarm!', 'FlutterSwarm Music App Creation'))
+    
+    # Get console width from config
+    console_width = config.get_cli_setting('console_width') or 60
+    print("=" * console_width)
     
     # Create FlutterSwarm instance
     swarm = FlutterSwarm()
+    
+    # Get music app specific config
+    streaming_quality = music_config.get('streaming_quality', ['FLAC', '320kbps MP3'])
+    max_playlist_size = music_config.get('max_playlist_size', 1000)
+    offline_storage = music_config.get('offline_storage_limit', '10GB')
     
     # Create a comprehensive music app project
     project_id = swarm.create_project(
@@ -39,12 +55,14 @@ async def create_music_app():
             "Podcast support",
             "Sleep timer and alarm integration",
             "Cross-device synchronization",
-            "High-quality audio streaming (FLAC, 320kbps MP3)",
+            f"High-quality audio streaming ({', '.join(streaming_quality)})",
             "Dark/light theme with custom colors",
             "Accessibility features for visually impaired",
             "Gesture controls and voice commands",
             "Integration with external services (Spotify, Apple Music APIs)",
-            "Push notifications for new releases and recommendations"
+            "Push notifications for new releases and recommendations",
+            f"Playlist size limit: {max_playlist_size} songs",
+            f"Offline storage limit: {offline_storage}"
         ],
         features=[
             "music_streaming", "playlist_management", "offline_downloads", 
@@ -120,7 +138,9 @@ async def monitor_build_quality(swarm, project_id, qa_agent):
     """Continuously monitor build quality during development."""
     print("👁️  Starting continuous quality monitoring...")
     
-    monitoring_interval = 30  # Check every 30 seconds
+    # Get monitoring interval from config
+    config = get_config()
+    monitoring_interval = config.get_interval_setting('qa_monitoring')
     
     while True:
         try:

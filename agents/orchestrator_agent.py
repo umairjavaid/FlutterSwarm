@@ -16,7 +16,12 @@ class OrchestratorAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("orchestrator")
-        self.workflow_phases = self.config["workflow"]["phases"]
+        # Get workflow phases from config manager
+        workflow_config = self._config_manager.get('workflow', {})
+        self.workflow_phases = workflow_config.get('phases', [
+            'planning', 'architecture', 'implementation', 'testing', 
+            'security_review', 'performance_optimization', 'documentation', 'deployment'
+        ])
         self.active_tasks = {}
         self.project_timeline = []
         
@@ -104,7 +109,22 @@ class OrchestratorAgent(BaseAgent):
         # Update project with planning results
         shared_state.update_project(project_id, current_phase="architecture")
         
-        # Assign architecture task to Architecture Agent
+        # FIRST: Create the actual Flutter project structure
+        self.send_message_to_agent(
+            to_agent="implementation",
+            message_type=MessageType.TASK_REQUEST,
+            content={
+                "task_description": "setup_project_structure",
+                "task_data": {
+                    "project_id": project_id,
+                    "architecture_style": "clean_architecture",
+                    "planning_output": plan
+                }
+            },
+            priority=10  # High priority to create structure first
+        )
+        
+        # THEN: Assign architecture task to Architecture Agent
         self.send_message_to_agent(
             to_agent="architecture",
             message_type=MessageType.TASK_REQUEST,

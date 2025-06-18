@@ -60,6 +60,17 @@ class DevOpsAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         
+        # Get CI/CD configuration from config
+        config = self.config_manager
+        cicd_config = config.get_deployment_config().get('cicd', {})
+        flutter_version = cicd_config.get('flutter_version', '3.16.0')
+        java_version = cicd_config.get('java_version', '11')
+        java_distribution = cicd_config.get('java_distribution', 'zulu')
+        checkout_version = cicd_config.get('checkout_version', 'v3')
+        flutter_action_version = cicd_config.get('flutter_action_version', 'v2')
+        java_setup_version = cicd_config.get('java_setup_version', 'v3')
+        codecov_version = cicd_config.get('codecov_version', 'v3')
+        
         cicd_prompt = f"""
         Create a comprehensive CI/CD pipeline for this Flutter project:
         
@@ -83,26 +94,26 @@ class DevOpsAgent(BaseAgent):
              test:
                runs-on: ubuntu-latest
                steps:
-                 - uses: actions/checkout@v3
-                 - uses: subosito/flutter-action@v2
+                 - uses: actions/checkout@{checkout_version}
+                 - uses: subosito/flutter-action@{flutter_action_version}
                    with:
-                     flutter-version: '3.16.0'
+                     flutter-version: '{flutter_version}'
                  - run: flutter pub get
                  - run: flutter analyze
                  - run: flutter test --coverage
-                 - uses: codecov/codecov-action@v3
+                 - uses: codecov/codecov-action@{codecov_version}
            
              build-android:
                needs: test
                runs-on: ubuntu-latest
                if: github.ref == 'refs/heads/main'
                steps:
-                 - uses: actions/checkout@v3
-                 - uses: subosito/flutter-action@v2
-                 - uses: actions/setup-java@v3
+                 - uses: actions/checkout@{checkout_version}
+                 - uses: subosito/flutter-action@{flutter_action_version}
+                 - uses: actions/setup-java@{java_setup_version}
                    with:
-                     distribution: 'zulu'
-                     java-version: '11'
+                     distribution: '{java_distribution}'
+                     java-version: '{java_version}'
                  - run: flutter build apk --release
                  - run: flutter build appbundle --release
            
@@ -111,8 +122,8 @@ class DevOpsAgent(BaseAgent):
                runs-on: macos-latest
                if: github.ref == 'refs/heads/main'
                steps:
-                 - uses: actions/checkout@v3
-                 - uses: subosito/flutter-action@v2
+                 - uses: actions/checkout@{checkout_version}
+                 - uses: subosito/flutter-action@{flutter_action_version}
                  - run: flutter build ios --release --no-codesign
            ```
         
@@ -320,6 +331,14 @@ class DevOpsAgent(BaseAgent):
         project_id = task_data["project_id"]
         platforms = task_data.get("platforms", ["android", "ios"])
         
+        # Get build configuration from config
+        config = self.config_manager
+        build_config = config.get_deployment_config().get('build', {})
+        clean_before_build = build_config.get('clean_before_build', True)
+        run_code_generation = build_config.get('run_code_generation', True)
+        obfuscate_release = build_config.get('obfuscate_release', True)
+        split_debug_info = build_config.get('split_debug_info', 'symbols/')
+        
         build_scripts_prompt = f"""
         Create comprehensive build scripts for platforms: {platforms}
         
@@ -338,11 +357,11 @@ class DevOpsAgent(BaseAgent):
            echo "Building Flutter app for $PLATFORM ($FLAVOR - $BUILD_TYPE)"
            
            # Clean previous builds
-           flutter clean
+           {"flutter clean" if clean_before_build else "# Skipping clean"}
            flutter pub get
            
            # Run code generation
-           flutter packages pub run build_runner build --delete-conflicting-outputs
+           {"flutter packages pub run build_runner build --delete-conflicting-outputs" if run_code_generation else "# Skipping code generation"}
            
            # Run tests
            flutter test
@@ -351,14 +370,14 @@ class DevOpsAgent(BaseAgent):
            case $PLATFORM in
              android)
                if [ "$BUILD_TYPE" = "release" ]; then
-                 flutter build appbundle --flavor $FLAVOR --obfuscate --split-debug-info=symbols/
+                 flutter build appbundle --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
                else
                  flutter build apk --flavor $FLAVOR
                fi
                ;;
              ios)
                if [ "$BUILD_TYPE" = "release" ]; then
-                 flutter build ipa --flavor $FLAVOR --obfuscate --split-debug-info=symbols/
+                 flutter build ipa --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
                else
                  flutter build ios --flavor $FLAVOR --no-codesign
                fi

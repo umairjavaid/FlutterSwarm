@@ -14,18 +14,27 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.live import Live
 from rich.panel import Panel
+from config.config_manager import get_config
 
-console = Console()
+# Initialize configuration-aware console
+config = get_config()
+cli_config = config.get_cli_config()
+console = Console(width=cli_config.get('console_width', 80))
 
 class FlutterSwarmCLI:
     """Command line interface for FlutterSwarm."""
     
     def __init__(self):
         self.swarm = None
+        self.config = get_config()
+        self.cli_config = self.config.get_cli_config()
+        self.display_config = self.config.get_display_config()
+        self.messages = self.config.get_messages_config()
         
     async def create_project(self, args):
         """Create a new Flutter project."""
-        console.print("🐝 [bold blue]Creating new Flutter project...[/bold blue]")
+        create_msg = self.messages.get('project_creating', '� Creating new Flutter project...')
+        console.print(f"🐝 [bold blue]{create_msg}[/bold blue]")
         
         # Parse requirements if provided
         requirements = []
@@ -46,11 +55,17 @@ class FlutterSwarmCLI:
             features=features
         )
         
-        console.print(f"✅ [green]Project created successfully![/green]")
-        console.print(f"📋 Project ID: [bold]{project_id}[/bold]")
+        success_msg = self.messages.get('build_complete', '✅ Project created successfully!')
+        console.print(f"[green]{success_msg}[/green]")
+        
+        # Use configurable ID length for display
+        id_length = self.display_config.get('project_id_length', 8)
+        displayed_id = project_id[:id_length] + '...' if len(project_id) > id_length else project_id
+        console.print(f"📋 Project ID: [bold]{displayed_id}[/bold]")
         
         if args.build:
-            console.print("\n🏗️  [bold blue]Starting build process...[/bold blue]")
+            building_msg = self.messages.get('building', '🔨 Starting build process...')
+            console.print(f"\n🏗️  [bold blue]{building_msg}[/bold blue]")
             await self.build_project_with_progress(project_id, args.platforms.split(',') if args.platforms else None)
     
     async def build_project_with_progress(self, project_id: str, platforms=None):
@@ -61,28 +76,35 @@ class FlutterSwarmCLI:
             console=console,
         ) as progress:
             
-            task = progress.add_task("Building Flutter project...", total=None)
+            building_msg = self.messages.get('building', 'Building Flutter project...')
+            task = progress.add_task(building_msg, total=None)
             
             # Start build in background
             build_task = asyncio.create_task(
                 self.swarm.build_project(project_id, platforms)
             )
             
+            # Get update frequency from config
+            update_frequency = self.config.get_interval_setting('progress_update')
+            
             # Monitor progress
             while not build_task.done():
                 status = self.swarm.get_project_status(project_id)
                 if 'project' in status:
                     project_info = status['project']
+                    progress_format = self.display_config.get('progress_format', '{:.1%}')
+                    progress_str = progress_format.format(project_info['progress'])
                     progress.update(
                         task, 
-                        description=f"Phase: {project_info['current_phase']} - Progress: {project_info['progress']:.1%}"
+                        description=f"Phase: {project_info['current_phase']} - Progress: {progress_str}"
                     )
                 
-                await asyncio.sleep(2)
+                await asyncio.sleep(update_frequency)
             
             # Get final result
             result = await build_task
-            progress.update(task, description="✅ Build completed!")
+            complete_msg = self.messages.get('build_complete', '✅ Build completed!')
+            progress.update(task, description=complete_msg)
         
         # Display results
         self.display_build_results(result)
@@ -91,9 +113,13 @@ class FlutterSwarmCLI:
         """Display build results in a nice format."""
         console.print("\n🎉 [bold green]Build Results[/bold green]")
         
+        # Get table headers from config
+        table_headers = self.display_config.get('table_headers', {})
+        project_headers = table_headers.get('projects', ['Metric', 'Value'])
+        
         table = Table(title="Project Summary")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="magenta")
+        table.add_column(project_headers[0], style="cyan")
+        table.add_column(project_headers[1], style="magenta")
         
         table.add_row("Status", result.get('status', 'Unknown'))
         table.add_row("Files Created", str(result.get('files_created', 0)))
@@ -272,21 +298,33 @@ class FlutterSwarmCLI:
         """Handle list command in interactive mode."""
         projects = self.swarm.list_projects()
         if not projects:
-            console.print("📭 No projects found")
+            no_projects_msg = self.messages.get('no_projects', '📭 No projects found')
+            console.print(no_projects_msg)
             return
         
+        # Get table headers from config
+        table_headers = self.display_config.get('table_headers', {})
+        project_headers = table_headers.get('projects', ['ID', 'Name', 'Phase', 'Progress'])
+        
         table = Table(title="📋 Projects")
-        table.add_column("ID", style="cyan")
-        table.add_column("Name", style="green")
-        table.add_column("Phase", style="yellow") 
-        table.add_column("Progress", style="magenta")
+        table.add_column(project_headers[0], style="cyan")
+        table.add_column(project_headers[1], style="green")
+        table.add_column(project_headers[2], style="yellow") 
+        table.add_column(project_headers[3], style="magenta")
+        
+        # Get display settings from config
+        id_length = self.display_config.get('project_id_length', 8)
+        progress_format = self.display_config.get('progress_format', '{:.1%}')
         
         for project in projects:
+            displayed_id = project['id'][:id_length] + '...' if len(project['id']) > id_length else project['id']
+            progress_str = progress_format.format(project['progress'])
+            
             table.add_row(
-                project['id'][:8] + '...',
+                displayed_id,
                 project['name'],
                 project['current_phase'],
-                f"{project['progress']:.1%}"
+                progress_str
             )
         
         console.print(table)

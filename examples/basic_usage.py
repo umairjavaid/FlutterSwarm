@@ -7,11 +7,20 @@ Demonstrates how to create and build Flutter projects using the multi-agent syst
 import asyncio
 import time
 from flutter_swarm import FlutterSwarm
+from config.config_manager import get_config
 
 async def example_todo_app():
     """Example: Create a Todo app with authentication."""
-    print("🐝 FlutterSwarm Example: Todo App with Authentication")
-    print("=" * 60)
+    # Get configuration
+    config = get_config()
+    messages = config.get_messages_config()
+    
+    welcome_msg = messages.get('welcome', '🐝 Welcome to FlutterSwarm!')
+    print(welcome_msg.replace('Welcome to FlutterSwarm!', 'FlutterSwarm Example: Todo App with Authentication'))
+    
+    # Get console width from config
+    console_width = config.get_cli_setting('console_width') or 60
+    print("=" * console_width)
     
     # Create FlutterSwarm instance
     swarm = FlutterSwarm()
@@ -52,6 +61,9 @@ async def example_todo_app():
     # Start building the project
     print("\n🏗️  Starting build process...")
     
+    # Get timeout from configuration
+    default_timeout = config.get_examples_config().get('default_timeout', 300)
+    
     try:
         result = await asyncio.wait_for(
             swarm.build_project(
@@ -59,7 +71,7 @@ async def example_todo_app():
                 platforms=["android", "ios", "web"],
                 ci_system="github_actions"
             ),
-            timeout=300  # 5 minutes timeout for demo
+            timeout=default_timeout  # Configurable timeout
         )
         
         print("\n🎉 Build completed successfully!")
@@ -79,8 +91,16 @@ async def example_todo_app():
 
 async def example_ecommerce_app():
     """Example: Create an e-commerce app."""
-    print("\n\n🐝 FlutterSwarm Example: E-commerce App")
-    print("=" * 60)
+    # Get configuration
+    config = get_config()
+    messages = config.get_messages_config()
+    
+    welcome_msg = messages.get('welcome', '🐝 Welcome to FlutterSwarm!')
+    print(welcome_msg.replace('Welcome to FlutterSwarm!', 'FlutterSwarm Example: E-commerce App'))
+    
+    # Get console width from config
+    console_width = config.get_cli_setting('console_width') or 60
+    print("=" * console_width)
     
     swarm = FlutterSwarm()
     
@@ -114,20 +134,23 @@ async def example_ecommerce_app():
     swarm_task = asyncio.create_task(swarm.start())
     await asyncio.sleep(2)
     
-    # Monitor for 30 seconds
-    for i in range(6):
-        await asyncio.sleep(5)
+    # Get monitoring settings from config
+    monitoring_config = config.get_monitoring_config()
+    monitoring_rounds = monitoring_config.get('thresholds', {}).get('max_monitoring_rounds', 5)
+    sleep_interval = config.get_interval_setting('status_update')
+    
+    # Monitor for configured duration
+    for i in range(monitoring_rounds + 1):  # +1 to match original 6 rounds with default of 5
+        await asyncio.sleep(sleep_interval)
         agent_status = swarm.get_agent_status()
-        print(f"\n📊 Status update {i+1}/6:")
+        print(f"\n📊 Status update {i+1}/{monitoring_rounds + 1}:")
+        
+        # Get status icons from config
+        display_config = config.get_display_config()
+        status_icons = display_config.get('status_icons', {})
         
         for agent_id, status in agent_status.items():
-            status_emoji = {
-                'idle': '💤',
-                'working': '🔄',
-                'waiting': '⏳', 
-                'completed': '✅',
-                'error': '❌'
-            }.get(status['status'], '❓')
+            status_emoji = status_icons.get(status.get('status', 'unknown'), '❓')
             
             task_info = f" - {status['current_task']}" if status['current_task'] else ""
             print(f"  {agent_id}: {status_emoji} {status['status']}{task_info}")

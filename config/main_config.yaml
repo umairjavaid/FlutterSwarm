@@ -1,0 +1,525 @@
+# FlutterSwarm Configuration Settings
+# =================================
+
+# System Configuration
+# --------------------
+system:
+  # Application metadata
+  name: "FlutterSwarm"
+  version: "1.0.0"
+  author: "FlutterSwarm Team"
+  
+  # Logging configuration
+  logging:
+    level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file: "logs/flutterswarm.log"
+    console: true
+    max_file_size: "10MB"
+    backup_count: 5
+  
+  # Performance settings
+  performance:
+    max_concurrent_agents: 10
+    message_queue_size: 1000
+    state_sync_interval: 2  # seconds
+    heartbeat_interval: 30  # seconds
+    task_timeout: 300  # seconds (5 minutes)
+    collaboration_timeout: 120  # seconds
+  
+  # Error handling
+  error_handling:
+    max_retries: 3
+    retry_delay: 1  # seconds
+    enable_fallback: true
+    auto_recovery: true
+
+# Project Configuration
+# ---------------------
+project:
+  # Default project settings
+  defaults:
+    output_directory: "./flutter_projects"
+    backup_directory: "./backups"
+    temp_directory: "./temp"
+    create_backup: true
+    auto_cleanup: true
+    cleanup_age_days: 30
+  
+  # Flutter-specific settings
+  flutter:
+    sdk_path: "flutter"  # Can be full path or command name
+    min_version: "3.0.0"
+    target_platforms: ["android", "ios", "web", "desktop"]
+    default_platform: "android"
+    auto_detect_sdk: true
+  
+  # File management
+  files:
+    max_file_size: "50MB"
+    allowed_extensions: [".dart", ".yaml", ".json", ".md", ".txt", ".xml", ".gradle", ".swift", ".kt"]
+    ignore_patterns: ["**/.*", "**/__pycache__", "**/node_modules", "**/build", "**/dist"]
+    auto_format: true
+    encoding: "utf-8"
+
+# Application Settings
+# -------------------
+application:
+  # CLI Configuration
+  cli:
+    console_width: 80
+    table_max_width: 120
+    progress_bar_length: 50
+    spinner_style: "dots"
+    color_theme: "default"  # default, dark, light
+    show_timestamps: true
+    truncate_long_text: true
+    max_display_lines: 50
+  
+  # Display Settings
+  display:
+    project_id_length: 8  # Characters to show from project ID
+    status_icons:
+      idle: "🟢"
+      working: "🔵"
+      error: "🔴"
+      waiting: "🟡"
+      completed: "✅"
+    
+    # Progress display
+    progress_format: "{:.1%}"
+    decimal_places: 1
+    
+    # Table display
+    table_headers:
+      projects: ["ID", "Name", "Phase", "Progress"]
+      agents: ["Agent", "Status", "Task", "Progress"]
+      test_results: ["Test Type", "Status", "Coverage"]
+  
+  # Status Update Settings
+  status:
+    update_frequency: 5  # seconds
+    auto_refresh: true
+    show_inactive_agents: false
+    max_status_history: 100
+    status_cache_ttl: 30  # seconds
+  
+  # Monitoring Settings
+  monitoring:
+    intervals:
+      qa_monitoring: 30  # seconds
+      heartbeat_check: 30  # seconds
+      status_update: 5   # seconds
+      build_monitoring: 10  # seconds
+      progress_update: 2   # seconds
+    
+    timeouts:
+      agent_response: 60      # seconds
+      task_execution: 300     # seconds (5 minutes)
+      build_timeout: 1800     # seconds (30 minutes)
+      test_timeout: 600       # seconds (10 minutes)
+      monitoring_cycle: 120   # seconds
+    
+    thresholds:
+      max_monitoring_rounds: 5
+      error_retry_limit: 3
+      warning_threshold: 3
+      critical_threshold: 1
+  
+  # Example Apps Configuration
+  examples:
+    default_timeout: 300  # seconds (5 minutes)
+    monitoring_rounds: 5
+    sleep_between_checks: 5  # seconds
+    weather_app:
+      api_base_url: "https://api.openweathermap.org/data/2.5"
+      default_city: "New York"
+      forecast_days: 5
+    
+    music_app:
+      streaming_quality: ["FLAC", "320kbps MP3"]
+      max_playlist_size: 1000
+      offline_storage_limit: "10GB"
+    
+    ecommerce_app:
+      max_products_per_page: 20
+      cart_expiry_hours: 24
+      session_timeout: 3600  # seconds
+
+# Agent Configuration
+# ------------------
+agents:
+  # Global agent settings
+  global:
+    base_config_file: "config/agent_config.yaml"
+    enable_hot_reload: true
+    auto_restart_on_error: true
+    max_memory_usage: "1GB"
+    enable_monitoring: true
+  
+  # LLM Configuration
+  llm:
+    # Primary LLM settings
+    primary:
+      provider: "anthropic"  # anthropic, openai, local
+      model: "claude-3-5-sonnet-20241022"
+      api_key_env: "ANTHROPIC_API_KEY"
+      temperature: 0.7
+      max_tokens: 4000
+      timeout: 60  # seconds
+      max_retries: 3
+    
+    # Fallback LLM settings
+    fallback:
+      provider: "openai"
+      model: "gpt-4-turbo-preview"
+      api_key_env: "OPENAI_API_KEY"
+      temperature: 0.7
+      max_tokens: 4000
+      timeout: 45
+    
+    # Rate limiting
+    rate_limiting:
+      requests_per_minute: 100
+      tokens_per_minute: 50000
+      burst_allowance: 10
+      cooldown_period: 60
+  
+  # Agent-specific overrides
+  overrides:
+    implementation:
+      llm:
+        temperature: 0.3
+        max_tokens: 6000
+    
+    security:
+      llm:
+        temperature: 0.2
+    
+    documentation:
+      llm:
+        temperature: 0.6
+    
+    testing:
+      llm:
+        temperature: 0.4
+
+# Communication & Collaboration
+# -----------------------------
+communication:
+  # Message system
+  messaging:
+    queue_size: 500
+    message_ttl: 3600  # seconds (1 hour)
+    enable_persistence: true
+    compression: true
+    encryption: false
+    max_recent_messages: 10  # for status display
+  
+  # Collaboration settings
+  collaboration:
+    max_concurrent_collaborations: 5
+    collaboration_timeout: 180  # seconds
+    enable_cross_agent_learning: true
+    share_context_automatically: true
+    
+  # Notifications
+  notifications:
+    enable_agent_notifications: true
+    enable_progress_updates: true
+    update_frequency: 5  # seconds
+    notification_levels: ["error", "warning", "info"]
+
+# Quality Assurance
+# -----------------
+quality_assurance:
+  # Issue detection
+  detection:
+    enable_real_time_monitoring: true
+    auto_fix_minor_issues: true
+    escalate_critical_issues: true
+    issue_tracking: true
+    
+  # Validation rules
+  validation:
+    enforce_coding_standards: true
+    check_dependencies: true
+    validate_syntax: true
+    check_security: true
+    performance_thresholds:
+      max_response_time: 5000  # milliseconds
+      max_memory_usage: 512  # MB
+      max_file_size: 1000  # KB
+      target_fps: 60
+      startup_time_limit: 2000  # milliseconds
+  
+  # Reporting
+  reporting:
+    generate_reports: true
+    report_format: "json"  # json, html, markdown
+    include_metrics: true
+    auto_send_reports: false
+
+# Security Configuration
+# ----------------------
+security:
+  # API security
+  api:
+    enable_authentication: false
+    enable_encryption: false
+    allowed_origins: ["localhost", "127.0.0.1"]
+    rate_limiting: true
+    max_requests_per_hour: 1000
+    max_requests_per_minute: 100
+  
+  # Code security
+  code:
+    scan_for_vulnerabilities: true
+    check_dependencies: true
+    enforce_secure_practices: true
+    sanitize_inputs: true
+  
+  # Data protection
+  data:
+    encrypt_sensitive_data: false
+    enable_audit_logging: true
+    data_retention_days: 90
+    anonymize_logs: false
+
+# Development & Testing
+# ---------------------
+development:
+  # Debug settings
+  debug:
+    enable_debug_mode: false
+    verbose_logging: false
+    save_debug_files: false
+    debug_directory: "./debug"
+  
+  # Testing
+  testing:
+    enable_auto_testing: true
+    test_coverage_threshold: 80  # percentage
+    test_timeout: 300  # seconds
+    parallel_testing: true
+    
+  # Development tools
+  tools:
+    enable_hot_reload: true
+    auto_save: true
+    code_formatting: true
+    linting: true
+
+# File System Settings
+# -------------------
+filesystem:
+  # Project structure
+  project_structure:
+    main_dart: "lib/main.dart"
+    pubspec_file: "pubspec.yaml"
+    readme_file: "README.md"
+    analysis_options: "analysis_options.yaml"
+    test_config: "test/flutter_test_config.dart"
+  
+  # Templates and defaults
+  templates:
+    dart_file_header: |
+      // Generated by FlutterSwarm
+      // Date: {timestamp}
+      // Agent: {agent_name}
+    
+    pubspec_template:
+      environment:
+        sdk: ">=3.0.0 <4.0.0"
+        flutter: ">=3.0.0"
+      dependencies:
+        flutter:
+          sdk: flutter
+        cupertino_icons: "^1.0.2"
+      dev_dependencies:
+        flutter_test:
+          sdk: flutter
+        flutter_lints: "^3.0.0"
+
+# Deployment Configuration
+# ------------------------
+deployment:
+  # CI/CD settings
+  cicd:
+    default_system: "github_actions"  # github_actions, gitlab_ci, azure_pipelines
+    auto_setup: true
+    enable_testing: true
+    enable_security_scans: true
+    
+    # Version settings
+    flutter_version: "3.16.0"
+    java_version: "11"
+    java_distribution: "zulu"
+    
+    # Action versions
+    checkout_version: "v3"
+    flutter_action_version: "v2"
+    java_setup_version: "v3"
+    codecov_version: "v3"
+    
+  # Build settings
+  build:
+    parallel_builds: true
+    build_timeout: 1800  # seconds (30 minutes)
+    cache_builds: true
+    optimize_builds: true
+    
+    # Build scripts
+    clean_before_build: true
+    run_code_generation: true
+    obfuscate_release: true
+    split_debug_info: "symbols/"
+    
+  # Deployment targets
+  targets:
+    android:
+      store: "google_play"
+      build_type: "release"
+      signing: true
+    
+    ios:
+      store: "app_store"
+      build_type: "release"
+      provisioning: "automatic"
+    
+    web:
+      hosting: "firebase"
+      optimization: true
+      
+    desktop:
+      platforms: ["windows", "macos", "linux"]
+      packaging: "native"
+
+# Monitoring & Analytics
+# ----------------------
+monitoring:
+  # Performance monitoring
+  performance:
+    enable_monitoring: true
+    metrics_collection: true
+    alert_thresholds:
+      cpu_usage: 80  # percentage
+      memory_usage: 85  # percentage
+      response_time: 5000  # milliseconds
+  
+  # Analytics
+  analytics:
+    enable_analytics: false
+    track_usage: false
+    collect_metrics: true
+    retention_period: 30  # days
+  
+  # Health checks
+  health:
+    enable_health_checks: true
+    check_interval: 60  # seconds
+    endpoints: ["agents", "projects", "communication"]
+
+# External Integrations
+# ---------------------
+integrations:
+  # Version control
+  git:
+    auto_init: true
+    default_branch: "main"
+    commit_message_template: "FlutterSwarm: {action} - {description}"
+    
+  # Cloud services
+  cloud:
+    aws:
+      enabled: false
+      region: "us-east-1"
+    
+    gcp:
+      enabled: false
+      project_id: ""
+    
+    azure:
+      enabled: false
+      subscription_id: ""
+  
+  # Third-party APIs
+  apis:
+    github:
+      enabled: false
+      token_env: "GITHUB_TOKEN"
+    
+    discord:
+      enabled: false
+      webhook_env: "DISCORD_WEBHOOK"
+
+# Content and Messages
+# -------------------
+content:
+  # Default file contents
+  file_templates:
+    readme_title: "Flutter Application"
+    readme_description: "A Flutter application generated by FlutterSwarm."
+    license: "MIT"
+    default_app_title: "Flutter Demo"
+    
+  # CLI Messages
+  messages:
+    welcome: "🎵 Welcome to FlutterSwarm!"
+    no_projects: "📭 No projects found"
+    build_complete: "🎉 Build completed successfully!"
+    error_prefix: "❌ Error:"
+    warning_prefix: "⚠️  Warning:"
+    info_prefix: "ℹ️  Info:"
+    success_prefix: "✅ Success:"
+    
+  # Status messages
+  status_messages:
+    agents_initializing: "🤖 Initializing agents..."
+    project_creating: "📁 Creating project..."
+    building: "🔨 Building application..."
+    testing: "🧪 Running tests..."
+    analyzing: "🔍 Analyzing code..."
+    deploying: "🚀 Deploying application..."
+
+# Environment-specific Overrides
+# ------------------------------
+environments:
+  development:
+    system:
+      logging:
+        level: "DEBUG"
+        console: true
+    agents:
+      llm:
+        primary:
+          temperature: 0.8
+    development:
+      debug:
+        enable_debug_mode: true
+        verbose_logging: true
+  
+  production:
+    system:
+      logging:
+        level: "WARNING"
+        console: false
+    quality_assurance:
+      validation:
+        enforce_coding_standards: true
+    security:
+      api:
+        enable_authentication: true
+        enable_encryption: true
+    monitoring:
+      performance:
+        enable_monitoring: true
+  
+  testing:
+    system:
+      performance:
+        task_timeout: 60
+    development:
+      testing:
+        test_timeout: 120
+        parallel_testing: false
