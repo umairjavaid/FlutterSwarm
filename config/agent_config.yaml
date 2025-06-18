@@ -1,0 +1,112 @@
+agents:
+  orchestrator:
+    name: "Orchestrator Agent"
+    role: "Master coordinator managing all agents and workflow"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.7
+    max_tokens: 4000
+    capabilities:
+      - project_planning
+      - agent_coordination
+      - workflow_management
+      - decision_making
+    
+  architecture:
+    name: "Architecture Agent"
+    role: "System design and architectural decisions"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.5
+    max_tokens: 4000
+    capabilities:
+      - system_design
+      - architecture_patterns
+      - technology_selection
+      - scalability_planning
+    
+  implementation:
+    name: "Implementation Agent"
+    role: "Flutter/Dart code generation"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.3
+    max_tokens: 6000
+    capabilities:
+      - dart_coding
+      - flutter_widgets
+      - state_management
+      - api_integration
+    
+  testing:
+    name: "Testing Agent"
+    role: "Unit, widget, and integration tests"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.4
+    max_tokens: 4000
+    capabilities:
+      - unit_testing
+      - widget_testing
+      - integration_testing
+      - test_automation
+    
+  security:
+    name: "Security Agent"
+    role: "Security analysis and best practices"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.2
+    max_tokens: 4000
+    capabilities:
+      - vulnerability_analysis
+      - secure_coding
+      - authentication_design
+      - data_protection
+    
+  devops:
+    name: "DevOps Agent"
+    role: "Deployment and CI/CD pipelines"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.4
+    max_tokens: 4000
+    capabilities:
+      - ci_cd_setup
+      - deployment_automation
+      - infrastructure_management
+      - monitoring_setup
+    
+  documentation:
+    name: "Documentation Agent"
+    role: "Comprehensive documentation generation"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.6
+    max_tokens: 4000
+    capabilities:
+      - technical_writing
+      - api_documentation
+      - user_guides
+      - code_comments
+    
+  performance:
+    name: "Performance Agent"
+    role: "Code optimization and performance monitoring"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.3
+    max_tokens: 4000
+    capabilities:
+      - performance_analysis
+      - code_optimization
+      - memory_management
+      - load_testing
+
+workflow:
+  phases:
+    - planning
+    - architecture
+    - implementation
+    - testing
+    - security_review
+    - performance_optimization
+    - documentation
+    - deployment
+  
+  communication:
+    update_frequency: 5  # seconds
+    shared_state_sync: true
+    agent_notifications: true
