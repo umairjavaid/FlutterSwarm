@@ -64,64 +64,190 @@ class ImplementationAgent(BaseAgent):
             await self._handle_qa_issue(change_data)
     
     async def _implement_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement a specific feature."""
-        project_id = task_data["project_id"]
-        feature_name = task_data["feature_name"]
-        requirements = task_data.get("requirements", [])
-        architecture_context = task_data.get("architecture_context", "")
+        """Implement a specific feature using tools."""
+        feature_name = task_data.get("feature_name", "unknown")
+        feature_spec = task_data.get("feature_spec", {})
+        project_id = task_data.get("project_id")
         
-        project = shared_state.get_project_state(project_id)
+        self.logger.info(f"🔨 Implementing feature: {feature_name}")
         
-        implementation_prompt = f"""
-        Implement the {feature_name} feature for this Flutter application:
+        # Create project directory structure first
+        await self._create_feature_structure(feature_name)
         
-        Project: {project.name}
-        Feature: {feature_name}
-        Requirements: {requirements}
-        Architecture Context: {architecture_context}
+        # Generate feature files using tools
+        generated_files = []
         
-        Generate complete, production-ready Flutter/Dart code including:
+        # Generate models if needed
+        if feature_spec.get("models"):
+            model_files = await self._generate_feature_models(feature_name, feature_spec["models"])
+            generated_files.extend(model_files)
         
-        1. **Models/Entities**: Data classes with proper serialization
-        2. **Repository/Data Layer**: Data access implementation
-        3. **Business Logic**: State management implementation
-        4. **UI Layer**: Widgets and screens
-        5. **Navigation**: Route definitions and navigation logic
-        6. **Dependency Injection**: Service registration
-        7. **Error Handling**: Proper error handling throughout
+        # Generate screens/UI
+        if feature_spec.get("screens"):
+            screen_files = await self._generate_feature_screens(feature_name, feature_spec["screens"])
+            generated_files.extend(screen_files)
         
-        Follow these Flutter best practices:
-        - Use const constructors where possible
-        - Implement proper null safety
-        - Follow Flutter naming conventions
-        - Use appropriate widgets for the use case
-        - Implement responsive design principles
-        - Add proper documentation comments
+        # Generate business logic
+        if feature_spec.get("business_logic"):
+            logic_files = await self._generate_business_logic(feature_name, feature_spec["business_logic"])
+            generated_files.extend(logic_files)
         
-        For each file, provide:
-        - File path (relative to lib/)
-        - Complete code content
-        - Brief description of the file's purpose
+        # Update pubspec.yaml if dependencies are needed
+        if feature_spec.get("dependencies"):
+            await self._add_dependencies(feature_spec["dependencies"])
         
-        Make the code maintainable, testable, and following SOLID principles.
-        """
+        # Format the generated code
+        await self.run_command("dart format .")
         
-        implementation = await self.think(implementation_prompt, {
-            "project": project,
-            "feature": feature_name,
-            "architecture_decisions": project.architecture_decisions
-        })
-        
-        # Parse and create files
-        files_created = await self._parse_and_create_files(project_id, implementation)
+        # Analyze the code for issues
+        analysis_result = await self.execute_tool("analysis", operation="dart_analyze")
         
         return {
-            "feature": feature_name,
-            "files_created": files_created,
-            "implementation": implementation,
-            "status": "implemented"
+            "feature_name": feature_name,
+            "generated_files": generated_files,
+            "status": "completed",
+            "analysis_result": analysis_result.data if analysis_result.data else {},
+            "issues_found": analysis_result.data.get("total_issues", 0) if analysis_result.data else 0
         }
     
+    async def _create_feature_structure(self, feature_name: str) -> None:
+        """Create directory structure for a feature using file tools."""
+        feature_path = f"lib/features/{feature_name}"
+        
+        directories = [
+            f"{feature_path}/data/models",
+            f"{feature_path}/data/repositories",
+            f"{feature_path}/data/datasources",
+            f"{feature_path}/domain/entities",
+            f"{feature_path}/domain/repositories",
+            f"{feature_path}/domain/usecases",
+            f"{feature_path}/presentation/pages",
+            f"{feature_path}/presentation/widgets",
+            f"{feature_path}/presentation/bloc"
+        ]
+        
+        for directory in directories:
+            await self.execute_tool("file", operation="create_directory", directory=directory)
+    
+    async def _generate_feature_models(self, feature_name: str, models: List[Dict]) -> List[str]:
+        """Generate model files for a feature."""
+        generated_files = []
+        
+        for model in models:
+            model_name = model.get("name", "unknown")
+            model_fields = model.get("fields", [])
+            
+            # Generate model code
+            model_prompt = f"""
+            Generate a Dart model class for {model_name} with the following fields:
+            {model_fields}
+            
+            Include:
+            - Proper null safety
+            - toJson() and fromJson() methods
+            - copyWith() method
+            - toString() method
+            - Equality operators
+            
+            Follow Flutter/Dart best practices.
+            """
+            
+            model_code = await self.think(model_prompt, {"model": model})
+            
+            # Write the model file
+            file_path = f"lib/features/{feature_name}/data/models/{model_name.lower()}_model.dart"
+            write_result = await self.write_file(file_path, model_code)
+            
+            if write_result.status.value == "success":
+                generated_files.append(file_path)
+                self.logger.info(f"✅ Generated model: {file_path}")
+            else:
+                self.logger.error(f"❌ Failed to generate model: {file_path}")
+        
+        return generated_files
+    
+    async def _generate_feature_screens(self, feature_name: str, screens: List[Dict]) -> List[str]:
+        """Generate screen files for a feature."""
+        generated_files = []
+        
+        for screen in screens:
+            screen_name = screen.get("name", "unknown")
+            screen_type = screen.get("type", "stateless")
+            
+            # Generate screen code using tools
+            screen_prompt = f"""
+            Generate a Flutter {screen_type} widget for {screen_name} screen.
+            
+            Include:
+            - Proper widget structure
+            - Material Design components
+            - Responsive design considerations
+            - Proper state management integration
+            - Navigation setup
+            - Error handling
+            
+            Follow Flutter best practices and use modern Flutter patterns.
+            """
+            
+            screen_code = await self.think(screen_prompt, {"screen": screen})
+            
+            # Write the screen file
+            file_path = f"lib/features/{feature_name}/presentation/pages/{screen_name.lower()}_screen.dart"
+            write_result = await self.write_file(file_path, screen_code)
+            
+            if write_result.status.value == "success":
+                generated_files.append(file_path)
+                self.logger.info(f"✅ Generated screen: {file_path}")
+            else:
+                self.logger.error(f"❌ Failed to generate screen: {file_path}")
+        
+        return generated_files
+    
+    async def _generate_business_logic(self, feature_name: str, logic_spec: Dict) -> List[str]:
+        """Generate business logic files (BLoC, repositories, etc.)."""
+        generated_files = []
+        
+        # Generate repository interface
+        if logic_spec.get("repository"):
+            repo_code = await self._generate_repository_code(feature_name, logic_spec["repository"])
+            repo_file = f"lib/features/{feature_name}/domain/repositories/{feature_name}_repository.dart"
+            
+            write_result = await self.write_file(repo_file, repo_code)
+            if write_result.status.value == "success":
+                generated_files.append(repo_file)
+        
+        # Generate use cases
+        if logic_spec.get("use_cases"):
+            for use_case in logic_spec["use_cases"]:
+                use_case_code = await self._generate_use_case_code(feature_name, use_case)
+                use_case_file = f"lib/features/{feature_name}/domain/usecases/{use_case['name'].lower()}_usecase.dart"
+                
+                write_result = await self.write_file(use_case_file, use_case_code)
+                if write_result.status.value == "success":
+                    generated_files.append(use_case_file)
+        
+        # Generate BLoC/Cubit
+        if logic_spec.get("state_management") == "bloc":
+            bloc_files = await self._generate_bloc_files(feature_name, logic_spec)
+            generated_files.extend(bloc_files)
+        
+        return generated_files
+    
+    async def _add_dependencies(self, dependencies: List[str]) -> None:
+        """Add dependencies to pubspec.yaml using Flutter tool."""
+        self.logger.info(f"📦 Adding dependencies: {dependencies}")
+        
+        # Use Flutter tool to add packages
+        add_result = await self.execute_tool("flutter", operation="pub_add", packages=dependencies)
+        
+        if add_result.status.value == "success":
+            self.logger.info("✅ Dependencies added successfully")
+            
+            # Run pub get to install dependencies
+            await self.execute_tool("flutter", operation="pub_get")
+        else:
+            self.logger.error(f"❌ Failed to add dependencies: {add_result.error}")
+
     async def _generate_models(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate data models and DTOs."""
         project_id = task_data["project_id"]

@@ -12,6 +12,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from shared.state import shared_state, AgentStatus, MessageType, AgentMessage
 from config.config_manager import get_config
+from tools import ToolManager, AgentToolbox, ToolResult
 import os
 from dotenv import load_dotenv
 import logging
@@ -35,6 +36,10 @@ class BaseAgent(ABC):
         # Initialize LLM with configuration
         self.llm = self._initialize_llm()
         
+        # Initialize tools
+        self.tool_manager = ToolManager()
+        self.tools = self.tool_manager.create_agent_toolbox(agent_id)
+        
         # Register with shared state
         shared_state.register_agent(
             agent_id=self.agent_id,
@@ -44,7 +49,7 @@ class BaseAgent(ABC):
         self.is_running = False
         self.current_task = None
         
-        self.logger.info(f"🤖 {self.agent_config.get('name', agent_id)} initialized")
+        self.logger.info(f"🤖 {self.agent_config.get('name', agent_id)} initialized with {len(self.tools.list_available_tools())} tools")
     
     def _setup_logging(self) -> None:
         """Setup agent-specific logging."""
@@ -280,6 +285,48 @@ class BaseAgent(ABC):
         response = await self.llm.ainvoke(messages)
         return response.content
     
+    async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
+        """
+        Execute a tool with the given parameters.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            **kwargs: Tool-specific parameters
+            
+        Returns:
+            ToolResult with execution outcome
+        """
+        self.logger.debug(f"🔧 Executing tool: {tool_name}")
+        result = await self.tools.execute(tool_name, **kwargs)
+        
+        if result.status.value != "success":
+            self.logger.warning(f"⚠️ Tool '{tool_name}' failed: {result.error}")
+        else:
+            self.logger.debug(f"✅ Tool '{tool_name}' completed successfully")
+            
+        return result
+    
+    async def run_command(self, command: str, **kwargs) -> ToolResult:
+        """
+        Execute a shell command using the terminal tool.
+        
+        Args:
+            command: Command to execute
+            **kwargs: Additional parameters
+            
+        Returns:
+            ToolResult with command output
+        """
+        return await self.execute_tool("terminal", command=command, **kwargs)
+    
+    async def read_file(self, file_path: str, **kwargs) -> ToolResult:
+        """Read a file using the file tool."""
+        return await self.execute_tool("file", operation="read", file_path=file_path, **kwargs)
+    
+    async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
+        """Write a file using the file tool."""
+        return await self.execute_tool("file", operation="write", file_path=file_path, content=content, **kwargs)
+
     # Abstract methods that must be implemented by subclasses
     
     @abstractmethod

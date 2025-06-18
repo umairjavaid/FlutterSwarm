@@ -89,80 +89,290 @@ class QualityAssuranceAgent(BaseAgent):
             await self._analyze_build_failure(change_data)
     
     async def _validate_entire_project(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform comprehensive project validation."""
+        """Perform comprehensive project validation using tools."""
         project_id = task_data["project_id"]
         project = shared_state.get_project_state(project_id)
         
-        validation_prompt = f"""
-        Perform comprehensive quality assurance validation for this Flutter project:
+        self.logger.info(f"🔍 Validating project: {project.name}")
         
-        Project: {project.name}
-        Files: {len(project.files_created) if hasattr(project, 'files_created') else 0}
-        Current Phase: {project.current_phase}
+        validation_results = {}
+        issues = []
         
-        Validate the following aspects:
+        # 1. Code Quality Analysis
+        self.logger.info("📋 Running code quality analysis...")
+        code_analysis = await self.execute_tool("analysis", operation="dart_analyze")
+        validation_results["code_analysis"] = code_analysis.data if code_analysis.data else {}
         
-        1. **Code Quality**:
-           - Dart syntax correctness
-           - Flutter best practices adherence
-           - Null safety implementation
-           - Widget hierarchy correctness
-           - State management consistency
+        if code_analysis.data:
+            issues.extend(code_analysis.data.get("issues", []))
         
-        2. **Architecture Consistency**:
-           - Proper separation of concerns
-           - Consistent naming conventions
-           - Appropriate design patterns usage
-           - Dependency injection setup
+        # 2. Security Scan
+        self.logger.info("🔒 Running security scan...")
+        security_scan = await self.execute_tool("analysis", operation="security_scan", scan_type="comprehensive")
+        validation_results["security_scan"] = security_scan.data if security_scan.data else {}
         
-        3. **Project Structure**:
-           - Proper folder organization
-           - File naming conventions
-           - Import statements consistency
-           - Asset organization
+        if security_scan.data:
+            issues.extend(security_scan.data.get("issues", []))
         
-        4. **Dependencies**:
-           - pubspec.yaml correctness
-           - Version compatibility
-           - Missing dependencies
-           - Unused dependencies
+        # 3. Code Metrics Analysis
+        self.logger.info("📊 Calculating code metrics...")
+        metrics_analysis = await self.execute_tool("analysis", operation="code_metrics")
+        validation_results["code_metrics"] = metrics_analysis.data if metrics_analysis.data else {}
         
-        5. **Integration**:
-           - Cross-file compatibility
-           - API integration correctness
-           - Navigation flow consistency
-           - State synchronization
+        # 4. Dependency Check
+        self.logger.info("📦 Checking dependencies...")
+        dependency_check = await self.execute_tool("analysis", operation="dependency_check")
+        validation_results["dependency_check"] = dependency_check.data if dependency_check.data else {}
         
-        For each validation category, provide:
-        - ✅ Passed checks
-        - ❌ Failed checks with specific issues
-        - 🔧 Recommended fixes
-        - 📋 Affected files
+        if dependency_check.data:
+            issues.extend(dependency_check.data.get("issues", []))
         
-        Be thorough and specific about any issues found.
-        """
+        # 5. Test Coverage Analysis
+        self.logger.info("🧪 Analyzing test coverage...")
+        coverage_analysis = await self.execute_tool("analysis", operation="test_coverage")
+        validation_results["test_coverage"] = coverage_analysis.data if coverage_analysis.data else {}
         
-        validation_result = await self.think(validation_prompt, {
-            "project": project,
-            "quality_rules": self.code_quality_rules
-        })
+        # 6. Performance Analysis
+        self.logger.info("⚡ Running performance analysis...")
+        performance_analysis = await self.execute_tool("analysis", operation="performance_analysis")
+        validation_results["performance_analysis"] = performance_analysis.data if performance_analysis.data else {}
         
-        # Parse validation results and create issue reports
-        issues = await self._parse_validation_issues(validation_result)
+        if performance_analysis.data:
+            issues.extend(performance_analysis.data.get("performance_issues", []))
+        
+        # 7. Dead Code Analysis
+        self.logger.info("🗑️ Analyzing dead code...")
+        dead_code_analysis = await self.execute_tool("analysis", operation="dead_code")
+        validation_results["dead_code_analysis"] = dead_code_analysis.data if dead_code_analysis.data else {}
+        
+        if dead_code_analysis.data:
+            issues.extend(dead_code_analysis.data.get("dead_code_issues", []))
+        
+        # 8. Project Structure Validation
+        self.logger.info("🏗️ Validating project structure...")
+        structure_validation = await self._validate_project_structure()
+        validation_results["structure_validation"] = structure_validation
+        issues.extend(structure_validation.get("issues", []))
+        
+        # 9. Flutter Doctor Check
+        self.logger.info("👨‍⚕️ Running Flutter doctor...")
+        doctor_result = await self.execute_tool("flutter", operation="doctor", verbose=True)
+        validation_results["flutter_doctor"] = doctor_result.data if doctor_result.data else {}
+        
+        if doctor_result.data and doctor_result.data.get("environment_issues"):
+            issues.extend(doctor_result.data["environment_issues"])
+        
+        # Generate recommendations based on all findings
+        recommendations = await self._generate_fix_recommendations(issues)
+        
+        # Categorize issues by severity
+        critical_issues = [i for i in issues if i.get("severity") in ["critical", "Critical"]]
+        high_issues = [i for i in issues if i.get("severity") in ["high", "High"]]
+        medium_issues = [i for i in issues if i.get("severity") in ["medium", "Medium"]]
+        low_issues = [i for i in issues if i.get("severity") in ["low", "Low", "info", "Info"]]
         
         # Store issues for tracking
         for issue in issues:
-            self.monitored_issues.add(issue["id"])
-            shared_state.report_issue(project_id, issue)
+            issue_id = f"{issue.get('type', 'unknown')}_{hash(str(issue))}"
+            self.monitored_issues.add(issue_id)
+            if hasattr(project, 'issues'):
+                shared_state.report_issue(project_id, {**issue, "id": issue_id})
         
         return {
             "validation_status": "completed",
+            "validation_results": validation_results,
             "issues_found": len(issues),
-            "critical_issues": len([i for i in issues if i["severity"] == "critical"]),
+            "critical_issues": len(critical_issues),
+            "high_issues": len(high_issues),
+            "medium_issues": len(medium_issues),
+            "low_issues": len(low_issues),
             "issues": issues,
-            "recommendations": await self._generate_fix_recommendations(issues)
+            "recommendations": recommendations
         }
     
+    async def _validate_project_structure(self) -> Dict[str, Any]:
+        """Validate Flutter project structure using file tools."""
+        structure_issues = []
+        
+        # Check for required Flutter files
+        required_files = [
+            "pubspec.yaml",
+            "lib/main.dart",
+            "android/app/build.gradle",
+            "ios/Runner/Info.plist"
+        ]
+        
+        for required_file in required_files:
+            exists_result = await self.execute_tool("file", operation="exists", path=required_file)
+            if exists_result.data and not exists_result.data.get("exists", False):
+                structure_issues.append({
+                    "type": "missing_required_file",
+                    "severity": "high",
+                    "message": f"Missing required file: {required_file}",
+                    "file": required_file
+                })
+        
+        # Check for recommended directories
+        recommended_dirs = [
+            "lib/core",
+            "lib/features",
+            "lib/shared",
+            "test/unit",
+            "test/widget"
+        ]
+        
+        for recommended_dir in recommended_dirs:
+            exists_result = await self.execute_tool("file", operation="exists", path=recommended_dir)
+            if exists_result.data and not exists_result.data.get("exists", False):
+                structure_issues.append({
+                    "type": "missing_recommended_directory",
+                    "severity": "medium",
+                    "message": f"Missing recommended directory: {recommended_dir}",
+                    "directory": recommended_dir
+                })
+        
+        # Check lib directory structure
+        lib_structure = await self._analyze_lib_structure()
+        structure_issues.extend(lib_structure.get("issues", []))
+        
+        return {
+            "issues": structure_issues,
+            "required_files_check": "completed",
+            "directory_structure_check": "completed"
+        }
+    
+    async def _analyze_lib_structure(self) -> Dict[str, Any]:
+        """Analyze lib directory structure."""
+        issues = []
+        
+        # List all Dart files in lib
+        dart_files_result = await self.execute_tool("file", operation="search", pattern="*.dart", directory="lib")
+        
+        if dart_files_result.status.value == "success" and dart_files_result.data:
+            dart_files = dart_files_result.data.get("matches", [])
+            
+            # Check for files in root lib directory (should be minimal)
+            root_files = [f for f in dart_files if "/" not in f.replace("lib/", "")]
+            
+            if len(root_files) > 3:  # main.dart and maybe a couple others
+                issues.append({
+                    "type": "too_many_root_files",
+                    "severity": "medium",
+                    "message": f"Too many files in lib root directory: {len(root_files)}. Consider organizing into subdirectories.",
+                    "file_count": len(root_files)
+                })
+            
+            # Check for proper feature organization
+            feature_dirs = []
+            for file in dart_files:
+                if "features/" in file:
+                    feature_name = file.split("features/")[1].split("/")[0]
+                    if feature_name not in feature_dirs:
+                        feature_dirs.append(feature_name)
+            
+            # Analyze each feature for proper structure
+            for feature in feature_dirs:
+                feature_analysis = await self._analyze_feature_structure(feature)
+                issues.extend(feature_analysis.get("issues", []))
+        
+        return {"issues": issues}
+    
+    async def _analyze_feature_structure(self, feature_name: str) -> Dict[str, Any]:
+        """Analyze individual feature structure."""
+        issues = []
+        
+        # Check for clean architecture layers
+        expected_layers = ["data", "domain", "presentation"]
+        
+        for layer in expected_layers:
+            layer_path = f"lib/features/{feature_name}/{layer}"
+            exists_result = await self.execute_tool("file", operation="exists", path=layer_path)
+            
+            if exists_result.data and not exists_result.data.get("exists", False):
+                issues.append({
+                    "type": "missing_architecture_layer",
+                    "severity": "medium",
+                    "message": f"Feature '{feature_name}' missing {layer} layer",
+                    "feature": feature_name,
+                    "layer": layer
+                })
+        
+        return {"issues": issues}
+    
+    async def _generate_fix_recommendations(self, issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Generate fix recommendations for identified issues."""
+        recommendations = []
+        
+        # Group issues by type
+        issue_groups = {}
+        for issue in issues:
+            issue_type = issue.get("type", "unknown")
+            if issue_type not in issue_groups:
+                issue_groups[issue_type] = []
+            issue_groups[issue_type].append(issue)
+        
+        # Generate recommendations for each issue type
+        for issue_type, type_issues in issue_groups.items():
+            recommendation = await self._generate_type_specific_recommendation(issue_type, type_issues)
+            if recommendation:
+                recommendations.append(recommendation)
+        
+        return recommendations
+    
+    async def _generate_type_specific_recommendation(self, issue_type: str, issues: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Generate recommendations for specific issue types."""
+        recommendation_map = {
+            "missing_required_file": {
+                "action": "create_missing_files",
+                "description": "Create missing required files",
+                "priority": "high",
+                "automated": True
+            },
+            "missing_recommended_directory": {
+                "action": "create_directories",
+                "description": "Create recommended directory structure",
+                "priority": "medium",
+                "automated": True
+            },
+            "hardcoded_secret": {
+                "action": "move_to_secure_storage",
+                "description": "Move hardcoded secrets to secure configuration",
+                "priority": "critical",
+                "automated": False
+            },
+            "insecure_network": {
+                "action": "implement_https",
+                "description": "Replace HTTP calls with HTTPS and implement certificate pinning",
+                "priority": "high",
+                "automated": False
+            },
+            "performance_issue": {
+                "action": "optimize_performance",
+                "description": "Optimize identified performance bottlenecks",
+                "priority": "medium",
+                "automated": False
+            },
+            "unused_symbol": {
+                "action": "remove_dead_code",
+                "description": "Remove unused code to improve maintainability",
+                "priority": "low",
+                "automated": True
+            }
+        }
+        
+        if issue_type in recommendation_map:
+            base_recommendation = recommendation_map[issue_type]
+            
+            return {
+                **base_recommendation,
+                "issue_type": issue_type,
+                "issue_count": len(issues),
+                "affected_files": list(set(issue.get("file", "") for issue in issues if issue.get("file"))),
+                "details": issues
+            }
+        
+        return None
+
     async def _analyze_new_file(self, change_data: Dict[str, Any]) -> None:
         """Analyze newly created files for immediate issues."""
         file_path = change_data.get("file_path", "")

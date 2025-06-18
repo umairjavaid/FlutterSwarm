@@ -59,274 +59,257 @@ class SecurityAgent(BaseAgent):
             await self._analyze_architecture_security(change_data["project_id"])
     
     async def _perform_security_audit(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform comprehensive security audit."""
+        """Perform comprehensive security audit using tools."""
         project_id = task_data["project_id"]
         audit_scope = task_data.get("scope", "full")
         
         project = shared_state.get_project_state(project_id)
         
-        audit_prompt = f"""
-        Perform a comprehensive security audit for this Flutter application:
+        self.logger.info(f"🔒 Performing security audit (scope: {audit_scope})")
         
-        Project: {project.name}
-        Description: {project.description}
-        Audit Scope: {audit_scope}
-        Files: {list(project.files_created.keys()) if project.files_created else []}
+        # Use analysis tool for security scanning
+        security_scan_result = await self.execute_tool("analysis", operation="security_scan", scan_type=audit_scope)
         
-        Analyze the following security aspects:
+        # Additional manual checks using file tools
+        additional_findings = []
         
-        1. **Authentication & Authorization**:
-           - Authentication mechanisms
-           - Session management
-           - Role-based access control
-           - Multi-factor authentication
+        # Check Android manifest for security issues
+        android_manifest_result = await self.read_file("android/app/src/main/AndroidManifest.xml")
+        if android_manifest_result.status.value == "success":
+            manifest_findings = await self._analyze_android_manifest(android_manifest_result.output)
+            additional_findings.extend(manifest_findings)
         
-        2. **Data Protection**:
-           - Sensitive data handling
-           - Data encryption at rest
-           - Data encryption in transit
-           - PII protection
+        # Check iOS Info.plist for security issues
+        ios_plist_result = await self.read_file("ios/Runner/Info.plist")
+        if ios_plist_result.status.value == "success":
+            plist_findings = await self._analyze_ios_plist(ios_plist_result.output)
+            additional_findings.extend(plist_findings)
         
-        3. **Network Security**:
-           - HTTPS implementation
-           - Certificate pinning
-           - API security
-           - Request/response validation
+        # Check network security configuration
+        network_config_findings = await self._check_network_security_config()
+        additional_findings.extend(network_config_findings)
         
-        4. **Local Storage Security**:
-           - Secure storage usage
-           - Key management
-           - Database encryption
-           - Cache security
+        # Combine all findings
+        all_findings = []
+        if security_scan_result.data:
+            all_findings.extend(security_scan_result.data.get("issues", []))
+        all_findings.extend(additional_findings)
         
-        5. **Code Security**:
-           - Input validation
-           - Output encoding
-           - SQL injection prevention
-           - Cross-site scripting prevention
+        # Generate security report
+        security_report = await self._generate_security_report(all_findings)
         
-        6. **Platform Security**:
-           - iOS keychain usage
-           - Android keystore usage
-           - Biometric authentication
-           - App sandboxing
-        
-        7. **Third-party Dependencies**:
-           - Package vulnerability analysis
-           - Dependency security
-           - Supply chain security
-        
-        For each finding, provide:
-        - Severity level (Critical, High, Medium, Low)
-        - Description of the issue
-        - Potential impact
-        - Recommended remediation
-        - Code examples for fixes
-        
-        Generate a detailed security report with actionable recommendations.
-        """
-        
-        audit_report = await self.think(audit_prompt, {
-            "project": project,
-            "security_domains": self.security_domains,
-            "vulnerability_types": self.vulnerability_types
-        })
-        
-        # Store security findings
-        findings = self._parse_security_findings(audit_report)
-        project.security_findings.extend(findings)
-        shared_state.update_project(project_id, security_findings=project.security_findings)
+        # Store findings in project state
+        if hasattr(project, 'security_findings'):
+            project.security_findings.extend(all_findings)
+            shared_state.update_project(project_id, security_findings=project.security_findings)
         
         return {
-            "audit_report": audit_report,
-            "findings_count": len(findings),
-            "critical_issues": len([f for f in findings if f.get("severity") == "Critical"]),
+            "audit_report": security_report,
+            "findings_count": len(all_findings),
+            "critical_issues": len([f for f in all_findings if f.get("severity") == "Critical"]),
+            "high_issues": len([f for f in all_findings if f.get("severity") == "High"]),
+            "medium_issues": len([f for f in all_findings if f.get("severity") == "Medium"]),
+            "low_issues": len([f for f in all_findings if f.get("severity") == "Low"]),
             "status": "completed"
         }
     
     async def _implement_authentication(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement secure authentication system."""
+        """Implement secure authentication system using tools."""
         project_id = task_data["project_id"]
         auth_methods = task_data.get("methods", ["email_password"])
         
-        auth_prompt = f"""
-        Implement a secure authentication system for Flutter with these methods:
-        {auth_methods}
+        self.logger.info(f"🔐 Implementing authentication: {auth_methods}")
         
-        Create a complete authentication implementation including:
+        # Create authentication directory structure
+        auth_dirs = [
+            "lib/features/auth/data/models",
+            "lib/features/auth/data/repositories",
+            "lib/features/auth/data/datasources",
+            "lib/features/auth/domain/entities",
+            "lib/features/auth/domain/repositories",
+            "lib/features/auth/domain/usecases",
+            "lib/features/auth/presentation/pages",
+            "lib/features/auth/presentation/widgets",
+            "lib/features/auth/presentation/bloc"
+        ]
         
-        1. **Authentication Service**: Create an abstract authentication service with methods for sign in, sign up, sign out, password reset, and getting current user.
+        for directory in auth_dirs:
+            await self.execute_tool("file", operation="create_directory", directory=directory)
         
-        2. **Secure Token Management**:
-           - JWT token handling
-           - Refresh token implementation
-           - Secure token storage
-           - Token expiration handling
+        # Add security dependencies
+        security_dependencies = [
+            "crypto",
+            "flutter_secure_storage",
+            "local_auth",
+            "firebase_auth",
+            "jwt_decoder"
+        ]
         
-        3. **Biometric Authentication** (if supported): Implement biometric authentication service with availability check and authentication methods.
+        await self.execute_tool("flutter", operation="pub_add", packages=security_dependencies)
         
-        4. **Multi-Factor Authentication**:
-           - SMS verification
-           - TOTP implementation
-           - Backup codes
+        # Generate authentication files
+        generated_files = []
         
-        5. **Security Features**:
-           - Password strength validation
-           - Account lockout protection
-           - Suspicious activity detection
-           - Session management
+        # Generate authentication models
+        auth_model_files = await self._generate_auth_models(auth_methods)
+        generated_files.extend(auth_model_files)
         
-        6. **Error Handling**:
-           - Secure error messages
-           - Rate limiting
-           - Audit logging
+        # Generate authentication service
+        auth_service_file = await self._generate_auth_service(auth_methods)
+        generated_files.append(auth_service_file)
         
-        Use these security best practices:
-        - Never store passwords in plain text
-        - Use secure random number generation
-        - Implement proper input validation
-        - Use HTTPS for all auth communications
-        - Implement proper session timeout
-        - Use secure storage for sensitive data
+        # Generate authentication repository
+        auth_repo_file = await self._generate_auth_repository(auth_methods)
+        generated_files.append(auth_repo_file)
         
-        Provide complete, production-ready authentication code.
-        """
+        # Generate authentication screens
+        auth_screen_files = await self._generate_auth_screens(auth_methods)
+        generated_files.extend(auth_screen_files)
         
-        auth_implementation = await self.think(auth_prompt, {
-            "methods": auth_methods,
-            "project": shared_state.get_project_state(project_id)
-        })
+        # Generate security utilities
+        security_utils_file = await self._generate_security_utils()
+        generated_files.append(security_utils_file)
+        
+        # Format generated code
+        await self.run_command("dart format lib/features/auth/")
+        
+        # Analyze generated code for security issues
+        analysis_result = await self.execute_tool("analysis", operation="security_scan", scan_type="basic")
         
         return {
             "auth_methods": auth_methods,
-            "implementation": auth_implementation,
-            "security_features": ["token_management", "biometric_auth", "mfa"],
+            "generated_files": generated_files,
+            "security_features": ["token_management", "biometric_auth", "secure_storage"],
+            "analysis_result": analysis_result.data if analysis_result.data else {},
             "status": "implemented"
         }
     
     async def _implement_secure_storage(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement secure data storage."""
+        """Implement secure data storage using tools."""
         project_id = task_data["project_id"]
-        data_types = task_data.get("data_types", ["user_data", "tokens"])
+        storage_types = task_data.get("types", ["sensitive_data", "user_preferences"])
         
-        storage_prompt = f"""
-        Implement secure storage for these data types: {data_types}
+        self.logger.info(f"🗄️ Implementing secure storage: {storage_types}")
         
-        Create a comprehensive secure storage system:
+        # Add secure storage dependencies
+        storage_dependencies = [
+            "flutter_secure_storage",
+            "encrypted_shared_preferences",
+            "sqflite_cipher"
+        ]
         
-        1. **Secure Storage Service**: Abstract class for secure data storage with methods for storing/retrieving strings, secure data, and key management.
+        await self.execute_tool("flutter", operation="pub_add", packages=storage_dependencies)
         
-        2. **Encryption Implementation**:
-           - AES-256 encryption
-           - Secure key derivation (PBKDF2)
-           - Initialization vectors
-           - Authentication tags
+        # Create storage directory structure
+        storage_dirs = [
+            "lib/core/storage",
+            "lib/core/storage/secure",
+            "lib/core/storage/local"
+        ]
         
-        3. **Key Management**:
-           - Hardware security module usage
-           - Key rotation strategy
-           - Master key protection
-           - Key escrow considerations
+        for directory in storage_dirs:
+            await self.execute_tool("file", operation="create_directory", directory=directory)
         
-        4. **Platform-Specific Storage**:
-           - iOS: Keychain Services
-           - Android: EncryptedSharedPreferences
-           - Cross-platform: flutter_secure_storage
+        # Generate secure storage implementation
+        generated_files = []
         
-        5. **Database Encryption**: Encrypted database service with methods for opening encrypted databases, encrypting tables, and creating secure backups.
+        # Generate secure storage service
+        storage_service_code = await self._generate_secure_storage_service(storage_types)
+        storage_service_file = "lib/core/storage/secure/secure_storage_service.dart"
         
-        6. **Data Classification**:
-           - Public data (no encryption needed)
-           - Internal data (app-level encryption)
-           - Confidential data (hardware-backed encryption)
-           - Restricted data (additional access controls)
+        write_result = await self.write_file(storage_service_file, storage_service_code)
+        if write_result.status.value == "success":
+            generated_files.append(storage_service_file)
         
-        Security considerations:
-        - Use hardware-backed keystores when available
-        - Implement proper key lifecycle management
-        - Use authenticated encryption (AES-GCM)
-        - Implement secure deletion
-        - Add integrity checking
-        - Monitor for tampering attempts
+        # Generate encryption utilities
+        encryption_utils_code = await self._generate_encryption_utils()
+        encryption_utils_file = "lib/core/storage/secure/encryption_utils.dart"
         
-        Provide complete secure storage implementation.
-        """
+        write_result = await self.write_file(encryption_utils_file, encryption_utils_code)
+        if write_result.status.value == "success":
+            generated_files.append(encryption_utils_file)
         
-        storage_implementation = await self.think(storage_prompt, {
-            "data_types": data_types,
-            "project": shared_state.get_project_state(project_id)
-        })
+        # Generate key management service
+        key_management_code = await self._generate_key_management_service()
+        key_management_file = "lib/core/storage/secure/key_management_service.dart"
+        
+        write_result = await self.write_file(key_management_file, key_management_code)
+        if write_result.status.value == "success":
+            generated_files.append(key_management_file)
+        
+        # Format generated code
+        await self.run_command("dart format lib/core/storage/")
         
         return {
-            "data_types": data_types,
-            "implementation": storage_implementation,
-            "encryption_methods": ["AES-256", "hardware_backed"],
+            "storage_types": storage_types,
+            "generated_files": generated_files,
+            "security_features": ["encryption", "key_management", "secure_preferences"],
             "status": "implemented"
         }
     
     async def _implement_network_security(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement network security measures."""
+        """Implement network security measures using tools."""
         project_id = task_data["project_id"]
-        api_endpoints = task_data.get("endpoints", [])
+        security_features = task_data.get("features", ["certificate_pinning", "request_signing"])
         
-        network_prompt = f"""
-        Implement comprehensive network security for these API endpoints:
-        {api_endpoints}
+        self.logger.info(f"🌐 Implementing network security: {security_features}")
         
-        Create secure networking implementation:
+        # Add network security dependencies
+        network_dependencies = [
+            "dio",
+            "dio_certificate_pinning",
+            "crypto"
+        ]
         
-        1. **HTTP Client Configuration**: Secure HTTP client with interceptors for security headers, response validation, and error handling. Implement certificate pinning and secure client configuration.
+        await self.execute_tool("flutter", operation="pub_add", packages=network_dependencies)
         
-        2. **Certificate Pinning**:
-           - Pin specific certificates
-           - Pin public keys
-           - Backup pin strategy
-           - Pin failure handling
+        # Create network security directory
+        network_dirs = [
+            "lib/core/network",
+            "lib/core/network/security",
+            "lib/core/network/interceptors"
+        ]
         
-        3. **Request Security**:
-           - Request signing
-           - Timestamp validation
-           - Nonce implementation
-           - Rate limiting
+        for directory in network_dirs:
+            await self.execute_tool("file", operation="create_directory", directory=directory)
         
-        4. **API Security Headers**: Implement security headers including content type, authorization, request IDs, and custom security headers with proper token management and timestamp validation.
+        generated_files = []
         
-        5. **Response Validation**:
-           - Response signature verification
-           - Content type validation
-           - Size limits
-           - Malformed response handling
+        # Generate HTTP client with security
+        if "certificate_pinning" in security_features:
+            pinning_code = await self._generate_certificate_pinning_client()
+            pinning_file = "lib/core/network/security/secure_http_client.dart"
+            
+            write_result = await self.write_file(pinning_file, pinning_code)
+            if write_result.status.value == "success":
+                generated_files.append(pinning_file)
         
-        6. **Error Handling**:
-           - Secure error messages
-           - Network timeout handling
-           - Retry logic with backoff
-           - Circuit breaker pattern
+        # Generate request signing interceptor
+        if "request_signing" in security_features:
+            signing_code = await self._generate_request_signing_interceptor()
+            signing_file = "lib/core/network/interceptors/signing_interceptor.dart"
+            
+            write_result = await self.write_file(signing_file, signing_code)
+            if write_result.status.value == "success":
+                generated_files.append(signing_file)
         
-        Security features to implement:
-        - TLS 1.3 enforcement
-        - Certificate transparency
-        - HTTP Strict Transport Security
-        - Content Security Policy
-        - Cross-Origin Resource Sharing
-        - API rate limiting
-        - Request/response encryption
+        # Generate API security configuration
+        api_config_code = await self._generate_api_security_config()
+        api_config_file = "lib/core/network/security/api_security_config.dart"
         
-        Provide complete network security implementation.
-        """
+        write_result = await self.write_file(api_config_file, api_config_code)
+        if write_result.status.value == "success":
+            generated_files.append(api_config_file)
         
-        network_implementation = await self.think(network_prompt, {
-            "endpoints": api_endpoints,
-            "project": shared_state.get_project_state(project_id)
-        })
+        # Format generated code
+        await self.run_command("dart format lib/core/network/")
         
         return {
-            "endpoints": api_endpoints,
-            "implementation": network_implementation,
-            "security_features": ["certificate_pinning", "request_signing", "response_validation"],
+            "security_features": security_features,
+            "generated_files": generated_files,
             "status": "implemented"
         }
-    
+
     def _parse_security_findings(self, audit_report: str) -> List[Dict[str, Any]]:
         """Parse security findings from audit report."""
         # Simplified parsing - in real implementation, this would be more sophisticated

@@ -1,0 +1,314 @@
+"""
+Tool manager for organizing and executing tools for FlutterSwarm agents.
+"""
+
+import asyncio
+from typing import Dict, List, Any, Optional, Type
+from .base_tool import BaseTool, ToolResult, ToolStatus
+from .terminal_tool import TerminalTool
+from .file_tool import FileTool
+from .flutter_tool import FlutterTool
+from .git_tool import GitTool
+from .analysis_tool import AnalysisTool
+from .package_manager_tool import PackageManagerTool
+from .testing_tool import TestingTool
+from .security_tool import SecurityTool
+from .code_generation_tool import CodeGenerationTool
+
+class ToolManager:
+    """
+    Manages tools for FlutterSwarm agents.
+    Provides a centralized way to register, discover, and execute tools.
+    """
+    
+    def __init__(self, project_directory: Optional[str] = None):
+        self.project_directory = project_directory
+        self.tools: Dict[str, BaseTool] = {}
+        self._initialize_default_tools()
+    
+    def _initialize_default_tools(self):
+        """Initialize default tools available to all agents."""
+        self.tools = {
+            "terminal": TerminalTool(self.project_directory),
+            "file": FileTool(self.project_directory),
+            "flutter": FlutterTool(self.project_directory),
+            "git": GitTool(self.project_directory),
+            "analysis": AnalysisTool(self.project_directory),
+            "package_manager": PackageManagerTool(self.project_directory),
+            "testing": TestingTool(self.project_directory),
+            "security": SecurityTool(self.project_directory),
+            "code_generation": CodeGenerationTool(self.project_directory)
+        }
+    
+    def register_tool(self, tool: BaseTool, name: Optional[str] = None):
+        """Register a new tool."""
+        tool_name = name or tool.name
+        self.tools[tool_name] = tool
+    
+    def get_tool(self, name: str) -> Optional[BaseTool]:
+        """Get a tool by name."""
+        return self.tools.get(name)
+    
+    def list_tools(self) -> List[str]:
+        """List all available tool names."""
+        return list(self.tools.keys())
+    
+    def get_tool_info(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a tool."""
+        tool = self.tools.get(name)
+        if tool:
+            return {
+                "name": tool.name,
+                "description": tool.description,
+                "timeout": tool.timeout,
+                "is_async": tool.is_async
+            }
+        return None
+    
+    async def execute_tool(self, tool_name: str, operation: str = None, **kwargs) -> ToolResult:
+        """
+        Execute a tool operation.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            operation: Operation to perform (tool-specific)
+            **kwargs: Additional parameters for the tool
+            
+        Returns:
+            ToolResult with execution outcome
+        """
+        tool = self.tools.get(tool_name)
+        
+        if not tool:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Tool '{tool_name}' not found"
+            )
+        
+        try:
+            if operation:
+                result = await tool.execute_with_timeout(operation=operation, **kwargs)
+            else:
+                result = await tool.execute_with_timeout(**kwargs)
+            
+            return result
+            
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Failed to execute tool '{tool_name}': {str(e)}"
+            )
+    
+    async def execute_command(self, command: str, working_dir: Optional[str] = None, **kwargs) -> ToolResult:
+        """
+        Execute a shell command using the terminal tool.
+        
+        Args:
+            command: Command to execute
+            working_dir: Working directory (optional)
+            **kwargs: Additional terminal parameters
+            
+        Returns:
+            ToolResult with command output
+        """
+        return await self.execute_tool(
+            "terminal", 
+            command=command, 
+            working_dir=working_dir,
+            **kwargs
+        )
+    
+    async def read_file(self, file_path: str, **kwargs) -> ToolResult:
+        """Read a file using the file tool."""
+        return await self.execute_tool("file", "read", file_path=file_path, **kwargs)
+    
+    async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
+        """Write a file using the file tool."""
+        return await self.execute_tool("file", "write", file_path=file_path, content=content, **kwargs)
+    
+    async def flutter_build(self, platform: str = "apk", **kwargs) -> ToolResult:
+        """Build Flutter project."""
+        return await self.execute_tool("flutter", "build", platform=platform, **kwargs)
+    
+    async def flutter_test(self, **kwargs) -> ToolResult:
+        """Run Flutter tests."""
+        return await self.execute_tool("flutter", "test", **kwargs)
+    
+    async def git_commit(self, message: str, **kwargs) -> ToolResult:
+        """Commit changes using git."""
+        return await self.execute_tool("git", "commit", message=message, **kwargs)
+    
+    async def analyze_code(self, **kwargs) -> ToolResult:
+        """Analyze code quality."""
+        return await self.execute_tool("analysis", "dart_analyze", **kwargs)
+    
+    async def security_scan(self, **kwargs) -> ToolResult:
+        """Perform security scan."""
+        return await self.execute_tool("security", "scan", **kwargs)
+    
+    async def generate_code(self, component_type: str, name: str, **kwargs) -> ToolResult:
+        """Generate code component."""
+        return await self.execute_tool("code_generation", "generate", 
+                                     component_type=component_type, name=name, **kwargs)
+    
+    async def run_tests(self, test_type: str = "all", **kwargs) -> ToolResult:
+        """Run tests."""
+        return await self.execute_tool("testing", "run", test_type=test_type, **kwargs)
+    
+    async def add_package(self, package_name: str, **kwargs) -> ToolResult:
+        """Add package to project."""
+        return await self.execute_tool("package_manager", "add", 
+                                     package_name=package_name, **kwargs)
+    
+    async def check_dependencies(self, **kwargs) -> ToolResult:
+        """Check system dependencies."""
+        return await self.execute_tool("terminal", operation="check_dependencies", **kwargs)
+    
+    def get_tools_for_agent(self, agent_type: str) -> List[str]:
+        """
+        Get recommended tools for a specific agent type.
+        
+        Args:
+            agent_type: Type of agent (e.g., 'implementation', 'testing', 'security')
+            
+        Returns:
+            List of recommended tool names
+        """
+        tool_recommendations = {
+            "implementation": ["terminal", "file", "flutter", "git", "analysis", "package_manager", "code_generation"],
+            "testing": ["terminal", "file", "flutter", "analysis", "testing", "package_manager"],
+            "security": ["terminal", "file", "analysis", "git", "security", "package_manager"],
+            "architecture": ["terminal", "file", "analysis", "code_generation"],
+            "devops": ["terminal", "file", "flutter", "git", "package_manager"],
+            "documentation": ["terminal", "file", "git"],
+            "performance": ["terminal", "file", "flutter", "analysis", "testing"],
+            "quality_assurance": ["terminal", "file", "flutter", "analysis", "git", "testing", "security"],
+            "orchestrator": ["terminal", "file", "flutter", "git", "analysis", "package_manager", "testing", "security", "code_generation"]
+        }
+        
+        return tool_recommendations.get(agent_type, list(self.tools.keys()))
+    
+    async def batch_execute(self, operations: List[Dict[str, Any]]) -> List[ToolResult]:
+        """
+        Execute multiple tool operations in batch.
+        
+        Args:
+            operations: List of operation dictionaries with 'tool', 'operation', and params
+            
+        Returns:
+            List of ToolResults
+        """
+        results = []
+        
+        for op in operations:
+            tool_name = op.get("tool")
+            operation = op.get("operation")
+            params = {k: v for k, v in op.items() if k not in ["tool", "operation"]}
+            
+            if tool_name:
+                result = await self.execute_tool(tool_name, operation, **params)
+                results.append(result)
+            else:
+                results.append(ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error="No tool specified in operation"
+                ))
+        
+        return results
+    
+    async def parallel_execute(self, operations: List[Dict[str, Any]]) -> List[ToolResult]:
+        """
+        Execute multiple tool operations in parallel.
+        
+        Args:
+            operations: List of operation dictionaries
+            
+        Returns:
+            List of ToolResults in the same order as operations
+        """
+        tasks = []
+        
+        for op in operations:
+            tool_name = op.get("tool")
+            operation = op.get("operation")
+            params = {k: v for k, v in op.items() if k not in ["tool", "operation"]}
+            
+            if tool_name:
+                task = self.execute_tool(tool_name, operation, **params)
+                tasks.append(task)
+            else:
+                # Create a failed result for invalid operations
+                async def failed_op():
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        output="",
+                        error="No tool specified in operation"
+                    )
+                tasks.append(failed_op())
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Convert exceptions to error results
+        final_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                final_results.append(ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error=f"Parallel execution failed: {str(result)}"
+                ))
+            else:
+                final_results.append(result)
+        
+        return final_results
+    
+    def create_agent_toolbox(self, agent_type: str) -> "AgentToolbox":
+        """Create a specialized toolbox for an agent type."""
+        return AgentToolbox(self, agent_type)
+
+class AgentToolbox:
+    """
+    Specialized toolbox for a specific agent type.
+    Provides convenient methods for common operations.
+    """
+    
+    def __init__(self, tool_manager: ToolManager, agent_type: str):
+        self.tool_manager = tool_manager
+        self.agent_type = agent_type
+        self.available_tools = tool_manager.get_tools_for_agent(agent_type)
+    
+    async def execute(self, tool_name: str, **kwargs) -> ToolResult:
+        """Execute a tool if it's available for this agent."""
+        if tool_name not in self.available_tools:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Tool '{tool_name}' not available for {self.agent_type} agent"
+            )
+        
+        return await self.tool_manager.execute_tool(tool_name, **kwargs)
+    
+    async def run_command(self, command: str, **kwargs) -> ToolResult:
+        """Run a terminal command."""
+        return await self.execute("terminal", command=command, **kwargs)
+    
+    async def read_file(self, file_path: str, **kwargs) -> ToolResult:
+        """Read a file."""
+        return await self.execute("file", operation="read", file_path=file_path, **kwargs)
+    
+    async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
+        """Write a file."""
+        return await self.execute("file", operation="write", file_path=file_path, content=content, **kwargs)
+    
+    def list_available_tools(self) -> List[str]:
+        """List tools available for this agent."""
+        return self.available_tools.copy()
+    
+    def get_tool_info(self, tool_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a tool if it's available."""
+        if tool_name in self.available_tools:
+            return self.tool_manager.get_tool_info(tool_name)
+        return None

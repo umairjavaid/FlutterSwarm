@@ -3,6 +3,7 @@ Testing Agent - Creates unit, widget, and integration tests for Flutter applicat
 """
 
 import asyncio
+import os
 from typing import Dict, List, Any, Optional
 from agents.base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -52,434 +53,429 @@ class TestingAgent(BaseAgent):
             await self._create_comprehensive_tests(change_data["project_id"])
     
     async def _create_unit_tests(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create unit tests for business logic and models."""
+        """Create unit tests for business logic and models using tools."""
         project_id = task_data["project_id"]
         target_files = task_data.get("target_files", [])
         
         project = shared_state.get_project_state(project_id)
         
-        unit_test_prompt = f"""
-        Create comprehensive unit tests for the following Flutter/Dart code:
+        self.logger.info(f"🧪 Creating unit tests for {len(target_files)} files")
         
-        Target Files: {target_files}
-        Project Context: {project.name}
+        # First, analyze the target files to understand their structure
+        file_analyses = []
+        for file_path in target_files:
+            read_result = await self.read_file(file_path)
+            if read_result.status.value == "success":
+                analysis = await self._analyze_code_for_testing(read_result.output, file_path)
+                file_analyses.append(analysis)
         
-        Generate unit tests that cover:
+        # Generate unit tests based on analysis
+        test_files_created = []
         
-        1. **Model Tests**:
-           - Serialization/deserialization (toJson/fromJson)
-           - Equality and hashCode
-           - copyWith methods
-           - Edge cases and null handling
-        
-        2. **Repository Tests**:
-           - Mock external dependencies
-           - Test success scenarios
-           - Test error scenarios
-           - Test caching behavior
-        
-        3. **Business Logic Tests**:
-           - Use case implementations
-           - State management logic
-           - Validation logic
-           - Error handling
-        
-        4. **Utility Function Tests**:
-           - Helper functions
-           - Extension methods
-           - Validators
-           - Formatters
-        
-        Follow these testing best practices:
-        - Use descriptive test names (should_returnUser_when_validEmailProvided)
-        - Arrange, Act, Assert pattern
-        - Mock external dependencies using mockito
-        - Test edge cases and error conditions
-        - Use proper test groups and setUp/tearDown
-        
-        Example unit test structure:
-        import 'package:flutter_test/flutter_test.dart';
-        import 'package:mockito/mockito.dart';
-        import 'package:mockito/annotations.dart';
-        
-        @GenerateMocks([ApiService])
-        void main() {{
-          group('UserRepository', () {{
-            late UserRepository repository;
-            late MockApiService mockApiService;
+        for analysis in file_analyses:
+            test_code = await self._generate_unit_test_code(analysis)
             
-            setUp(() {{
-              mockApiService = MockApiService();
-              repository = UserRepository(mockApiService);
-            }});
+            # Determine test file path
+            source_file = analysis["file_path"]
+            test_file_path = self._get_test_file_path(source_file, "unit")
             
-            group('getUser', () {{
-              test('should return User when API call is successful', () async {{
-                // Arrange
-                const userId = '123';
-                final userJson = {{'id': userId, 'name': 'John'}};
-                when(mockApiService.getUser(userId))
-                    .thenAnswer((_) async => userJson);
-                
-                // Act
-                final result = await repository.getUser(userId);
-                
-                // Assert
-                expect(result, isA<User>());
-                expect(result.id, userId);
-                verify(mockApiService.getUser(userId)).called(1);
-              }});
-              
-              test('should throw Exception when API call fails', () async {{
-                // Arrange
-                const userId = '123';
-                when(mockApiService.getUser(userId))
-                    .thenThrow(ApiException('Network error'));
-                
-                // Act & Assert
-                expect(
-                  () => repository.getUser(userId),
-                  throwsA(isA<ApiException>()),
-                );
-              }});
-            }});
-          }});
-        }}
+            # Create test directory if needed
+            test_dir = os.path.dirname(test_file_path)
+            await self.execute_tool("file", operation="create_directory", directory=test_dir)
+            
+            # Write test file
+            write_result = await self.write_file(test_file_path, test_code)
+            
+            if write_result.status.value == "success":
+                test_files_created.append(test_file_path)
+                self.logger.info(f"✅ Created unit test: {test_file_path}")
+            else:
+                self.logger.error(f"❌ Failed to create test: {test_file_path}")
         
-        Generate complete test files with proper imports and mocks.
-        """
+        # Run the tests to ensure they work
+        test_result = await self.execute_tool("flutter", operation="test")
         
-        test_code = await self.think(unit_test_prompt, {
-            "project": project,
-            "target_files": target_files,
-            "test_frameworks": self.testing_frameworks
-        })
-        
-        test_files = await self._parse_and_create_test_files(project_id, test_code, "unit")
+        # Format the test files
+        await self.run_command("dart format test/")
         
         return {
             "test_type": "unit",
             "target_files": target_files,
-            "test_files_created": test_files,
-            "code": test_code
+            "test_files_created": test_files_created,
+            "test_execution_result": test_result.data if test_result.data else {},
+            "tests_passing": test_result.status.value == "success"
         }
     
     async def _create_widget_tests(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create widget tests for UI components."""
+        """Create widget tests for UI components using tools."""
         project_id = task_data["project_id"]
-        widgets = task_data.get("widgets", [])
+        widget_files = task_data.get("widget_files", [])
         
-        widget_test_prompt = f"""
-        Create comprehensive widget tests for these Flutter widgets:
+        self.logger.info(f"🎨 Creating widget tests for {len(widget_files)} widgets")
         
-        Widgets: {widgets}
+        test_files_created = []
         
-        Generate widget tests that cover:
-        
-        1. **Widget Rendering**:
-           - Verify widgets are built correctly
-           - Check for required child widgets
-           - Validate initial state
-        
-        2. **User Interactions**:
-           - Tap gestures
-           - Text input
-           - Scroll behavior
-           - Form submissions
-        
-        3. **State Changes**:
-           - Loading states
-           - Error states
-           - Success states
-           - Navigation transitions
-        
-        4. **Accessibility**:
-           - Semantic labels
-           - Screen reader support
-           - Keyboard navigation
-        
-        5. **Responsive Design**:
-           - Different screen sizes
-           - Orientation changes
-           - Platform differences
-        
-        Use these widget testing patterns:
-        import 'package:flutter/material.dart';
-        import 'package:flutter_test/flutter_test.dart';
-        import 'package:bloc_test/bloc_test.dart';
-        import 'package:flutter_bloc/flutter_bloc.dart';
-        
-        void main() {{
-          group('LoginScreen Widget Tests', () {{
-            late AuthBloc mockAuthBloc;
+        for widget_file in widget_files:
+            # Read the widget file
+            read_result = await self.read_file(widget_file)
+            if read_result.status.value != "success":
+                continue
             
-            setUp(() {{
-              mockAuthBloc = MockAuthBloc();
-            }});
+            # Analyze the widget for testing
+            widget_analysis = await self._analyze_widget_for_testing(read_result.output, widget_file)
             
-            Widget createWidgetUnderTest() {{
-              return MaterialApp(
-                home: BlocProvider<AuthBloc>(
-                  create: (_) => mockAuthBloc,
-                  child: const LoginScreen(),
-                ),
-              );
-            }}
+            # Generate widget test code
+            test_code = await self._generate_widget_test_code(widget_analysis)
             
-            testWidgets('should display email and password fields', (tester) async {{
-              // Arrange
-              when(() => mockAuthBloc.state).thenReturn(AuthInitial());
-              
-              // Act
-              await tester.pumpWidget(createWidgetUnderTest());
-              
-              // Assert
-              expect(find.byType(TextFormField), findsNWidgets(2));
-              expect(find.text('Email'), findsOneWidget);
-              expect(find.text('Password'), findsOneWidget);
-            }});
+            # Write widget test file
+            test_file_path = self._get_test_file_path(widget_file, "widget")
+            test_dir = os.path.dirname(test_file_path)
+            await self.execute_tool("file", operation="create_directory", directory=test_dir)
             
-            testWidgets('should trigger login when button pressed', (tester) async {{
-              // Arrange
-              when(() => mockAuthBloc.state).thenReturn(AuthInitial());
-              
-              // Act
-              await tester.pumpWidget(createWidgetUnderTest());
-              await tester.enterText(find.byType(TextFormField).first, 'test@example.com');
-              await tester.enterText(find.byType(TextFormField).last, 'password');
-              await tester.tap(find.byType(ElevatedButton));
-              await tester.pump();
-              
-              // Assert
-              verify(() => mockAuthBloc.add(any(that: isA<AuthLoginRequested>()))).called(1);
-            }});
+            write_result = await self.write_file(test_file_path, test_code)
             
-            testWidgets('should show loading indicator when authenticating', (tester) async {{
-              // Arrange
-              when(() => mockAuthBloc.state).thenReturn(AuthLoading());
-              
-              // Act
-              await tester.pumpWidget(createWidgetUnderTest());
-              
-              // Assert
-              expect(find.byType(CircularProgressIndicator), findsOneWidget);
-            }});
-          }});
-        }}
+            if write_result.status.value == "success":
+                test_files_created.append(test_file_path)
+                self.logger.info(f"✅ Created widget test: {test_file_path}")
         
-        Generate complete widget test files with proper test setup and teardown.
-        """
-        
-        test_code = await self.think(widget_test_prompt, {
-            "widgets": widgets,
-            "project": shared_state.get_project_state(project_id)
-        })
-        
-        test_files = await self._parse_and_create_test_files(project_id, test_code, "widget")
+        # Run widget tests
+        test_result = await self.execute_tool("flutter", operation="test")
         
         return {
             "test_type": "widget",
-            "widgets": widgets,
-            "test_files_created": test_files,
-            "code": test_code
+            "widget_files": widget_files,
+            "test_files_created": test_files_created,
+            "test_execution_result": test_result.data if test_result.data else {},
+            "tests_passing": test_result.status.value == "success"
         }
     
     async def _create_integration_tests(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create integration tests for complete user flows."""
+        """Create integration tests using tools."""
         project_id = task_data["project_id"]
-        user_flows = task_data.get("user_flows", [])
+        test_scenarios = task_data.get("scenarios", [])
         
-        integration_test_prompt = f"""
-        Create integration tests for these user flows:
+        self.logger.info(f"🔄 Creating integration tests for {len(test_scenarios)} scenarios")
         
-        User Flows: {user_flows}
+        # Create integration test directory
+        integration_test_dir = "integration_test"
+        await self.execute_tool("file", operation="create_directory", directory=integration_test_dir)
         
-        Generate integration tests that cover:
+        test_files_created = []
         
-        1. **End-to-End User Journeys**:
-           - Complete authentication flow
-           - CRUD operations
-           - Navigation between screens
-           - Data persistence
+        for scenario in test_scenarios:
+            scenario_name = scenario.get("name", "test_scenario")
+            
+            # Generate integration test code
+            test_code = await self._generate_integration_test_code(scenario)
+            
+            # Write integration test file
+            test_file_path = f"{integration_test_dir}/{scenario_name.lower()}_test.dart"
+            write_result = await self.write_file(test_file_path, test_code)
+            
+            if write_result.status.value == "success":
+                test_files_created.append(test_file_path)
+                self.logger.info(f"✅ Created integration test: {test_file_path}")
         
-        2. **API Integration**:
-           - Real API calls (with test environment)
-           - Network error handling
-           - Data synchronization
-        
-        3. **Platform Integration**:
-           - Device features (camera, location, etc.)
-           - Push notifications
-           - Deep links
-        
-        4. **Performance Testing**:
-           - App startup time
-           - Scroll performance
-           - Memory usage
-        
-        Use integration_test package:
-        import 'package:flutter/material.dart';
-        import 'package:flutter_test/flutter_test.dart';
-        import 'package:integration_test/integration_test.dart';
-        import 'package:myapp/main.dart' as app;
-        
-        void main() {{
-          IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-          
-          group('User Authentication Flow', () {{
-            testWidgets('complete login and logout flow', (tester) async {{
-              // Start the app
-              app.main();
-              await tester.pumpAndSettle();
-              
-              // Navigate to login screen
-              await tester.tap(find.text('Login'));
-              await tester.pumpAndSettle();
-              
-              // Enter credentials
-              await tester.enterText(find.byKey(const Key('email_field')), 'test@example.com');
-              await tester.enterText(find.byKey(const Key('password_field')), 'password123');
-              
-              // Submit login
-              await tester.tap(find.byKey(const Key('login_button')));
-              await tester.pumpAndSettle();
-              
-              // Verify successful login
-              expect(find.text('Welcome'), findsOneWidget);
-              
-              // Logout
-              await tester.tap(find.byKey(const Key('logout_button')));
-              await tester.pumpAndSettle();
-              
-              // Verify logout
-              expect(find.text('Login'), findsOneWidget);
-            }});
-          }});
-        }}
-        
-        Generate complete integration test files with realistic user scenarios.
-        """
-        
-        test_code = await self.think(integration_test_prompt, {
-            "user_flows": user_flows,
-            "project": shared_state.get_project_state(project_id)
-        })
-        
-        test_files = await self._parse_and_create_test_files(project_id, test_code, "integration")
+        # Add integration test dependencies if needed
+        await self._ensure_integration_test_dependencies()
         
         return {
             "test_type": "integration",
-            "user_flows": user_flows,
-            "test_files_created": test_files,
-            "code": test_code
+            "scenarios": test_scenarios,
+            "test_files_created": test_files_created,
+            "status": "completed"
         }
     
     async def _setup_test_infrastructure(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Set up testing infrastructure and configuration."""
+        """Setup testing infrastructure using tools."""
         project_id = task_data["project_id"]
         
-        infrastructure_prompt = f"""
-        Set up comprehensive testing infrastructure for this Flutter project:
+        self.logger.info("🏗️ Setting up test infrastructure")
         
-        Create the following test configuration files:
+        # Create test directories
+        test_directories = [
+            "test/unit",
+            "test/widget",
+            "test/integration",
+            "test/mocks",
+            "test/fixtures"
+        ]
         
-        1. **Test Configuration**:
-           - test/flutter_test_config.dart
-           - Test environment setup
-           - Mock service configurations
+        for directory in test_directories:
+            await self.execute_tool("file", operation="create_directory", directory=directory)
         
-        2. **Test Utilities**:
-           - test/helpers/test_helpers.dart
-           - Common test widgets
-           - Mock data factories
-           - Test utilities
+        # Add testing dependencies
+        test_dependencies = [
+            "mockito",
+            "build_runner",
+            "json_annotation"
+        ]
         
-        3. **Mock Definitions**:
-           - test/mocks/mocks.dart
-           - Mockito annotations
-           - Mock class generations
+        await self.execute_tool("flutter", operation="pub_add", packages=test_dependencies, dev=True)
         
-        4. **Golden Test Setup**:
-           - Golden file management
-           - Cross-platform golden tests
-           - Screenshot comparisons
+        # Create test helper files
+        await self._create_test_helpers()
         
-        5. **CI/CD Test Scripts**:
-           - test_runner.dart
-           - Coverage reporting
-           - Test result formatting
+        # Create mock generation configuration
+        await self._create_mock_config()
         
-        Example test configuration:
-        // test/flutter_test_config.dart
-        import 'dart:async';
-        import 'package:flutter_test/flutter_test.dart';
-        
-        Future<void> testExecutable(FutureOr<void> Function() testMain) async {{
-          setUpAll(() async {{
-            // Global test setup
-            TestWidgetsFlutterBinding.ensureInitialized();
-          }});
-          
-          await testMain();
-        }}
-        
-        Include proper package dependencies and build configurations.
-        """
-        
-        infrastructure_code = await self.think(infrastructure_prompt, {
-            "project": shared_state.get_project_state(project_id)
-        })
-        
-        files_created = await self._parse_and_create_test_files(project_id, infrastructure_code, "infrastructure")
+        # Generate initial mocks
+        await self.run_command("dart run build_runner build")
         
         return {
-            "infrastructure_type": "testing",
-            "files_created": files_created,
-            "code": infrastructure_code
+            "status": "completed",
+            "directories_created": test_directories,
+            "dependencies_added": test_dependencies
         }
     
-    async def _parse_and_create_test_files(self, project_id: str, test_content: str, test_type: str) -> List[str]:
-        """Parse and create test files."""
-        files_created = []
+    async def _create_test_helpers(self) -> None:
+        """Create test helper files."""
+        # Create test utils
+        test_utils_code = '''
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class TestUtils {
+  static Widget makeTestableWidget(Widget child) {
+    return MaterialApp(
+      home: child,
+    );
+  }
+  
+  static Future<void> pumpUntilFound(
+    WidgetTester tester,
+    Finder finder, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    bool timerDone = false;
+    final timer = Timer(timeout, () => timerDone = true);
+    
+    while (timerDone != true) {
+      await tester.pump();
+      
+      final found = tester.any(finder);
+      if (found) {
+        timerDone = true;
+      }
+    }
+    
+    timer.cancel();
+  }
+}
+'''
         
-        # Simplified file parsing - in real implementation, this would be more sophisticated
-        lines = test_content.split('\n')
-        current_file = None
-        current_content = []
+        await self.write_file("test/test_utils.dart", test_utils_code)
         
-        for line in lines:
-            if line.startswith('// File:') or line.startswith('# File:'):
-                if current_file and current_content:
-                    shared_state.add_file_to_project(
-                        project_id, 
-                        current_file, 
-                        '\n'.join(current_content)
-                    )
-                    files_created.append(current_file)
-                
-                current_file = line.split(':', 1)[1].strip()
-                current_content = []
-            elif current_file:
-                current_content.append(line)
+        # Create mock data factory
+        mock_data_code = '''
+class MockDataFactory {
+  static Map<String, dynamic> createUserJson() {
+    return {
+      'id': '1',
+      'name': 'Test User',
+      'email': 'test@example.com',
+    };
+  }
+  
+  // Add more mock data factories as needed
+}
+'''
         
-        if current_file and current_content:
-            shared_state.add_file_to_project(
-                project_id, 
-                current_file, 
-                '\n'.join(current_content)
-            )
-            files_created.append(current_file)
+        await self.write_file("test/fixtures/mock_data.dart", mock_data_code)
+    
+    async def _create_mock_config(self) -> None:
+        """Create build runner configuration for mocks."""
+        build_yaml_content = '''
+targets:
+  $default:
+    builders:
+      mockito|mockBuilder:
+        generate_for:
+          - test/**_test.dart
+'''
         
-        # Store test results
-        project = shared_state.get_project_state(project_id)
-        if project:
-            project.test_results[test_type] = {
-                "files_created": files_created,
-                "status": "created",
-                "coverage": "pending"
-            }
+        await self.write_file("build.yaml", build_yaml_content)
+    
+    async def _ensure_integration_test_dependencies(self) -> None:
+        """Ensure integration test dependencies are added."""
+        integration_deps = ["integration_test"]
         
-        return files_created
+        # Check if already in pubspec
+        pubspec_result = await self.read_file("pubspec.yaml")
+        if pubspec_result.status.value == "success":
+            if "integration_test" not in pubspec_result.output:
+                await self.execute_tool("flutter", operation="pub_add", packages=integration_deps, dev=True)
+
+    async def _analyze_code_for_testing(self, code: str, file_path: str) -> Dict[str, Any]:
+        """Analyze Dart code to determine testability and generate hints for testing."""
+        # Placeholder for code analysis logic
+        return {
+            "file_path": file_path,
+            "functions": self._extract_functions(code),
+            "dependencies": self._extract_dependencies(code),
+            "has_flutter_widget": "MaterialApp" in code or "CupertinoApp" in code,
+            "is_bloc_used": "BlocProvider" in code or "BlocListener" in code,
+            "is_getx_used": "GetMaterialApp" in code or "GetBuilder" in code,
+            "is_provider_used": "ChangeNotifierProvider" in code or "Provider" in code,
+            "mockable_services": self._identify_mockable_services(code)
+        }
+    
+    async def _analyze_widget_for_testing(self, code: str, file_path: str) -> Dict[str, Any]:
+        """Analyze Flutter widget code to generate testing hints."""
+        # Placeholder for widget analysis logic
+        return {
+            "file_path": file_path,
+            "widget_tree": self._extract_widget_tree(code),
+            "key_widgets": self._extract_key_widgets(code),
+            "is_stateful": "StatefulWidget" in code,
+            "dependencies": self._extract_dependencies(code),
+            "mockable_services": self._identify_mockable_services(code)
+        }
+    
+    def _extract_functions(self, code: str) -> List[str]:
+        """Extract function names from Dart code."""
+        import re
+        pattern = r'\bvoid\s+(\w+)\s*\('
+        matches = re.findall(pattern, code)
+        return matches
+    
+    def _extract_dependencies(self, code: str) -> List[str]:
+        """Extract package dependencies from Dart code."""
+        import re
+        pattern = r'import\s+[\'"]([^\'"]+)[\'"]'
+        matches = re.findall(pattern, code)
+        return matches
+    
+    def _extract_widget_tree(self, code: str) -> List[str]:
+        """Extract widget tree structure from Flutter widget code."""
+        import re
+        pattern = r'(\w+)\s*:\s*([^,]+)'
+        matches = re.findall(pattern, code)
+        return [f"{m[0]}: {m[1]}" for m in matches]
+    
+    def _extract_key_widgets(self, code: str) -> List[str]:
+        """Extract keys of widgets that have keys assigned."""
+        import re
+        pattern = r'key:\s*ValueKey\(([^)]+)\)'
+        matches = re.findall(pattern, code)
+        return [m[0] for m in matches]
+    
+    def _identify_mockable_services(self, code: str) -> List[str]:
+        """Identify services in the code that can be mocked."""
+        # Heuristic: services are often classes that are instantiated in the code
+        import re
+        pattern = r'new\s+(\w+)\s*\('
+        matches = re.findall(pattern, code)
+        return matches
+    
+    async def _generate_unit_test_code(self, analysis: Dict[str, Any]) -> str:
+        """Generate unit test code based on analysis of the Dart code."""
+        # Simplified test code generation
+        test_code = '''
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:myapp/[[FILE_PATH]]';
+
+class MockService extends Mock implements [[SERVICE_NAME]] {}
+
+void main() {
+  group('[[CLASS_NAME]]', () {
+    MockService mockService;
+    [[CLASS_NAME]] instance;
+
+    setUp(() {
+      mockService = MockService();
+      instance = [[CLASS_NAME]](mockService);
+    });
+
+    test('should do something', () async {
+      // Arrange
+      when(mockService.someMethod()).thenAnswer((_) async => 'some value');
+
+      // Act
+      final result = await instance.someFunction();
+
+      // Assert
+      expect(result, 'expected value');
+      verify(mockService.someMethod()).called(1);
+    });
+  });
+}
+'''
+        
+        # Replace placeholders with actual values
+        file_path = analysis["file_path"].replace("/", ".").replace(".dart", "")
+        service_name = analysis["dependencies"][0] if analysis["dependencies"] else "MyService"
+        class_name = analysis["functions"][0] + "Test" if analysis["functions"] else "MyServiceTest"
+        
+        test_code = test_code.replace("[[FILE_PATH]]", file_path)
+        test_code = test_code.replace("[[SERVICE_NAME]]", service_name)
+        test_code = test_code.replace("[[CLASS_NAME]]", class_name)
+        
+        return test_code
+    
+    async def _generate_widget_test_code(self, analysis: Dict[str, Any]) -> str:
+        """Generate widget test code based on analysis of the Flutter widget code."""
+        # Simplified widget test code generation
+        test_code = '''
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/[[FILE_PATH]]';
+
+void main() {
+  testWidgets('should build [[WIDGET_NAME]] correctly', (WidgetTester tester) async {
+    // Arrange
+    await tester.pumpWidget(MaterialApp(home: [[WIDGET_NAME]]()));
+
+    // Act
+    // Interact with the widget if needed
+
+    // Assert
+    expect(find.byType([[WIDGET_NAME]]), findsOneWidget);
+  });
+}
+'''
+        
+        # Replace placeholders with actual values
+        file_path = analysis["file_path"].replace("/", ".").replace(".dart", "")
+        widget_name = analysis["key_widgets"][0] if analysis["key_widgets"] else "MyWidget"
+        
+        test_code = test_code.replace("[[FILE_PATH]]", file_path)
+        test_code = test_code.replace("[[WIDGET_NAME]]", widget_name)
+        
+        return test_code
+    
+    async def _generate_integration_test_code(self, scenario: Dict[str, Any]) -> str:
+        """Generate integration test code based on the user scenario."""
+        # Simplified integration test code generation
+        test_code = '''
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/[[APP_PATH]]' as app;
+
+void main() {
+  testWidgets('[[SCENARIO_NAME]]', (WidgetTester tester) async {
+    // Arrange
+    app.main();
+    await tester.pumpAndSettle();
+
+    // Act
+    // Perform actions for the scenario
+
+    // Assert
+    // Verify expected outcomes
+  });
+}
+'''
+        
+        scenario_name = scenario.get("name", "test_scenario")
+        app_path = scenario.get("app_path", "lib/main.dart")
+        
+        # Replace placeholders with actual values
+        test_code = test_code.replace("[[SCENARIO_NAME]]", scenario_name)
+        test_code = test_code.replace("[[APP_PATH]]", app_path)
+        
+        return test_code
     
     async def _provide_test_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Provide testing strategy recommendations."""
