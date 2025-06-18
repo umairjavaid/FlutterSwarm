@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from agents.base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
-           # class DocumentationAgent(BaseAgent):
+class DocumentationAgent(BaseAgent):
     """
     The Documentation Agent specializes in creating comprehensive documentation.
     It generates technical docs, user guides, API documentation, and code comments.

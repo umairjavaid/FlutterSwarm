@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional
 from agents.base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
-           # class PerformanceAgent(BaseAgent):
+class PerformanceAgent(BaseAgent):
     """
     The Performance Agent specializes in code optimization and performance monitoring.
     It analyzes performance bottlenecks and implements optimization strategies.

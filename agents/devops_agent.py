@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from agents.base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
-           # class DevOpsAgent(BaseAgent):
+class DevOpsAgent(BaseAgent):
     """
     The DevOps Agent specializes in deployment and CI/CD pipeline management.
     It handles build automation, testing pipelines, and deployment strategies.
@@ -369,80 +369,7 @@ from shared.state import shared_state, AgentStatus, MessageType
            esac
            ```
         
-        2. **Android Build Configuration** (android/app/build.gradle):
-           ```gradle
-           android {
-               compileSdkVersion 34
-               
-               flavorDimensions "environment"
-               productFlavors {
-                   development {
-                       dimension "environment"
-                       applicationIdSuffix ".dev"
-                       versionNameSuffix "-dev"
-                   }
-                   staging {
-                       dimension "environment"
-                       applicationIdSuffix ".staging"
-                       versionNameSuffix "-staging"
-                   }
-                   production {
-                       dimension "environment"
-                   }
-               }
-               
-               buildTypes {
-                   release {
-                       signingConfig signingConfigs.release
-                       minifyEnabled true
-                       proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-                   }
-               }
-           }
-           ```
-        
-        3. **iOS Build Configuration** (ios/Runner/Info.plist):
-           - Scheme configuration
-           - Build settings
-           - Provisioning profiles
-           - Code signing
-        
-        4. **Fastlane Configuration**:
-           ```ruby
-           # fastlane/Fastfile
-           
-           platform :android do
-             desc "Deploy to Play Store Internal Testing"
-             lane :internal do
-               gradle(task: "bundleProductionRelease")
-               upload_to_play_store(
-                 track: 'internal',
-                 aab: '../build/app/outputs/bundle/productionRelease/app-production-release.aab'
-               )
-             end
-           end
-           
-           platform :ios do
-             desc "Deploy to TestFlight"
-             lane :beta do
-               build_app(scheme: "Runner")
-               upload_to_testflight
-             end
-           end
-           ```
-        
-        5. **Version Management**:
-           - Semantic versioning
-           - Build number automation
-           - Tag creation
-           - Changelog generation
-        
-        6. **Asset Optimization**:
-           - Image compression
-           - Icon generation
-           - Font subsetting
-           - Bundle size optimization
-        
+        2. **Platform-specific Scripts**:
         Provide complete build automation setup with proper error handling and logging.
         """
         
