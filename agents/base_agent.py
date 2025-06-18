@@ -27,8 +27,8 @@ class BaseAgent(ABC):
         self.config = self._load_config(config_path)
         self.agent_config = self.config["agents"][agent_id]
         
-        # Defer LLM initialization until needed
-        self.llm = None
+        # Initialize LLM with configuration
+        self.llm = self._initialize_llm()
         
         # Register with shared state
         shared_state.register_agent(
@@ -48,6 +48,19 @@ class BaseAgent(ABC):
                 return yaml.safe_load(file)
         except FileNotFoundError:
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    def _initialize_llm(self) -> ChatAnthropic:
+        """Initialize the LangChain LLM with agent-specific configuration."""
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        
+        return ChatAnthropic(
+            model=self.agent_config.get("model", "claude-3-5-sonnet-20241022"),
+            temperature=self.agent_config.get("temperature", 0.7),
+            max_tokens=self.agent_config.get("max_tokens", 4000),
+            anthropic_api_key=api_key
+        )
     
     async def start(self) -> None:
         """Start the agent's main loop."""
