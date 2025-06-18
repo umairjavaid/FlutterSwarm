@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from flutter_swarm import FlutterSwarm
 from rich.console import Console
@@ -69,45 +70,43 @@ class FlutterSwarmCLI:
             await self.build_project_with_progress(project_id, args.platforms.split(',') if args.platforms else None)
     
     async def build_project_with_progress(self, project_id: str, platforms=None):
-        """Build project with live progress display."""
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        """Build project with live progress display and monitoring."""
+        # Import monitoring here to avoid circular imports
+        from monitoring import live_display
+        
+        console.print("\n🔍 [bold green]Starting live monitoring...[/bold green]")
+        console.print("📊 You can see real-time agent activities below:")
+        console.print("💡 [dim]Press Ctrl+C to stop (monitoring will continue in background)[/dim]\n")
+        
+        try:
+            # Start live display in parallel with build
+            live_display.start()
             
-            building_msg = self.messages.get('building', 'Building Flutter project...')
-            task = progress.add_task(building_msg, total=None)
-            
-            # Start build in background
+            # Start build
             build_task = asyncio.create_task(
                 self.swarm.build_project(project_id, platforms)
             )
             
-            # Get update frequency from config
-            update_frequency = self.config.get_interval_setting('progress_update')
-            
-            # Monitor progress
-            while not build_task.done():
-                status = self.swarm.get_project_status(project_id)
-                if 'project' in status:
-                    project_info = status['project']
-                    progress_format = self.display_config.get('progress_format', '{:.1%}')
-                    progress_str = progress_format.format(project_info['progress'])
-                    progress.update(
-                        task, 
-                        description=f"Phase: {project_info['current_phase']} - Progress: {progress_str}"
-                    )
-                
-                await asyncio.sleep(update_frequency)
-            
-            # Get final result
+            # Wait for build to complete or user interruption
             result = await build_task
-            complete_msg = self.messages.get('build_complete', '✅ Build completed!')
-            progress.update(task, description=complete_msg)
-        
-        # Display results
-        self.display_build_results(result)
+            
+            # Display results
+            self.display_build_results(result)
+            
+        except KeyboardInterrupt:
+            console.print("\n⏸️ [yellow]Live monitoring interrupted by user[/yellow]")
+            console.print("🔄 [dim]Build process continues in background...[/dim]")
+            
+            # Wait a bit for the build to potentially complete
+            try:
+                result = await asyncio.wait_for(build_task, timeout=5.0)
+                self.display_build_results(result)
+            except asyncio.TimeoutError:
+                console.print("⏰ [yellow]Build still in progress. Check logs for updates.[/yellow]")
+            
+        finally:
+            # Stop live display
+            live_display.stop()
     
     def display_build_results(self, result):
         """Display build results in a nice format."""
@@ -328,6 +327,174 @@ class FlutterSwarmCLI:
             )
         
         console.print(table)
+    
+    async def monitor(self, args):
+        """Start live monitoring for a project or general system monitoring."""
+        from monitoring import live_display, build_monitor, agent_logger
+        
+        if args.project_id:
+            # Monitor specific project
+            console.print(f"🔍 [bold green]Starting monitoring for project: {args.project_id[:8]}...[/bold green]")
+        else:
+            # General system monitoring
+            console.print("🔍 [bold green]Starting general FlutterSwarm monitoring...[/bold green]")
+        
+        console.print("📊 Real-time agent activities, tool usage, and collaboration")
+        console.print("💡 [dim]Press Ctrl+C to stop monitoring[/dim]\n")
+        
+        # Initialize swarm if needed
+        if not self.swarm:
+            self.swarm = FlutterSwarm(enable_monitoring=True)
+            await self.swarm.start()
+        
+        try:
+            # Start live display
+            live_display.start()
+            
+            # If monitoring a specific project, start build monitoring
+            if args.project_id:
+                build_monitor.start_monitoring(args.project_id)
+            
+            # Keep monitoring until interrupted
+            console.print("🔄 [dim]Monitoring active... (Ctrl+C to stop)[/dim]")
+            while True:
+                await asyncio.sleep(1)
+                
+        except KeyboardInterrupt:
+            console.print("\n⏸️ [yellow]Monitoring stopped by user[/yellow]")
+            
+        finally:
+            # Stop monitoring components
+            live_display.stop()
+            
+            if build_monitor.is_monitoring:
+                summary = build_monitor.stop_monitoring()
+                console.print(f"\n📊 [bold]Monitoring Summary:[/bold]")
+                console.print(f"⏱️ Duration: {summary.get('build_duration', 'Unknown')}")
+                console.print(f"🔧 Tool calls: {summary.get('total_tool_calls', 0)}")
+                console.print(f"📈 Events: {summary.get('total_events', 0)}")
+                
+                # Offer to export reports
+                if summary.get('total_events', 0) > 0:
+                    export = console.input("\n📄 Export detailed report? (y/n): ").strip().lower()
+                    if export in ['y', 'yes']:
+                        report_file = build_monitor.export_build_report()
+                        log_file = agent_logger.export_logs_to_json()
+                        console.print(f"✅ Reports saved:")
+                        console.print(f"   🏗️ Build report: {report_file}")
+                        console.print(f"   📋 Detailed logs: {log_file}")
+                
+            await self.swarm.stop()
+    
+    async def logs(self, args):
+        """Show or export logs from previous sessions."""
+        from monitoring import agent_logger
+        import os
+        import json
+        from pathlib import Path
+        
+        if args.export:
+            # Export current session logs
+            filename = args.filename or f"flutterswarm_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filepath = agent_logger.export_logs_to_json(filename)
+            console.print(f"📄 Logs exported to: {filepath}")
+            
+        elif args.list:
+            # List available log files
+            logs_dir = Path("logs")
+            if logs_dir.exists():
+                log_files = list(logs_dir.glob("*.json"))
+                if log_files:
+                    console.print("📋 [bold]Available log files:[/bold]")
+                    for log_file in sorted(log_files, key=lambda x: x.stat().st_mtime, reverse=True):
+                        size = log_file.stat().st_size
+                        modified = datetime.fromtimestamp(log_file.stat().st_mtime)
+                        console.print(f"  📄 {log_file.name} ({size:,} bytes, {modified.strftime('%Y-%m-%d %H:%M')})")
+                else:
+                    console.print("📭 No log files found")
+            else:
+                console.print("📭 Logs directory not found")
+                
+        elif args.show:
+            # Show logs from specific file or current session
+            if args.filename:
+                # Load from file
+                try:
+                    with open(args.filename, 'r') as f:
+                        log_data = json.load(f)
+                    
+                    console.print(f"📋 [bold]Logs from: {args.filename}[/bold]")
+                    console.print(f"📅 Session: {log_data.get('session_id', 'Unknown')}")
+                    console.print(f"⏱️ Duration: {log_data.get('session_start', 'Unknown')}")
+                    console.print(f"📊 Total entries: {log_data.get('total_entries', 0)}\n")
+                    
+                    # Show recent entries
+                    logs = log_data.get('logs', [])
+                    recent_logs = logs[-args.limit:] if args.limit else logs[-20:]
+                    
+                    for entry in recent_logs:
+                        timestamp = entry['timestamp'][:19]  # Remove microseconds
+                        level_color = {
+                            'DEBUG': 'dim',
+                            'INFO': 'blue',
+                            'WARNING': 'yellow', 
+                            'ERROR': 'red'
+                        }.get(entry['level'], 'white')
+                        
+                        console.print(f"[dim]{timestamp}[/dim] [{level_color}]{entry['level']}[/{level_color}] {entry['agent_id']}: {entry['message']}")
+                        
+                except FileNotFoundError:
+                    console.print(f"❌ Log file not found: {args.filename}")
+                except json.JSONDecodeError:
+                    console.print(f"❌ Invalid log file format: {args.filename}")
+                    
+            else:
+                # Show current session logs
+                summary = agent_logger.get_session_summary()
+                console.print("📋 [bold]Current Session Logs[/bold]")
+                console.print(f"📅 Session: {summary.get('session_id', 'Unknown')}")
+                console.print(f"⏱️ Duration: {summary.get('session_duration', 'Unknown')}")
+                console.print(f"📊 Total entries: {summary.get('total_entries', 0)}")
+                console.print(f"❌ Errors: {summary.get('error_count', 0)}\n")
+                
+                # Show recent entries
+                recent_logs = agent_logger.get_recent_logs(args.limit or 20)
+                for entry in recent_logs:
+                    timestamp = entry.timestamp.strftime('%H:%M:%S')
+                    level_color = {
+                        'DEBUG': 'dim',
+                        'INFO': 'blue', 
+                        'WARNING': 'yellow',
+                        'ERROR': 'red'
+                    }.get(entry.level, 'white')
+                    
+                    console.print(f"[dim]{timestamp}[/dim] [{level_color}]{entry.level}[/{level_color}] {entry.agent_id}: {entry.message}")
+        else:
+            # Default: show current session summary
+            summary = agent_logger.get_session_summary()
+            console.print("📋 [bold]Current Logging Session[/bold]")
+            
+            # Session info
+            console.print(f"📅 Session ID: {summary.get('session_id', 'Unknown')}")
+            console.print(f"⏱️ Duration: {summary.get('session_duration', 'Unknown')}")
+            console.print(f"📊 Total entries: {summary.get('total_entries', 0)}")
+            console.print(f"❌ Errors: {summary.get('error_count', 0)}")
+            
+            # Events by type
+            events = summary.get('events_by_type', {})
+            if events:
+                console.print("\n📈 [bold]Events by type:[/bold]")
+                for event_type, count in sorted(events.items(), key=lambda x: x[1], reverse=True):
+                    console.print(f"  {event_type}: {count}")
+            
+            # Entries by agent
+            agents = summary.get('entries_by_agent', {})
+            if agents:
+                console.print("\n🤖 [bold]Activity by agent:[/bold]")
+                for agent_id, count in sorted(agents.items(), key=lambda x: x[1], reverse=True):
+                    console.print(f"  {agent_id}: {count}")
+            
+            console.print(f"\n💡 Use --show to see detailed logs or --export to save them")
 
 def main():
     """Main CLI entry point."""
@@ -360,6 +527,18 @@ Examples:
     # Interactive command
     interactive_parser = subparsers.add_parser('interactive', help='Run in interactive mode')
     
+    # Monitor command
+    monitor_parser = subparsers.add_parser('monitor', help='Start live monitoring')
+    monitor_parser.add_argument('--project-id', help='Specific project ID to monitor')
+    
+    # Logs command
+    logs_parser = subparsers.add_parser('logs', help='Show or export logs')
+    logs_parser.add_argument('--export', action='store_true', help='Export logs to a file')
+    logs_parser.add_argument('--show', action='store_true', help='Show logs in the console')
+    logs_parser.add_argument('--list', action='store_true', help='List available log files')
+    logs_parser.add_argument('--filename', help='Log file name (for export or display)')
+    logs_parser.add_argument('--limit', type=int, default=20, help='Number of log entries to show')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -375,6 +554,10 @@ Examples:
             asyncio.run(cli.status(args))
         elif args.command == 'interactive':
             asyncio.run(cli.run_interactive(args))
+        elif args.command == 'monitor':
+            asyncio.run(cli.monitor(args))
+        elif args.command == 'logs':
+            asyncio.run(cli.logs(args))
     except KeyboardInterrupt:
         console.print("\n🛑 [yellow]Interrupted by user[/yellow]")
     except Exception as e:

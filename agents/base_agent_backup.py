@@ -5,7 +5,6 @@ All specialized agents inherit from this base class.
 
 import asyncio
 import yaml
-import time
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -17,6 +16,30 @@ from tools import ToolManager, AgentToolbox, ToolResult
 import os
 from dotenv import load_dotenv
 import logging
+
+# Import monitoring components
+from monitoring import build_monitor
+
+load_dotenv() for FlutterSwarm.
+All specialized agents inherit from this base class.
+"""
+
+import asyncio
+import yaml
+from abc import ABC, abstractmethod
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
+from shared.state import shared_state, AgentStatus, MessageType, AgentMessage
+from config.config_manager import get_config
+from tools import ToolManager, AgentToolbox, ToolResult
+import os
+from dotenv import load_dotenv
+import logging
+
+# Import monitoring components
+from monitoring import build_monitor
 
 load_dotenv()
 
@@ -107,35 +130,10 @@ class BaseAgent(ABC):
             anthropic_api_key=api_key
         )
     
-    def _log_status_change(self, new_status: AgentStatus, task: Optional[str] = None):
-        """Log status change to monitoring system."""
-        try:
-            # Import here to avoid circular imports
-            from monitoring import build_monitor
-            
-            # Log status change to monitoring system
-            build_monitor.log_agent_status_change(
-                self.agent_id, self._last_status, new_status, task
-            )
-            self._last_status = new_status
-        except ImportError:
-            # Monitoring not available, skip
-            pass
-        except Exception as e:
-            self.logger.warning(f"Failed to log status change: {e}")
-    
-    def _update_status(self, status: AgentStatus, task: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
-        """Update agent status and log to monitoring."""
-        # Update shared state
-        shared_state.update_agent_status(self.agent_id, status, task, metadata)
-        
-        # Log to monitoring system
-        self._log_status_change(status, task)
-    
     async def start(self) -> None:
         """Start the agent's main loop."""
         self.is_running = True
-        self._update_status(AgentStatus.IDLE)
+        shared_state.update_agent_status(self.agent_id, AgentStatus.IDLE)
         
         self.logger.info(f"🚀 {self.agent_config.get('name', self.agent_id)} started")
         
@@ -164,7 +162,8 @@ class BaseAgent(ABC):
                 
             except Exception as e:
                 self.logger.error(f"❌ Error in {self.agent_id}: {str(e)}")
-                self._update_status(
+                shared_state.update_agent_status(
+                    self.agent_id, 
                     AgentStatus.ERROR,
                     metadata={"error": str(e)}
                 )
@@ -177,15 +176,12 @@ class BaseAgent(ABC):
     async def stop(self) -> None:
         """Stop the agent."""
         self.is_running = False
-        self._update_status(AgentStatus.IDLE)
+        shared_state.update_agent_status(self.agent_id, AgentStatus.IDLE)
         self.logger.info(f"🛑 {self.agent_config.get('name', self.agent_id)} stopped")
     
     async def _handle_message(self, message: AgentMessage) -> None:
         """Handle incoming messages."""
         try:
-            # Log message to monitoring system
-            self._log_message_received(message)
-            
             if message.message_type == MessageType.TASK_REQUEST:
                 await self._handle_task_request(message)
             elif message.message_type == MessageType.COLLABORATION_REQUEST:
@@ -197,28 +193,13 @@ class BaseAgent(ABC):
         except Exception as e:
             self.logger.error(f"❌ Error handling message in {self.agent_id}: {str(e)}")
     
-    def _log_message_received(self, message: AgentMessage):
-        """Log received message to monitoring system."""
-        try:
-            from monitoring import build_monitor
-            build_monitor.log_message(
-                message.from_agent,
-                self.agent_id,
-                message.message_type,
-                message.content,
-                message.priority
-            )
-        except ImportError:
-            pass
-        except Exception as e:
-            self.logger.warning(f"Failed to log message: {e}")
-    
     async def _handle_task_request(self, message: AgentMessage) -> None:
         """Handle task requests."""
         task_description = message.content.get("task_description", "")
         task_data = message.content.get("task_data", {})
         
-        self._update_status(
+        shared_state.update_agent_status(
+            self.agent_id,
             AgentStatus.WORKING,
             current_task=task_description
         )
@@ -238,7 +219,7 @@ class BaseAgent(ABC):
                 }
             )
             
-            self._update_status(AgentStatus.IDLE)
+            shared_state.update_agent_status(self.agent_id, AgentStatus.IDLE)
             
         except Exception as e:
             shared_state.send_message(
@@ -251,21 +232,12 @@ class BaseAgent(ABC):
                     "success": False
                 }
             )
-            self._update_status(AgentStatus.ERROR)
+            shared_state.update_agent_status(self.agent_id, AgentStatus.ERROR)
     
     async def _handle_collaboration_request(self, message: AgentMessage) -> None:
         """Handle collaboration requests from other agents."""
         collaboration_type = message.content.get("type", "")
         data = message.content.get("data", {})
-        
-        # Log collaboration to monitoring
-        try:
-            from monitoring import build_monitor
-            build_monitor.log_agent_collaboration(
-                message.from_agent, self.agent_id, collaboration_type, data
-            )
-        except ImportError:
-            pass
         
         response = await self.collaborate(collaboration_type, data)
         
@@ -291,27 +263,10 @@ class BaseAgent(ABC):
         """Periodic task execution. Override in subclasses."""
         pass
     
-    def send_message_to_agent(self, to_agent: str, message_type: MessageType, 
-                             content: Dict[str, Any], priority: int = 1) -> str:
-        """Send a message to another agent."""
-        message_id = shared_state.send_message(
-            from_agent=self.agent_id,
-            to_agent=to_agent,
-            message_type=message_type,
+    def send
             content=content,
             priority=priority
         )
-        
-        # Log outgoing message
-        try:
-            from monitoring import build_monitor
-            build_monitor.log_message(
-                self.agent_id, to_agent, message_type, content, priority
-            )
-        except ImportError:
-            pass
-        
-        return message_id
     
     def broadcast_message(self, message_type: MessageType, content: Dict[str, Any]) -> str:
         """Broadcast a message to all agents."""
@@ -367,29 +322,8 @@ class BaseAgent(ABC):
         Returns:
             ToolResult with execution outcome
         """
-        start_time = time.time()
         self.logger.debug(f"🔧 Executing tool: {tool_name}")
-        
         result = await self.tools.execute(tool_name, **kwargs)
-        execution_time = time.time() - start_time
-        
-        # Log tool usage to monitoring system
-        try:
-            from monitoring import build_monitor
-            build_monitor.log_tool_usage(
-                self.agent_id,
-                tool_name,
-                kwargs.get('operation', 'execute'),
-                result.status.value,
-                execution_time,
-                kwargs,
-                {"output": result.output} if result.output else None,
-                result.error
-            )
-        except ImportError:
-            pass
-        except Exception as e:
-            self.logger.warning(f"Failed to log tool usage: {e}")
         
         if result.status.value != "success":
             self.logger.warning(f"⚠️ Tool '{tool_name}' failed: {result.error}")
@@ -418,17 +352,20 @@ class BaseAgent(ABC):
     async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
         """Write a file using the file tool."""
         return await self.execute_tool("file", operation="write", file_path=file_path, content=content, **kwargs)
-    
+
     # Abstract methods that must be implemented by subclasses
+    
     @abstractmethod
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a specific task. Must be implemented by subclasses."""
         pass
     
+    @abstractmethod
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle collaboration requests. Override in subclasses."""
-        return {"status": "not_implemented", "message": "Collaboration not implemented"}
+        """Handle collaboration with other agents. Must be implemented by subclasses."""
+        pass
     
-    async def on_state_change(self, state_data: Dict[str, Any]) -> None:
-        """Handle state changes. Override in subclasses."""
+    @abstractmethod
+    async def on_state_change(self, change_data: Dict[str, Any]) -> None:
+        """React to state changes. Must be implemented by subclasses."""
         pass

@@ -22,15 +22,19 @@ from agents.quality_assurance_agent import QualityAssuranceAgent
 # Import shared state
 from shared.state import shared_state, AgentStatus, MessageType
 
+# Import monitoring system
+from monitoring import build_monitor
+
 class FlutterSwarm:
     """
     Main FlutterSwarm system that orchestrates all agents.
     Provides high-level API for creating and building Flutter projects.
     """
     
-    def __init__(self):
+    def __init__(self, enable_monitoring: bool = True):
         self.agents = {}
         self.is_running = False
+        self.enable_monitoring = enable_monitoring
         self._initialize_agents()
         
     def _initialize_agents(self):
@@ -69,6 +73,10 @@ class FlutterSwarm:
             print(f"📡 Started {agent_id} agent")
         
         print("🐝 All agents are now active and collaborating!")
+        
+        # Initialize monitoring if enabled
+        if self.enable_monitoring:
+            build_monitor.initialize_monitoring()
         
         # Keep the system running
         try:
@@ -146,28 +154,45 @@ class FlutterSwarm:
         print(f"🏗️  Building Flutter project: {project.name}")
         print(f"📱 Target platforms: {platforms}")
         
-        # Send initial task to orchestrator
-        orchestrator = self.agents["orchestrator"]
-        task_id = orchestrator.send_message_to_agent(
-            to_agent="orchestrator",
-            message_type=MessageType.TASK_REQUEST,
-            content={
-                "task_description": "create_project",
-                "task_data": {
-                    "name": project.name,
-                    "description": project.description,
-                    "requirements": project.requirements,
-                    "platforms": platforms,
-                    "ci_system": ci_system
-                }
-            },
-            priority=5
-        )
+        # Start monitoring
+        if self.enable_monitoring:
+            build_monitor.start_monitoring(project_id)
         
-        print(f"📋 Assigned build task {task_id} to orchestrator")
-        
-        # Monitor progress
-        return await self._monitor_build_progress(project_id)
+        try:
+            # Send initial task to orchestrator
+            orchestrator = self.agents["orchestrator"]
+            task_id = orchestrator.send_message_to_agent(
+                to_agent="orchestrator",
+                message_type=MessageType.TASK_REQUEST,
+                content={
+                    "task_description": "create_project",
+                    "task_data": {
+                        "name": project.name,
+                        "description": project.description,
+                        "requirements": project.requirements,
+                        "platforms": platforms,
+                        "ci_system": ci_system
+                    }
+                },
+                priority=5
+            )
+            
+            print(f"📋 Assigned build task {task_id} to orchestrator")
+            
+            # Monitor progress
+            result = await self._monitor_build_progress(project_id)
+            
+            return result
+            
+        finally:
+            # Stop monitoring
+            if self.enable_monitoring:
+                summary = build_monitor.stop_monitoring()
+                print(f"📊 Build monitoring summary: {summary}")
+                
+                # Export build report
+                report_file = build_monitor.export_build_report()
+                print(f"📄 Detailed build report saved to: {report_file}")
     
     async def _monitor_build_progress(self, project_id: str) -> Dict[str, Any]:
         """Monitor the build progress and return when complete."""
