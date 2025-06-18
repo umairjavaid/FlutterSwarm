@@ -12,7 +12,7 @@ from agents.base_agent import BaseAgent
 from shared.state import AgentStatus, MessageType
 
 
-class TestAgentImpl(BaseAgent):
+class BaseAgentTestImpl(BaseAgent):
     """Test implementation of BaseAgent for testing."""
     
     async def process_message(self, message):
@@ -41,7 +41,7 @@ class TestBaseAgent:
     def test_agent(self, mock_anthropic_client, mock_config, mock_tool_manager):
         """Create a test agent instance."""
         with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-            agent = TestAgentImpl("test_agent")
+            agent = BaseAgentTestImpl("test_agent")
             return agent
             
     def test_initialization(self, test_agent):
@@ -137,7 +137,7 @@ class TestBaseAgent:
             mock_llm_class.return_value = mock_llm_instance
             
             # Now create agent with all mocks in place
-            test_agent = TestAgentImpl("test_agent")
+            test_agent = BaseAgentTestImpl("test_agent")
             
             prompt = "What is 2 + 2?"
             result = await test_agent.think(prompt)
@@ -319,9 +319,8 @@ class TestBaseAgent:
         """Test updating agent status."""
         clean_shared_state.register_agent("test_agent", ["capability"])
         
-        # Update status should not raise errors - using shared_state directly
-        from shared.state import shared_state
-        shared_state.update_agent_status(
+        # Update status should not raise errors
+        clean_shared_state.update_agent_status(
             "test_agent",
             AgentStatus.WORKING,
             current_task="Processing task",
@@ -375,7 +374,7 @@ class TestBaseAgent:
             mock_llm_class.return_value = mock_llm_instance
             
             # Create agent and test error handling
-            test_agent = TestAgentImpl("test_agent")
+            test_agent = BaseAgentTestImpl("test_agent")
             
             with pytest.raises(Exception, match="LLM Error"):
                 await test_agent.think("test prompt")
@@ -404,8 +403,8 @@ class TestBaseAgent:
     def test_agent_id_uniqueness(self, mock_anthropic_client, mock_config, mock_tool_manager):
         """Test that each agent has a unique ID."""
         with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-            agent1 = TestAgentImpl("agent_1")
-            agent2 = TestAgentImpl("agent_2")
+            agent1 = BaseAgentTestImpl("agent_1")
+            agent2 = BaseAgentTestImpl("agent_2")
             
             assert agent1.agent_id != agent2.agent_id
             assert agent1.agent_id == "agent_1"

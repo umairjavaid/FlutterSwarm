@@ -53,6 +53,14 @@ class BuildMonitor:
         self.total_tool_calls = 0
         self.active_agents = set()
         
+    def initialize_monitoring(self) -> None:
+        """Initialize the monitoring system."""
+        # Initialize components if needed
+        self.build_events.clear()
+        self.total_tool_calls = 0
+        self.active_agents.clear()
+        print("🔍 Build monitoring system initialized")
+        
     def start_monitoring(self, project_id: str) -> None:
         """Start monitoring a Flutter build process."""
         if self.is_monitoring:

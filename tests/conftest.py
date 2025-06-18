@@ -106,4 +106,34 @@ def mock_tool_manager():
     """Mock tool manager for testing."""
     return MockToolManager()
 
+
+@pytest.fixture
+def flutter_swarm_instance(mock_anthropic_client, mock_config, mock_tool_manager):
+    """Create a FlutterSwarm instance for testing."""
+    with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
+        swarm = FlutterSwarm()
+        return swarm
+
+
+@pytest.fixture
+def sample_project_data():
+    """Sample project data for testing."""
+    return {
+        "name": "Test Flutter App",
+        "description": "A test Flutter application",
+        "requirements": [
+            "Cross-platform mobile app",
+            "User authentication",
+            "Data persistence",
+            "Clean architecture"
+        ],
+        "features": [
+            "User login/registration",
+            "Data synchronization",
+            "Offline support",
+            "Push notifications"
+        ]
+    }
+
+
 # Add any other fixtures as needed for the test suite.
