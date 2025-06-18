@@ -831,3 +831,19 @@ class AnalysisTool(BaseTool):
                 })
         
         return issues
+    
+    # Public methods for test and agent compatibility
+    async def dart_analyze(self, **kwargs):
+        return await self.execute("dart_analyze", **kwargs)
+    
+    async def security_scan(self, **kwargs):
+        return await self.execute("security_scan", **kwargs)
+    
+    async def calculate_metrics(self, **kwargs):
+        return await self.execute("code_metrics", **kwargs)
+    
+    async def analyze_dependencies(self, **kwargs):
+        return await self.execute("dependency_check", **kwargs)
+    
+    async def analyze_performance(self, **kwargs):
+        return await self.execute("performance_analysis", **kwargs)

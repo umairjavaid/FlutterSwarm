@@ -303,6 +303,9 @@ class FlutterTool(BaseTool):
 
     async def pub_get(self, **kwargs):
         return await self.execute("pub_get", **kwargs)
+
+    async def pub_add(self, packages, **kwargs):
+        return await self.execute("pub_add", packages=packages, **kwargs)
     
     def _parse_analysis_output(self, output: str) -> List[Dict[str, Any]]:
         """Parse flutter analyze output for issues."""

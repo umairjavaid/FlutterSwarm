@@ -516,3 +516,25 @@ class GitTool(BaseTool):
         """Get remote URL."""
         command = f"git remote get-url {remote}"
         return await self.terminal.execute(command)
+    
+    # Public methods for test and agent compatibility
+    async def init(self, **kwargs):
+        return await self.execute("init", **kwargs)
+    
+    async def add(self, files, **kwargs):
+        return await self.execute("add", files=files, **kwargs)
+    
+    async def commit(self, message, **kwargs):
+        return await self.execute("commit", message=message, **kwargs)
+    
+    async def status(self, **kwargs):
+        return await self.execute("status", **kwargs)
+    
+    async def list_branches(self, **kwargs):
+        return await self.execute("branches", action="list", **kwargs)
+    
+    async def create_branch(self, branch_name, **kwargs):
+        return await self.execute("branches", action="create", branch_name=branch_name, **kwargs)
+    
+    async def checkout_branch(self, branch_name, **kwargs):
+        return await self.execute("branches", action="checkout", branch_name=branch_name, **kwargs)
