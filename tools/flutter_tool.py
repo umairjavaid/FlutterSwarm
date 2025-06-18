@@ -288,6 +288,22 @@ class FlutterTool(BaseTool):
         
         return result
     
+    # Public methods for test and agent compatibility
+    async def doctor(self, **kwargs):
+        return await self.execute("doctor", **kwargs)
+
+    async def create_project(self, **kwargs):
+        return await self.execute("create", **kwargs)
+
+    async def build(self, **kwargs):
+        return await self.execute("build", **kwargs)
+
+    async def test(self, **kwargs):
+        return await self.execute("test", **kwargs)
+
+    async def pub_get(self, **kwargs):
+        return await self.execute("pub_get", **kwargs)
+    
     def _parse_analysis_output(self, output: str) -> List[Dict[str, Any]]:
         """Parse flutter analyze output for issues."""
         issues = []

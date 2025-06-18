@@ -223,6 +223,10 @@ class SharedState:
                 }
             )
     
+    def add_project_file(self, project_id: str, filename: str, content: str) -> None:
+        """Alias for add_file_to_project for test compatibility."""
+        return self.add_file_to_project(project_id, filename, content)
+    
     def send_message(self, from_agent: str, to_agent: Optional[str], 
                     message_type: MessageType, content: Dict[str, Any],
                     priority: int = 1) -> str:
