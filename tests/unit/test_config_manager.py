@@ -36,7 +36,7 @@ class TestConfigManager:
             'agents': {
                 'llm': {
                     'primary': {
-                        'model': 'claude-3-5-sonnet-20241022',
+                        'model': 'test-model-name',
                         'temperature': 0.7,
                         'max_tokens': 4000
                     }
