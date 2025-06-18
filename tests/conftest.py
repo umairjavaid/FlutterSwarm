@@ -64,9 +64,31 @@ def sample_agent_state():
     return AgentState(
         agent_id="test_agent",
         status=AgentStatus.IDLE,
-        last_active=datetime.now(),
+        last_update=datetime.now(),  # Fixed attribute name
         current_task=None,
-        capabilities=["test_capability"]
+        progress=0.0,
+        capabilities=["test_capability"],
+        metadata={}
+    )
+
+
+@pytest.fixture
+def sample_project_state():
+    """Sample project state for testing."""
+    return ProjectState(
+        project_id="test_project_123",
+        name="Test Project",
+        description="A test project for unit testing",
+        requirements=["req1", "req2"],
+        current_phase="development",
+        progress=0.5,
+        files_created={},
+        architecture_decisions=[],
+        test_results={},
+        security_findings=[],
+        performance_metrics={},
+        documentation={},
+        deployment_config={}
     )
 
 

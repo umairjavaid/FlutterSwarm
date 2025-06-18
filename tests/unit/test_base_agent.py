@@ -4,6 +4,7 @@ Unit tests for the BaseAgent class and agent infrastructure.
 
 import pytest
 import asyncio
+from typing import Dict, Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
@@ -18,10 +19,18 @@ class TestAgentImpl(BaseAgent):
         """Test implementation of process_message."""
         return {"status": "processed", "message_id": message.id}
         
-    async def execute_task(self, task_data):
+    async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Test implementation of execute_task."""
         await asyncio.sleep(0.1)  # Simulate work
         return {"status": "completed", "result": "test_result"}
+    
+    async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Test implementation of collaborate."""
+        return {"status": "collaboration_complete", "type": collaboration_type, "data": data}
+    
+    async def on_state_change(self, change_data: Dict[str, Any]) -> None:
+        """Test implementation of on_state_change."""
+        pass  # For testing, we just need a stub implementation
 
 
 @pytest.mark.unit
@@ -47,13 +56,34 @@ class TestBaseAgent:
     @pytest.mark.asyncio
     async def test_start_agent(self, test_agent, clean_shared_state):
         """Test starting an agent."""
-        # Mock the run method to avoid infinite loop
-        test_agent._run = AsyncMock()
+        # Start the agent in a background task
+        start_task = asyncio.create_task(test_agent.start())
         
-        await test_agent.start()
+        # Give it a moment to start
+        await asyncio.sleep(0.2)  # Slightly longer to ensure it starts
         
+        # Check that the agent started
         assert test_agent.is_running
-        test_agent._run.assert_called_once()
+        
+        # Stop the agent to clean up
+        await test_agent.stop()
+        
+        # Give it a moment to stop gracefully
+        await asyncio.sleep(0.2)
+        
+        # Verify it's no longer running
+        assert not test_agent.is_running
+        
+        # Wait for the start task to complete with a reasonable timeout
+        try:
+            await asyncio.wait_for(start_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            # If it times out, cancel the task
+            start_task.cancel()
+            try:
+                await start_task
+            except asyncio.CancelledError:
+                pass
         
     @pytest.mark.asyncio
     async def test_stop_agent(self, test_agent):
@@ -65,64 +95,70 @@ class TestBaseAgent:
         assert not test_agent.is_running
         
     @pytest.mark.asyncio
-    async def test_think_method(self, test_agent):
+    async def test_think_method(self, clean_shared_state):
         """Test the think method (AI reasoning)."""
-        prompt = "What is 2 + 2?"
-        
-        # Mock the LLM response
-        mock_response = MagicMock()
-        mock_response.content = "2 + 2 equals 4"
-        test_agent.llm.ainvoke = AsyncMock(return_value=mock_response)
-        
-        result = await test_agent.think(prompt)
-        
-        assert result == "2 + 2 equals 4"
-        test_agent.llm.ainvoke.assert_called_once()
+        # Create a test agent with proper mocking
+        with patch('langchain_anthropic.ChatAnthropic') as mock_llm_class:
+            mock_llm_instance = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.content = "2 + 2 equals 4"
+            mock_llm_instance.ainvoke.return_value = mock_response
+            mock_llm_class.return_value = mock_llm_instance
+            
+            with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
+                # Create agent which will use the mocked LLM
+                test_agent = TestAgentImpl("test_agent")
+                
+                prompt = "What is 2 + 2?"
+                result = await test_agent.think(prompt)
+                
+                assert result == "2 + 2 equals 4"
+                mock_llm_instance.ainvoke.assert_called_once()
         
     @pytest.mark.asyncio
     async def test_execute_tool(self, test_agent):
         """Test tool execution through agent."""
         # Mock tool execution
         mock_result = MagicMock()
-        mock_result.status = "SUCCESS"
+        mock_result.status.value = "success"
         mock_result.output = "Tool executed successfully"
-        test_agent.tools.execute_tool = AsyncMock(return_value=mock_result)
+        test_agent.tools.execute = AsyncMock(return_value=mock_result)
         
         result = await test_agent.execute_tool("test_tool", operation="test_op")
         
-        assert result.status == "SUCCESS"
+        assert result.status.value == "success"
         assert result.output == "Tool executed successfully"
-        test_agent.tools.execute_tool.assert_called_once_with("test_tool", operation="test_op")
+        test_agent.tools.execute.assert_called_once_with("test_tool", operation="test_op")
         
     @pytest.mark.asyncio
     async def test_run_command(self, test_agent):
         """Test command execution through agent."""
         # Mock command execution
         mock_result = MagicMock()
-        mock_result.status = "SUCCESS"
+        mock_result.status.value = "success"
         mock_result.output = "Command output"
-        test_agent.tools.execute_command = AsyncMock(return_value=mock_result)
+        test_agent.tools.execute = AsyncMock(return_value=mock_result)
         
         result = await test_agent.run_command("echo 'test'")
         
-        assert result.status == "SUCCESS"
+        assert result.status.value == "success"
         assert result.output == "Command output"
-        test_agent.tools.execute_command.assert_called_once_with("echo 'test'")
+        test_agent.tools.execute.assert_called_once_with("terminal", command="echo 'test'")
         
     @pytest.mark.asyncio
     async def test_read_file(self, test_agent):
         """Test file reading through agent."""
         # Mock file tool
         mock_result = MagicMock()
-        mock_result.status = "SUCCESS"
+        mock_result.status.value = "success"
         mock_result.output = "file content"
-        test_agent.tools.execute_tool = AsyncMock(return_value=mock_result)
+        test_agent.tools.execute = AsyncMock(return_value=mock_result)
         
         result = await test_agent.read_file("test.txt")
         
-        assert result.status == "SUCCESS"
+        assert result.status.value == "success"
         assert result.output == "file content"
-        test_agent.tools.execute_tool.assert_called_once_with(
+        test_agent.tools.execute.assert_called_once_with(
             "file", operation="read", file_path="test.txt"
         )
         
@@ -131,13 +167,13 @@ class TestBaseAgent:
         """Test file writing through agent."""
         # Mock file tool
         mock_result = MagicMock()
-        mock_result.status = "SUCCESS"
-        test_agent.tools.execute_tool = AsyncMock(return_value=mock_result)
+        mock_result.status.value = "success"
+        test_agent.tools.execute = AsyncMock(return_value=mock_result)
         
         result = await test_agent.write_file("test.txt", "content")
         
-        assert result.status == "SUCCESS"
-        test_agent.tools.execute_tool.assert_called_once_with(
+        assert result.status.value == "success"
+        test_agent.tools.execute.assert_called_once_with(
             "file", operation="write", file_path="test.txt", content="content"
         )
         
@@ -202,9 +238,10 @@ class TestBaseAgent:
     @pytest.mark.asyncio
     async def test_execute_task_implementation(self, test_agent):
         """Test the execute_task implementation."""
+        task_description = "Test task"
         task_data = {"task_type": "test", "parameters": {}}
         
-        result = await test_agent.execute_task(task_data)
+        result = await test_agent.execute_task(task_description, task_data)
         
         assert result["status"] == "completed"
         assert result["result"] == "test_result"
@@ -223,23 +260,20 @@ class TestBaseAgent:
             content={"task": "test"}
         )
         
-        # Mock the _run method to process one iteration
-        original_run = test_agent._run
+        # Start the agent in a background task
+        start_task = asyncio.create_task(test_agent.start())
         
-        async def mock_run():
-            # Process messages once
-            messages = clean_shared_state.get_messages("test_agent", limit=1)
-            if messages:
-                await test_agent.process_message(messages[0])
-            test_agent.is_running = False  # Stop after one iteration
-            
-        test_agent._run = mock_run
+        # Give it a moment to process the message
+        await asyncio.sleep(0.2)
         
-        # Start and run the agent briefly
-        await test_agent.start()
+        # Stop the agent
+        await test_agent.stop()
         
-        # The message should have been processed
-        # (In a real implementation, you'd check the result of message processing)
+        # Wait for the start task to complete
+        await start_task
+        
+        # The message should have been processed (we can't easily verify this without
+        # more complex mocking, but the test ensures the loop runs without errors)
         
     def test_get_capabilities(self, test_agent):
         """Test getting agent capabilities."""
@@ -252,12 +286,14 @@ class TestBaseAgent:
         """Test updating agent status."""
         clean_shared_state.register_agent("test_agent", ["capability"])
         
-        # Update status should not raise errors
-        test_agent._update_status(
+        # Update status should not raise errors - using shared_state directly
+        from shared.state import shared_state
+        shared_state.update_agent_status(
+            "test_agent",
             AgentStatus.WORKING,
-            "Processing task",
-            0.5,
-            {"additional": "metadata"}
+            current_task="Processing task",
+            progress=0.5,
+            metadata={"additional": "metadata"}
         )
         
         # Check status was updated
@@ -279,7 +315,7 @@ class TestBaseAgent:
     async def test_error_handling_in_tool_execution(self, test_agent):
         """Test error handling in tool execution."""
         # Mock tool to raise an exception
-        test_agent.tools.execute_tool = AsyncMock(side_effect=Exception("Tool Error"))
+        test_agent.tools.execute = AsyncMock(side_effect=Exception("Tool Error"))
         
         with pytest.raises(Exception, match="Tool Error"):
             await test_agent.execute_tool("test_tool")

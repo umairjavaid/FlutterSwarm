@@ -124,9 +124,14 @@ class BaseAgent(ABC):
                 # Perform periodic tasks
                 await self._periodic_task()
                 
-                # Use configurable sync interval
+                # Use configurable sync interval but check is_running more frequently
                 sync_interval = self._config_manager.get('system.performance.state_sync_interval', 2)
-                await asyncio.sleep(sync_interval)
+                # Sleep in smaller increments to be more responsive to stop signals
+                sleep_increment = 0.1
+                slept = 0
+                while slept < sync_interval and self.is_running:
+                    await asyncio.sleep(sleep_increment)
+                    slept += sleep_increment
                 
             except Exception as e:
                 self.logger.error(f"❌ Error in {self.agent_id}: {str(e)}")

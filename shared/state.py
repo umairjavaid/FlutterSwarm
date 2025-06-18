@@ -244,19 +244,29 @@ class SharedState:
         with self._lock:
             self._messages.append(message)
             
+            # Clean up old messages if we exceed the limit
+            if len(self._messages) > self._max_messages:
+                self._messages = self._messages[-self._max_messages:]
+            
             if to_agent:
                 # Direct message
                 if to_agent in self._message_queue:
                     self._message_queue[to_agent].append(message)
+                    # Clean up agent-specific queue
+                    if len(self._message_queue[to_agent]) > self._max_messages:
+                        self._message_queue[to_agent] = self._message_queue[to_agent][-self._max_messages:]
             else:
                 # Broadcast to all agents except sender
                 for agent_id in self._message_queue:
                     if agent_id != from_agent:
                         self._message_queue[agent_id].append(message)
+                        # Clean up agent-specific queue
+                        if len(self._message_queue[agent_id]) > self._max_messages:
+                            self._message_queue[agent_id] = self._message_queue[agent_id][-self._max_messages:]
         
         return message.id
     
-    def get_messages(self, agent_id: str, mark_read: bool = True) -> List[AgentMessage]:
+    def get_messages(self, agent_id: str, mark_read: bool = True, limit: int = None) -> List[AgentMessage]:
         """Get messages for a specific agent."""
         with self._lock:
             if agent_id not in self._message_queue:
@@ -266,7 +276,13 @@ class SharedState:
             if mark_read:
                 self._message_queue[agent_id].clear()
             
-            return sorted(messages, key=lambda m: (m.priority, m.timestamp), reverse=True)
+            # Sort by priority (high first) and timestamp (newest first)
+            sorted_messages = sorted(messages, key=lambda m: (-m.priority, -m.timestamp.timestamp()))
+            
+            if limit is not None:
+                sorted_messages = sorted_messages[:limit]
+                
+            return sorted_messages
     
     def get_project_state(self, project_id: Optional[str] = None) -> Optional[ProjectState]:
         """Get current project state."""
@@ -301,19 +317,36 @@ class SharedState:
                 self._subscribers[agent_id] = []
             self._subscribers[agent_id].append(callback)
     
-    def get_collaboration_context(self, requesting_agent: str) -> Dict[str, Any]:
-        """Get full context for agent collaboration."""
+    def subscribe(self, event_type: str, callback: Callable) -> None:
+        """Subscribe to specific event types."""
         with self._lock:
-            # Get max recent messages from config
-            max_recent_messages = self._config.get('communication.messaging.max_recent_messages', 10)
+            if event_type not in self._subscribers:
+                self._subscribers[event_type] = []
+            self._subscribers[event_type].append(callback)
+    
+    def _notify_subscribers(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Notify all subscribers of an event."""
+        with self._lock:
+            if event_type in self._subscribers:
+                for callback in self._subscribers[event_type]:
+                    try:
+                        callback(event_type, data)
+                    except Exception as e:
+                        print(f"Error notifying subscriber: {e}")
+    
+    def update_project_phase(self, project_id: str, phase: str) -> None:
+        """Update project phase."""
+        with self._lock:
+            if project_id not in self._projects:
+                raise ValueError(f"Project {project_id} not found")
             
-            return {
-                "agents": {aid: asdict(state) for aid, state in self._agents.items()},
-                "current_project": asdict(self.get_project_state()) if self.get_project_state() else None,
-                "recent_messages": [asdict(msg) for msg in self._messages[-max_recent_messages:]],
-                "requesting_agent": requesting_agent,
-                "timestamp": datetime.now().isoformat()
-            }
+            self._projects[project_id].current_phase = phase
+            
+            # Notify subscribers
+            self._notify_subscribers("project_phase_changed", {
+                "project_id": project_id,
+                "new_phase": phase
+            })
     
     def report_issue(self, project_id: str, issue_data: Dict[str, Any]) -> str:
         """Report a new issue found by an agent."""
@@ -385,6 +418,27 @@ class SharedState:
                     )
                     return True
             return False
+
+    def get_collaboration_context(self, requesting_agent: str) -> Dict[str, Any]:
+        """Get collaboration context for an agent."""
+        with self._lock:
+            context = {
+                "requesting_agent": requesting_agent,
+                "timestamp": datetime.now(),
+                "agents": {agent_id: asdict(agent_state) for agent_id, agent_state in self._agents.items()},
+                "current_project": None,
+                "recent_messages": []
+            }
+            
+            # Add current project info
+            if self._current_project_id and self._current_project_id in self._projects:
+                context["current_project"] = asdict(self._projects[self._current_project_id])
+            
+            # Add recent messages for the requesting agent
+            agent_messages = self.get_messages(requesting_agent, mark_read=False, limit=10)
+            context["recent_messages"] = [asdict(msg) for msg in agent_messages]
+            
+            return context
 
 # Global shared state instance
 shared_state = SharedState()

@@ -132,7 +132,11 @@ class TestSharedState:
         new_phase = "implementation"
         new_progress = 0.5
         
-        state.update_project_phase(project_id, new_phase, new_progress)
+        # Update phase using the correct method signature
+        state.update_project_phase(project_id, new_phase)
+        
+        # Update progress using the update_project method
+        state.update_project(project_id, progress=new_progress)
         
         project = state._projects[project_id]
         assert project.current_phase == new_phase
@@ -207,9 +211,11 @@ class TestSharedState:
         messages = state.get_messages(agent_id)
         assert len(messages) == 3
         
-        # Check messages are sorted by priority and timestamp
+        # Check messages are sorted by priority and timestamp (newest first)
+        # Since all have same priority, should be in reverse order by timestamp
+        expected_tasks = [f"task_{i}" for i in range(2, -1, -1)]  # [task_2, task_1, task_0]
         for i, message in enumerate(messages):
-            assert message.content["task"] == f"task_{i}"
+            assert message.content["task"] == expected_tasks[i]
             
     def test_get_messages_with_limit(self, clean_shared_state):
         """Test getting messages with limit."""
