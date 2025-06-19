@@ -133,51 +133,19 @@ class BaseAgent(ABC):
         self._log_status_change(status, task)
     
     async def start(self) -> None:
-        """Start the agent's main loop."""
-        self.is_running = True
-        self._update_status(AgentStatus.IDLE)
-        
-        self.logger.info(f"🚀 {self.agent_config.get('name', self.agent_id)} started")
-        
-        # Get performance configuration
-        perf_config = self._config_manager.get_performance_config()
-        heartbeat_interval = perf_config.get('heartbeat_interval', 30)
-        
-        while self.is_running:
-            try:
-                # Check for new messages
-                messages = shared_state.get_messages(self.agent_id)
-                for message in messages:
-                    await self._handle_message(message)
-                
-                # Perform periodic tasks
-                await self._periodic_task()
-                
-                # Use configurable sync interval but check is_running more frequently
-                sync_interval = self._config_manager.get('system.performance.state_sync_interval', 2)
-                # Sleep in smaller increments to be more responsive to stop signals
-                sleep_increment = 0.1
-                slept = 0
-                while slept < sync_interval and self.is_running:
-                    await asyncio.sleep(sleep_increment)
-                    slept += sleep_increment
-                
-            except Exception as e:
-                self.logger.error(f"❌ Error in {self.agent_id}: {str(e)}")
-                self._update_status(
-                    AgentStatus.ERROR,
-                    metadata={"error": str(e)}
-                )
-                
-                # Get retry configuration
-                error_config = self._config_manager.get('system.error_handling', {})
-                retry_delay = error_config.get('retry_delay', 5)
-                await asyncio.sleep(retry_delay)
+        """
+        Start the agent (deprecated for LangGraph implementation).
+        This method is kept for backward compatibility but is no longer used in LangGraph mode.
+        """
+        self.logger.info(f"🚀 {self.agent_config.get('name', self.agent_id)} initialized (LangGraph mode)")
+        # In LangGraph mode, agents are stateless and invoked by the graph
     
     async def stop(self) -> None:
-        """Stop the agent."""
+        """
+        Stop the agent (deprecated for LangGraph implementation).
+        This method is kept for backward compatibility.
+        """
         self.is_running = False
-        self._update_status(AgentStatus.IDLE)
         self.logger.info(f"🛑 {self.agent_config.get('name', self.agent_id)} stopped")
     
     async def _handle_message(self, message: AgentMessage) -> None:

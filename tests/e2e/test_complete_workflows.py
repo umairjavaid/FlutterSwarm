@@ -1,5 +1,6 @@
 """
 End-to-end tests for complete FlutterSwarm workflows.
+Updated for LangGraph-based implementation.
 """
 
 import pytest
@@ -8,7 +9,6 @@ import tempfile
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from flutter_swarm import FlutterSwarm
-from shared.state import shared_state, AgentStatus
 
 
 @pytest.mark.e2e
@@ -17,19 +17,10 @@ class TestFlutterSwarmE2E:
     """End-to-end test suite for FlutterSwarm."""
     
     @pytest.mark.asyncio
-    async def test_complete_app_development_workflow(
-        self, 
-        clean_shared_state, 
-        mock_anthropic_client, 
-        mock_config, 
-        mock_tool_manager
-    ):
-        """Test complete app development from start to finish."""
+    async def test_complete_app_development_workflow(self):
+        """Test complete app development from start to finish using LangGraph."""
         with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-            swarm = FlutterSwarm()
-            
-            # Mock all agent behaviors for realistic workflow
-            await self._setup_realistic_agent_mocks(swarm, clean_shared_state)
+            swarm = FlutterSwarm(enable_monitoring=False)
             
             # Phase 1: Project Creation
             project_id = swarm.create_project(
