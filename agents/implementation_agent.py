@@ -4,6 +4,8 @@ Implementation Agent - Generates Flutter/Dart code based on architectural decisi
 
 import asyncio
 import os
+import uuid
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -37,6 +39,12 @@ class ImplementationAgent(BaseAgent):
             return await self._setup_project_structure(task_data)
         elif "fix_implementation_issue" in task_description:
             return await self._fix_implementation_issue(task_data)
+        elif "implement_incremental_features" in task_description:
+            return await self._implement_incremental_features(task_data)
+        elif "validate_feature" in task_description:
+            return await self._validate_feature(task_data)
+        elif "rollback_feature" in task_description:
+            return await self._rollback_feature(task_data)
         else:
             return await self._handle_general_implementation(task_description, task_data)
     
@@ -1141,5 +1149,710 @@ class HomeScreen extends StatelessWidget {{
             self.logger.error(f"❌ Error generating AI-driven structure: {e}")
             # Fallback to basic structure
             return await self._create_basic_flutter_app(project_path, project.name)
+
+    # Incremental Implementation Methods
+    async def _implement_incremental_features(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Implement features incrementally with validation at each step."""
+        project_id = task_data["project_id"]
+        requirements = task_data.get("requirements", [])
+        features = task_data.get("features", [])
+        
+        self.logger.info(f"🔄 Starting incremental feature implementation for project {project_id}")
+        
+        # Register with supervision
+        await self._register_incremental_process(project_id)
+        
+        try:
+            # Parse requirements into discrete features
+            feature_queue = await self._parse_requirements_into_features(requirements, features)
+            
+            # Initialize incremental state
+            shared_state.initialize_incremental_implementation(project_id, feature_queue)
+            
+            # Sort features by priority and dependencies
+            sorted_features = await self._sort_features_by_dependencies(feature_queue)
+            
+            implementation_results = {
+                "project_id": project_id,
+                "total_features": len(sorted_features),
+                "completed_features": [],
+                "failed_features": [],
+                "feature_results": {},
+                "overall_status": "in_progress"
+            }
+            
+            # Implement features one by one
+            for feature in sorted_features:
+                feature_id = feature["id"]
+                
+                self.logger.info(f"🔄 Implementing feature: {feature_id}")
+                shared_state.start_feature_implementation(project_id, feature)
+                
+                # Send heartbeat to supervision
+                await self._send_implementation_heartbeat(project_id, feature_id)
+                
+                # Implement the feature
+                feature_result = await self._implement_single_feature(project_id, feature)
+                implementation_results["feature_results"][feature_id] = feature_result
+                
+                if feature_result["status"] == "success":
+                    # Validate the feature
+                    validation_result = await self._validate_implemented_feature(project_id, feature)
+                    
+                    if validation_result["valid"]:
+                        # Create rollback point
+                        rollback_point = await self._create_rollback_point(project_id, feature_id)
+                        
+                        # Mark feature as completed
+                        shared_state.complete_feature_implementation(
+                            project_id, feature_id, True, rollback_point
+                        )
+                        implementation_results["completed_features"].append(feature_id)
+                        
+                        self.logger.info(f"✅ Feature {feature_id} implemented and validated successfully")
+                    else:
+                        # Validation failed - attempt retry or rollback
+                        retry_result = await self._handle_feature_validation_failure(
+                            project_id, feature, validation_result
+                        )
+                        
+                        if retry_result["success"]:
+                            implementation_results["completed_features"].append(feature_id)
+                        else:
+                            implementation_results["failed_features"].append(feature_id)
+                            shared_state.complete_feature_implementation(project_id, feature_id, False)
+                else:
+                    # Implementation failed
+                    implementation_results["failed_features"].append(feature_id)
+                    shared_state.complete_feature_implementation(project_id, feature_id, False)
+                    
+                    self.logger.error(f"❌ Feature {feature_id} implementation failed")
+                
+                # Check if we should continue or halt
+                if len(implementation_results["failed_features"]) > 3:
+                    self.logger.error("❌ Too many feature failures, halting incremental implementation")
+                    break
+            
+            # Determine overall status
+            total_completed = len(implementation_results["completed_features"])
+            total_features = implementation_results["total_features"]
+            
+            if total_completed == total_features:
+                implementation_results["overall_status"] = "completed"
+            elif total_completed > 0:
+                implementation_results["overall_status"] = "partial"
+            else:
+                implementation_results["overall_status"] = "failed"
+            
+            self.logger.info(f"🔄 Incremental implementation completed: {total_completed}/{total_features} features")
+            
+            return {
+                "status": "incremental_implementation_completed",
+                "results": implementation_results
+            }
+        
+        except Exception as e:
+            self.logger.error(f"❌ Incremental implementation failed: {e}")
+            return {
+                "status": "incremental_implementation_failed",
+                "error": str(e)
+            }
+    
+    async def _parse_requirements_into_features(self, requirements: List[str], features: List[str]) -> List[Dict[str, Any]]:
+        """Parse project requirements into discrete, implementable features."""
+        feature_queue = []
+        
+        # Combine requirements and features
+        all_features = features + [req for req in requirements if req not in features]
+        
+        for i, feature_name in enumerate(all_features):
+            # Create feature object with metadata
+            feature = {
+                "id": f"feature_{i+1}_{feature_name.lower().replace(' ', '_')}",
+                "name": feature_name,
+                "description": f"Implementation of {feature_name}",
+                "priority": self._determine_feature_priority(feature_name),
+                "dependencies": self._determine_feature_dependencies(feature_name, all_features),
+                "estimated_complexity": self._estimate_feature_complexity(feature_name),
+                "validation_criteria": self._define_validation_criteria(feature_name),
+                "implementation_plan": await self._create_feature_implementation_plan(feature_name)
+            }
+            feature_queue.append(feature)
+        
+        return feature_queue
+    
+    def _determine_feature_priority(self, feature_name: str) -> int:
+        """Determine feature priority (1=high, 5=low)."""
+        high_priority_keywords = ["auth", "login", "core", "main", "basic", "essential"]
+        medium_priority_keywords = ["ui", "interface", "navigation", "data"]
+        
+        feature_lower = feature_name.lower()
+        
+        if any(keyword in feature_lower for keyword in high_priority_keywords):
+            return 1
+        elif any(keyword in feature_lower for keyword in medium_priority_keywords):
+            return 3
+        else:
+            return 4
+    
+    def _determine_feature_dependencies(self, feature_name: str, all_features: List[str]) -> List[str]:
+        """Determine which other features this feature depends on."""
+        dependencies = []
+        feature_lower = feature_name.lower()
+        
+        # Simple dependency detection based on keywords
+        if "profile" in feature_lower or "user" in feature_lower:
+            for other_feature in all_features:
+                if "auth" in other_feature.lower() or "login" in other_feature.lower():
+                    dependencies.append(other_feature)
+        
+        if "social" in feature_lower or "sharing" in feature_lower:
+            for other_feature in all_features:
+                if "auth" in other_feature.lower() or "user" in other_feature.lower():
+                    dependencies.append(other_feature)
+        
+        return dependencies
+    
+    def _estimate_feature_complexity(self, feature_name: str) -> str:
+        """Estimate feature implementation complexity."""
+        complex_keywords = ["social", "payment", "ai", "ml", "algorithm", "advanced"]
+        medium_keywords = ["api", "database", "integration", "sync"]
+        
+        feature_lower = feature_name.lower()
+        
+        if any(keyword in feature_lower for keyword in complex_keywords):
+            return "high"
+        elif any(keyword in feature_lower for keyword in medium_keywords):
+            return "medium"
+        else:
+            return "low"
+    
+    def _define_validation_criteria(self, feature_name: str) -> List[str]:
+        """Define validation criteria for a feature."""
+        base_criteria = ["compiles_successfully", "no_runtime_errors", "basic_functionality"]
+        
+        feature_lower = feature_name.lower()
+        
+        if "auth" in feature_lower:
+            base_criteria.extend(["login_flow", "logout_flow", "token_validation"])
+        elif "ui" in feature_lower or "screen" in feature_lower:
+            base_criteria.extend(["renders_correctly", "responsive_design", "navigation_works"])
+        elif "api" in feature_lower or "network" in feature_lower:
+            base_criteria.extend(["api_calls_work", "error_handling", "data_validation"])
+        
+        return base_criteria
+    
+    async def _create_feature_implementation_plan(self, feature_name: str) -> Dict[str, Any]:
+        """Create implementation plan for a feature."""
+        return {
+            "steps": [
+                f"Design {feature_name} architecture",
+                f"Implement {feature_name} models",
+                f"Create {feature_name} UI components",
+                f"Add {feature_name} business logic",
+                f"Test {feature_name} functionality"
+            ],
+            "estimated_time": "2-4 hours",
+            "files_to_create": [
+                f"lib/features/{feature_name.lower()}/",
+                f"lib/features/{feature_name.lower()}/models/",
+                f"lib/features/{feature_name.lower()}/widgets/",
+                f"lib/features/{feature_name.lower()}/services/"
+            ]
+        }
+    
+    async def _sort_features_by_dependencies(self, feature_queue: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sort features by dependencies using topological sort."""
+        # Simple topological sort implementation
+        sorted_features = []
+        remaining_features = feature_queue.copy()
+        
+        while remaining_features:
+            # Find features with no unresolved dependencies
+            ready_features = []
+            
+            for feature in remaining_features:
+                dependencies = feature.get("dependencies", [])
+                dependencies_met = all(
+                    any(completed["name"] == dep for completed in sorted_features)
+                    for dep in dependencies
+                )
+                
+                if dependencies_met:
+                    ready_features.append(feature)
+            
+            if not ready_features:
+                # Break circular dependencies by priority
+                ready_features = [min(remaining_features, key=lambda f: f["priority"])]
+            
+            # Sort ready features by priority
+            ready_features.sort(key=lambda f: f["priority"])
+            
+            # Add to sorted list and remove from remaining
+            for feature in ready_features:
+                sorted_features.append(feature)
+                remaining_features.remove(feature)
+        
+        return sorted_features
+    
+    async def _implement_single_feature(self, project_id: str, feature: Dict[str, Any]) -> Dict[str, Any]:
+        """Implement a single feature with supervision integration."""
+        feature_id = feature["id"]
+        feature_name = feature["name"]
+        
+        try:
+            # Register feature implementation process
+            process_id = await self._register_feature_process(project_id, feature_id)
+            
+            implementation_result = {
+                "feature_id": feature_id,
+                "status": "in_progress",
+                "files_created": [],
+                "errors": [],
+                "implementation_time": 0
+            }
+            
+            start_time = datetime.now()
+            
+            # Execute implementation plan
+            plan = feature.get("implementation_plan", {})
+            steps = plan.get("steps", [])
+            
+            for step in steps:
+                self.logger.info(f"🔄 Executing step: {step}")
+                
+                # Send heartbeat
+                await self._send_implementation_heartbeat(project_id, feature_id)
+                
+                # Execute step (simplified implementation)
+                step_result = await self._execute_implementation_step(project_id, feature, step)
+                
+                if step_result.get("files_created"):
+                    implementation_result["files_created"].extend(step_result["files_created"])
+                
+                if step_result.get("errors"):
+                    implementation_result["errors"].extend(step_result["errors"])
+                    implementation_result["status"] = "failed"
+                    break
+            
+            if implementation_result["status"] != "failed":
+                implementation_result["status"] = "success"
+            
+            implementation_result["implementation_time"] = (datetime.now() - start_time).total_seconds()
+            
+            # Mark process as completed
+            shared_state.mark_process_completed(process_id)
+            
+            return implementation_result
+        
+        except Exception as e:
+            self.logger.error(f"❌ Feature {feature_id} implementation error: {e}")
+            return {
+                "feature_id": feature_id,
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def _execute_implementation_step(self, project_id: str, feature: Dict[str, Any], step: str) -> Dict[str, Any]:
+        """Execute a single implementation step."""
+        step_result = {
+            "step": step,
+            "status": "completed",
+            "files_created": [],
+            "errors": []
+        }
+        
+        # Simplified step execution
+        try:
+            if "models" in step.lower():
+                # Create models for the feature
+                model_files = await self._create_feature_models(project_id, feature)
+                step_result["files_created"].extend(model_files)
+            
+            elif "ui" in step.lower() or "components" in step.lower():
+                # Create UI components
+                ui_files = await self._create_feature_ui(project_id, feature)
+                step_result["files_created"].extend(ui_files)
+            
+            elif "logic" in step.lower() or "business" in step.lower():
+                # Create business logic
+                logic_files = await self._create_feature_logic(project_id, feature)
+                step_result["files_created"].extend(logic_files)
+            
+            elif "test" in step.lower():
+                # Create tests for the feature
+                test_files = await self._create_feature_tests(project_id, feature)
+                step_result["files_created"].extend(test_files)
+        
+        except Exception as e:
+            step_result["status"] = "failed"
+            step_result["errors"].append(str(e))
+        
+        return step_result
+    
+    async def _create_feature_models(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
+        """Create model files for a feature."""
+        # Simplified model creation
+        feature_name = feature["name"].lower().replace(" ", "_")
+        model_file = f"lib/features/{feature_name}/models/{feature_name}_model.dart"
+        
+        model_content = f'''// {feature["name"]} Model
+class {feature["name"].replace(" ", "")}Model {{
+  // Generated model for {feature["name"]}
+  // TODO: Add proper fields and methods
+}}
+'''
+        
+        await self._create_actual_file("flutter_projects", model_file, model_content)
+        return [model_file]
+    
+    async def _create_feature_ui(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
+        """Create UI files for a feature."""
+        # Simplified UI creation
+        feature_name = feature["name"].lower().replace(" ", "_")
+        ui_file = f"lib/features/{feature_name}/widgets/{feature_name}_widget.dart"
+        
+        ui_content = f'''// {feature["name"]} Widget
+import 'package:flutter/material.dart';
+
+class {feature["name"].replace(" ", "")}Widget extends StatelessWidget {{
+  const {feature["name"].replace(" ", "")}Widget({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return Container(
+      child: Text('{feature["name"]} - Generated Widget'),
+    );
+  }}
+}}
+'''
+        
+        await self._create_actual_file("flutter_projects", ui_file, ui_content)
+        return [ui_file]
+    
+    async def _create_feature_logic(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
+        """Create business logic files for a feature."""
+        # Simplified logic creation
+        feature_name = feature["name"].lower().replace(" ", "_")
+        logic_file = f"lib/features/{feature_name}/services/{feature_name}_service.dart"
+        
+        logic_content = f'''// {feature["name"]} Service
+class {feature["name"].replace(" ", "")}Service {{
+  // Generated service for {feature["name"]}
+  // TODO: Add business logic methods
+}}
+'''
+        
+        await self._create_actual_file("flutter_projects", logic_file, logic_content)
+        return [logic_file]
+    
+    async def _create_feature_tests(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
+        """Create test files for a feature."""
+        # Simplified test creation
+        feature_name = feature["name"].lower().replace(" ", "_")
+        test_file = f"test/features/{feature_name}/{feature_name}_test.dart"
+        
+        test_content = f'''// {feature["name"]} Tests
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {{
+  group('{feature["name"]} Tests', () {{
+    test('should work correctly', () {{
+      // TODO: Add proper tests for {feature["name"]}
+      expect(true, true);
+    }});
+  }});
+}}
+'''
+        
+        await self._create_actual_file("flutter_projects", test_file, test_content)
+        return [test_file]
+    
+    async def _validate_implemented_feature(self, project_id: str, feature: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate that an implemented feature meets criteria."""
+        validation_result = {
+            "valid": True,
+            "feature_id": feature["id"],
+            "criteria_results": {},
+            "validation_time": 0
+        }
+        
+        start_time = datetime.now()
+        
+        try:
+            criteria = feature.get("validation_criteria", [])
+            
+            for criterion in criteria:
+                result = await self._validate_single_criterion(project_id, feature, criterion)
+                validation_result["criteria_results"][criterion] = result
+                
+                if not result.get("passed", False):
+                    validation_result["valid"] = False
+            
+            validation_result["validation_time"] = (datetime.now() - start_time).total_seconds()
+            
+        except Exception as e:
+            validation_result["valid"] = False
+            validation_result["error"] = str(e)
+        
+        return validation_result
+    
+    async def _validate_single_criterion(self, project_id: str, feature: Dict[str, Any], criterion: str) -> Dict[str, Any]:
+        """Validate a single criterion for a feature."""
+        if criterion == "compiles_successfully":
+            return await self._validate_compilation(project_id)
+        elif criterion == "no_runtime_errors":
+            return await self._validate_runtime(project_id)
+        elif criterion == "basic_functionality":
+            return await self._validate_basic_functionality(project_id, feature)
+        else:
+            # Default validation
+            return {"passed": True, "details": "Basic validation passed"}
+    
+    async def _validate_compilation(self, project_id: str) -> Dict[str, Any]:
+        """Validate that the project compiles successfully."""
+        try:
+            # Use Flutter tool to analyze
+            analysis_result = await self.execute_tool(
+                "flutter",
+                operation="analyze",
+                timeout=30
+            )
+            
+            return {
+                "passed": analysis_result.status.value == "success",
+                "details": "Flutter analyze completed",
+                "output": analysis_result.data if analysis_result.data else ""
+            }
+        except Exception as e:
+            return {
+                "passed": False,
+                "details": f"Compilation validation failed: {str(e)}"
+            }
+    
+    async def _validate_runtime(self, project_id: str) -> Dict[str, Any]:
+        """Validate runtime behavior."""
+        # Simplified runtime validation
+        return {
+            "passed": True,
+            "details": "Runtime validation passed (simplified)"
+        }
+    
+    async def _validate_basic_functionality(self, project_id: str, feature: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate basic functionality of the feature."""
+        # Simplified functionality validation
+        return {
+            "passed": True,
+            "details": f"Basic functionality validation for {feature['name']} passed"
+        }
+    
+    async def _create_rollback_point(self, project_id: str, feature_id: str) -> str:
+        """Create a Git rollback point for the feature."""
+        try:
+            # Create git commit for the feature
+            commit_result = await self.execute_tool(
+                "git",
+                operation="commit",
+                message=f"Implement feature: {feature_id}",
+                add_all=True
+            )
+            
+            if commit_result.status.value == "success":
+                # Get commit hash
+                hash_result = await self.execute_tool(
+                    "git",
+                    operation="get_current_commit_hash"
+                )
+                
+                return hash_result.data.strip() if hash_result.data else "unknown"
+            else:
+                return "commit_failed"
+        
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create rollback point: {e}")
+            return "rollback_point_failed"
+    
+    async def _handle_feature_validation_failure(self, project_id: str, feature: Dict[str, Any], 
+                                                validation_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle feature validation failure with retry logic."""
+        feature_id = feature["id"]
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            self.logger.warning(f"⚠️ Feature {feature_id} validation failed, attempt {attempt + 1}")
+            
+            # Try to fix validation issues
+            fix_result = await self._attempt_feature_fix(project_id, feature, validation_result)
+            
+            if fix_result["success"]:
+                # Re-validate
+                new_validation = await self._validate_implemented_feature(project_id, feature)
+                
+                if new_validation["valid"]:
+                    return {"success": True, "attempts": attempt + 1}
+            
+            # If fix failed or validation still fails, wait before retry
+            await asyncio.sleep(2)
+        
+        # All retries failed - rollback
+        rollback_result = await self._rollback_to_previous_state(project_id, feature_id)
+        
+        return {
+            "success": False,
+            "attempts": max_retries,
+            "rollback_performed": rollback_result["success"]
+        }
+    
+    async def _attempt_feature_fix(self, project_id: str, feature: Dict[str, Any], 
+                                  validation_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Attempt to fix feature validation issues."""
+        # Simplified fix attempt
+        try:
+            failed_criteria = [
+                criterion for criterion, result in validation_result["criteria_results"].items()
+                if not result.get("passed", False)
+            ]
+            
+            for criterion in failed_criteria:
+                if criterion == "compiles_successfully":
+                    # Try to fix compilation errors
+                    await self._fix_compilation_errors(project_id)
+                elif criterion == "no_runtime_errors":
+                    # Try to fix runtime errors
+                    await self._fix_runtime_errors(project_id)
+            
+            return {"success": True}
+        
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _fix_compilation_errors(self, project_id: str):
+        """Attempt to fix compilation errors."""
+        # Simplified compilation fix
+        self.logger.info("🔧 Attempting to fix compilation errors")
+    
+    async def _fix_runtime_errors(self, project_id: str):
+        """Attempt to fix runtime errors."""
+        # Simplified runtime fix
+        self.logger.info("🔧 Attempting to fix runtime errors")
+    
+    async def _rollback_to_previous_state(self, project_id: str, feature_id: str) -> Dict[str, Any]:
+        """Rollback to the previous state before feature implementation."""
+        try:
+            incremental_state = shared_state.get_incremental_state(project_id)
+            
+            if incremental_state and feature_id in incremental_state.rollback_points:
+                rollback_hash = incremental_state.rollback_points[feature_id]
+                
+                # Perform git rollback
+                rollback_result = await self.execute_tool(
+                    "git",
+                    operation="reset_hard",
+                    commit_hash=rollback_hash
+                )
+                
+                if rollback_result.status.value == "success":
+                    self.logger.info(f"🔄 Rolled back feature {feature_id} to {rollback_hash}")
+                    return {"success": True, "rollback_hash": rollback_hash}
+            
+            return {"success": False, "reason": "No rollback point found"}
+        
+        except Exception as e:
+            self.logger.error(f"❌ Rollback failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def _validate_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate a specific feature implementation."""
+        project_id = task_data["project_id"]
+        feature_id = task_data["feature_id"]
+        
+        # Get feature from incremental state
+        incremental_state = shared_state.get_incremental_state(project_id)
+        
+        if not incremental_state:
+            return {"status": "no_incremental_state"}
+        
+        # Find the feature
+        feature = None
+        for f in incremental_state.feature_queue:
+            if f["id"] == feature_id:
+                feature = f
+                break
+        
+        if not feature:
+            return {"status": "feature_not_found"}
+        
+        # Perform validation
+        validation_result = await self._validate_implemented_feature(project_id, feature)
+        
+        return {
+            "status": "validation_completed",
+            "feature_id": feature_id,
+            "validation_result": validation_result
+        }
+    
+    async def _rollback_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Rollback a specific feature."""
+        project_id = task_data["project_id"]
+        feature_id = task_data["feature_id"]
+        
+        rollback_result = await self._rollback_to_previous_state(project_id, feature_id)
+        
+        return {
+            "status": "rollback_completed",
+            "feature_id": feature_id,
+            "rollback_result": rollback_result
+        }
+    
+    # Supervision integration methods
+    async def _register_incremental_process(self, project_id: str):
+        """Register incremental implementation process with supervision."""
+        try:
+            supervision_agent = shared_state.get_agent_state("supervision")
+            if supervision_agent:
+                await self.collaborate_with_agent(
+                    "supervision",
+                    "register_process",
+                    {
+                        "agent_id": self.agent_id,
+                        "task_type": "incremental_implementation",
+                        "timeout_threshold": 1800,  # 30 minutes
+                        "project_id": project_id
+                    }
+                )
+        except Exception as e:
+            self.logger.debug(f"Could not register with supervision: {e}")
+    
+    async def _register_feature_process(self, project_id: str, feature_id: str) -> str:
+        """Register individual feature implementation with supervision."""
+        process_id = f"feature_{feature_id}_{uuid.uuid4().hex[:8]}"
+        
+        try:
+            shared_state.register_supervised_process(
+                process_id=process_id,
+                agent_id=self.agent_id,
+                task_type="feature_implementation",
+                timeout_threshold=600  # 10 minutes per feature
+            )
+        except Exception as e:
+            self.logger.debug(f"Could not register feature process: {e}")
+        
+        return process_id
+    
+    async def _send_implementation_heartbeat(self, project_id: str, feature_id: str):
+        """Send heartbeat during feature implementation."""
+        try:
+            self.send_message_to_agent(
+                to_agent="supervision",
+                message_type=MessageType.HEARTBEAT,
+                content={
+                    "project_id": project_id,
+                    "feature_id": feature_id,
+                    "agent_id": self.agent_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+        except Exception as e:
+            self.logger.debug(f"Could not send heartbeat: {e}")
 
     

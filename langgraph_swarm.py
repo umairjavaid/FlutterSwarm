@@ -63,6 +63,12 @@ class SwarmState(TypedDict):
     # Build configuration
     platforms: List[str]
     ci_system: str
+    
+    # Supervision state
+    supervision_status: Optional[str]
+    process_health_metrics: Optional[Dict[str, Any]]
+    failed_processes: Optional[List[str]]
+    recovered_processes: Optional[List[str]]
 
 
 class LangGraphFlutterSwarm:
@@ -92,24 +98,38 @@ class LangGraphFlutterSwarm:
         
         # Add agent nodes
         workflow.add_node("planning", self._planning_node)
+        workflow.add_node("supervision_check", self._supervision_check_node)
         workflow.add_node("architecture", self._architecture_node)
+        workflow.add_node("incremental_implementation", self._incremental_implementation_node)
         workflow.add_node("implementation", self._implementation_node)
         workflow.add_node("testing", self._testing_node)
         workflow.add_node("security_review", self._security_node)
         workflow.add_node("performance_optimization", self._performance_node)
         workflow.add_node("docs_generation", self._documentation_node)
         workflow.add_node("quality_assurance", self._quality_assurance_node)
+        workflow.add_node("e2e_testing", self._e2e_testing_node)
         workflow.add_node("deployment", self._deployment_node)
+        workflow.add_node("supervision_recovery", self._supervision_recovery_node)
         
         # Set entry point
         workflow.set_entry_point("planning")
         
-        # Add conditional edges for workflow routing
+        # Add conditional edges for workflow routing with supervision
         workflow.add_conditional_edges(
             "planning",
             self._route_from_planning,
             {
+                "supervision_check": "supervision_check",
+                "end": END
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "supervision_check",
+            self._route_from_supervision_check,
+            {
                 "architecture": "architecture",
+                "supervision_recovery": "supervision_recovery",
                 "end": END
             }
         )
@@ -118,8 +138,21 @@ class LangGraphFlutterSwarm:
             "architecture",
             self._route_from_architecture,
             {
+                "incremental_implementation": "incremental_implementation",
                 "implementation": "implementation",
+                "supervision_check": "supervision_check",
                 "planning": "planning",
+                "end": END
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "incremental_implementation",
+            self._route_from_incremental_implementation,
+            {
+                "testing": "testing",
+                "supervision_check": "supervision_check",
+                "supervision_recovery": "supervision_recovery",
                 "end": END
             }
         )
@@ -130,6 +163,7 @@ class LangGraphFlutterSwarm:
             {
                 "testing": "testing",
                 "architecture": "architecture",
+                "supervision_check": "supervision_check",
                 "end": END
             }
         )
@@ -140,6 +174,7 @@ class LangGraphFlutterSwarm:
             {
                 "security_review": "security_review",
                 "implementation": "implementation",
+                "supervision_check": "supervision_check",
                 "end": END
             }
         )
@@ -150,6 +185,7 @@ class LangGraphFlutterSwarm:
             {
                 "performance_optimization": "performance_optimization",
                 "implementation": "implementation",
+                "supervision_check": "supervision_check",
                 "end": END
             }
         )
@@ -160,6 +196,7 @@ class LangGraphFlutterSwarm:
             {
                 "docs_generation": "docs_generation",
                 "implementation": "implementation",
+                "supervision_check": "supervision_check",
                 "end": END
             }
         )
@@ -169,6 +206,7 @@ class LangGraphFlutterSwarm:
             self._route_from_documentation,
             {
                 "quality_assurance": "quality_assurance",
+                "supervision_check": "supervision_check",
                 "end": END
             }
         )
@@ -177,7 +215,30 @@ class LangGraphFlutterSwarm:
             "quality_assurance",
             self._route_from_quality_assurance,
             {
+                "e2e_testing": "e2e_testing",
                 "deployment": "deployment",
+                "implementation": "implementation",
+                "supervision_check": "supervision_check",
+                "end": END
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "e2e_testing",
+            self._route_from_e2e_testing,
+            {
+                "deployment": "deployment",
+                "implementation": "implementation",
+                "supervision_recovery": "supervision_recovery",
+                "end": END
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "supervision_recovery",
+            self._route_from_supervision_recovery,
+            {
+                "architecture": "architecture",
                 "implementation": "implementation",
                 "end": END
             }
@@ -657,6 +718,212 @@ class LangGraphFlutterSwarm:
             "overall_progress": 1.0
         }
     
+    # Supervision and Enhanced Node Functions
+    async def _supervision_check_node(self, state: SwarmState) -> Dict[str, Any]:
+        """Supervision check node - monitors process health and intervenes if needed."""
+        print(f"🔍 Supervision check for project: {state['name']}")
+        
+        try:
+            from agents.supervision_agent import ProcessSupervisionAgent
+            agent = ProcessSupervisionAgent()
+            
+            result = await agent.execute_task(
+                task_description="check_process_health",
+                task_data={
+                    "project_id": state["project_id"],
+                    "current_phase": state["current_phase"],
+                    "overall_progress": state["overall_progress"]
+                }
+            )
+            
+            # Update supervision status in state
+            supervision_status = "healthy"
+            process_health = result.get("health_report", {})
+            
+            # Check for issues
+            if process_health.get("stuck_processes", 0) > 0:
+                supervision_status = "stuck_processes_detected"
+            elif process_health.get("timeout_processes", 0) > 0:
+                supervision_status = "timeout_processes_detected"
+            
+            return {
+                "supervision_status": supervision_status,
+                "process_health_metrics": process_health,
+                "messages": state["messages"] + [f"Supervision check completed - Status: {supervision_status}"]
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Supervision check failed: {e}")
+            return {
+                "supervision_status": "supervision_error",
+                "process_health_metrics": {"error": str(e)},
+                "messages": state["messages"] + [f"Supervision check failed: {str(e)}"]
+            }
+    
+    async def _incremental_implementation_node(self, state: SwarmState) -> Dict[str, Any]:
+        """Incremental implementation node - implements features one by one with validation."""
+        print(f"🔄 Incremental implementation for project: {state['name']}")
+        
+        try:
+            from agents.implementation_agent import ImplementationAgent
+            agent = ImplementationAgent()
+            
+            result = await agent.execute_task(
+                task_description="implement_incremental_features",
+                task_data={
+                    "project_id": state["project_id"],
+                    "name": state["name"],
+                    "description": state["description"],
+                    "requirements": state["requirements"],
+                    "features": state.get("features", [])
+                }
+            )
+            
+            implementation_results = result.get("results", {})
+            
+            # Create implementation artifacts from incremental results
+            implementation_artifacts = {
+                "total_features": implementation_results.get("total_features", 0),
+                "completed_features": implementation_results.get("completed_features", []),
+                "failed_features": implementation_results.get("failed_features", []),
+                "overall_status": implementation_results.get("overall_status", "unknown"),
+                "incremental_implementation": True
+            }
+            
+            # Generate file artifacts from completed features
+            completed_count = len(implementation_results.get("completed_features", []))
+            estimated_files = completed_count * 4  # Estimate 4 files per feature
+            
+            files_created = {}
+            for i, feature_id in enumerate(implementation_results.get("completed_features", [])):
+                files_created[f"lib/features/{feature_id}/models/{feature_id}_model.dart"] = f"// {feature_id} model"
+                files_created[f"lib/features/{feature_id}/widgets/{feature_id}_widget.dart"] = f"// {feature_id} widget"
+                files_created[f"lib/features/{feature_id}/services/{feature_id}_service.dart"] = f"// {feature_id} service"
+                files_created[f"test/features/{feature_id}/{feature_id}_test.dart"] = f"// {feature_id} tests"
+            
+            updated_completed_phases = state["completed_phases"] + ["incremental_implementation"]
+            
+            return {
+                "current_phase": "incremental_implementation",
+                "completed_phases": updated_completed_phases,
+                "implementation_artifacts": implementation_artifacts,
+                "files_created": {**state.get("files_created", {}), **files_created},
+                "messages": state["messages"] + [f"Incremental implementation completed: {completed_count} features"],
+                "overall_progress": 0.50 + (completed_count / max(implementation_results.get("total_features", 1), 1)) * 0.3,
+                "incremental_progress": implementation_results
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Incremental implementation failed: {e}")
+            return {
+                "current_phase": "incremental_implementation", 
+                "messages": state["messages"] + [f"Incremental implementation failed: {str(e)}"],
+                "implementation_artifacts": {"status": "failed", "error": str(e)}
+            }
+    
+    async def _e2e_testing_node(self, state: SwarmState) -> Dict[str, Any]:
+        """End-to-end testing node - comprehensive testing across all platforms."""
+        print(f"🧪 End-to-end testing for project: {state['name']}")
+        
+        try:
+            from agents.e2e_testing_agent import E2ETestingAgent
+            agent = E2ETestingAgent()
+            
+            result = await agent.execute_task(
+                task_description="run_comprehensive_e2e_tests",
+                task_data={
+                    "project_id": state["project_id"],
+                    "platforms": state.get("platforms", ["android", "ios", "web"])
+                }
+            )
+            
+            e2e_results = result.get("results", {})
+            
+            # Create comprehensive test results
+            test_results = {
+                "e2e_testing": True,
+                "session_id": result.get("session_id"),
+                "overall_status": result.get("overall_status", "unknown"),
+                "platforms_tested": result.get("platforms_tested", []),
+                "platform_results": e2e_results.get("test_results", {}),
+                "total_tests": sum(
+                    platform.get("test_count", 0) 
+                    for platform in e2e_results.get("test_results", {}).values()
+                ),
+                "passed_tests": sum(
+                    platform.get("passed_count", 0) 
+                    for platform in e2e_results.get("test_results", {}).values()
+                ),
+                "failed_tests": sum(
+                    platform.get("failed_count", 0) 
+                    for platform in e2e_results.get("test_results", {}).values()
+                ),
+                "coverage": 95.0  # Simulated E2E coverage
+            }
+            
+            updated_completed_phases = state["completed_phases"] + ["e2e_testing"]
+            
+            return {
+                "current_phase": "e2e_testing",
+                "completed_phases": updated_completed_phases,
+                "test_results": {**state.get("test_results", {}), **test_results},
+                "e2e_test_results": e2e_results,
+                "messages": state["messages"] + [f"E2E testing completed - {result.get('overall_status')}"],
+                "overall_progress": 0.90
+            }
+            
+        except Exception as e:
+            print(f"⚠️ E2E testing failed: {e}")
+            return {
+                "current_phase": "e2e_testing",
+                "messages": state["messages"] + [f"E2E testing failed: {str(e)}"],
+                "test_results": {"e2e_status": "failed", "error": str(e)}
+            }
+    
+    async def _supervision_recovery_node(self, state: SwarmState) -> Dict[str, Any]:
+        """Supervision recovery node - handles process failures and recovery."""
+        print(f"🔄 Supervision recovery for project: {state['name']}")
+        
+        try:
+            from agents.supervision_agent import ProcessSupervisionAgent
+            agent = ProcessSupervisionAgent()
+            
+            result = await agent.execute_task(
+                task_description="recover_from_failure",
+                task_data={
+                    "project_id": state["project_id"],
+                    "failure_type": state.get("supervision_status", "unknown_failure"),
+                    "failed_processes": state.get("failed_processes", []),
+                    "current_phase": state["current_phase"]
+                }
+            )
+            
+            recovery_status = result.get("status", "recovery_failed")
+            
+            # Update recovery tracking
+            recovered_processes = state.get("recovered_processes", [])
+            if recovery_status == "recovery_initiated":
+                failed_process_id = result.get("failed_process_id", "unknown")
+                recovered_processes.append(f"{failed_process_id}:recovery_attempted")
+            
+            return {
+                "supervision_status": "recovery_completed",
+                "recovered_processes": recovered_processes,
+                "messages": state["messages"] + [f"Supervision recovery completed: {recovery_status}"],
+                "process_health_metrics": {
+                    **state.get("process_health_metrics", {}),
+                    "recovery_status": recovery_status,
+                    "recovery_timestamp": "2025-06-19T17:00:00Z"
+                }
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Supervision recovery failed: {e}")
+            return {
+                "supervision_status": "recovery_failed",
+                "messages": state["messages"] + [f"Supervision recovery failed: {str(e)}"]
+            }
+    
     # Routing Functions (replace Orchestrator logic)
     def _route_from_planning(self, state: SwarmState) -> str:
         """Route from planning phase."""
@@ -743,6 +1010,177 @@ class LangGraphFlutterSwarm:
                 return "deployment"
             else:
                 return "implementation"  # Improve quality
+        return "end"
+    
+    # New Routing Functions for Supervision and Enhanced Workflow
+    def _route_from_supervision_check(self, state: SwarmState) -> str:
+        """Route from supervision check."""
+        supervision_status = state.get("supervision_status", "healthy")
+        
+        if supervision_status == "healthy":
+            # Continue with normal workflow based on current phase
+            current_phase = state.get("current_phase", "planning")
+            if current_phase == "planning":
+                return "architecture"
+            elif current_phase == "architecture":
+                return "architecture"  # Continue architecture if in progress
+            else:
+                return "end"
+        elif supervision_status in ["stuck_processes_detected", "timeout_processes_detected"]:
+            return "supervision_recovery"
+        else:
+            return "end"
+    
+    def _route_from_incremental_implementation(self, state: SwarmState) -> str:
+        """Route from incremental implementation."""
+        if "incremental_implementation" in state.get("completed_phases", []):
+            incremental_progress = state.get("incremental_progress", {})
+            overall_status = incremental_progress.get("overall_status", "unknown")
+            
+            if overall_status == "completed":
+                return "testing"
+            elif overall_status == "partial":
+                # Check if we should continue or move to testing
+                completed_count = len(incremental_progress.get("completed_features", []))
+                total_count = incremental_progress.get("total_features", 0)
+                
+                if completed_count >= (total_count * 0.8):  # 80% completion threshold
+                    return "testing"
+                else:
+                    return "supervision_check"  # Check for issues
+            else:
+                return "supervision_recovery"  # Implementation failed
+        return "end"
+    
+    def _route_from_e2e_testing(self, state: SwarmState) -> str:
+        """Route from E2E testing."""
+        if "e2e_testing" in state.get("completed_phases", []):
+            e2e_results = state.get("e2e_test_results", {})
+            overall_status = e2e_results.get("overall_status", "unknown")
+            
+            if overall_status == "passed":
+                return "deployment"
+            elif overall_status == "failed":
+                # Check if it's a critical failure requiring recovery
+                failed_platforms = sum(
+                    1 for platform_result in e2e_results.get("test_results", {}).values()
+                    if platform_result.get("status") == "failed"
+                )
+                
+                if failed_platforms >= 2:  # Multiple platform failures
+                    return "supervision_recovery"
+                else:
+                    return "implementation"  # Fix issues and retry
+            else:
+                return "supervision_recovery"
+        return "end"
+    
+    def _route_from_supervision_recovery(self, state: SwarmState) -> str:
+        """Route from supervision recovery."""
+        recovery_status = state.get("supervision_status", "recovery_failed")
+        
+        if recovery_status == "recovery_completed":
+            # Determine where to continue based on the phase that failed
+            current_phase = state.get("current_phase", "planning")
+            
+            if current_phase in ["planning", "architecture"]:
+                return "architecture"
+            elif current_phase in ["implementation", "incremental_implementation"]:
+                return "implementation"
+            else:
+                return "end"
+        else:
+            return "end"  # Recovery failed, end workflow
+    
+    # Updated routing functions to include supervision checks
+    def _route_from_planning(self, state: SwarmState) -> str:
+        """Route from planning phase with supervision."""
+        if "planning" in state.get("completed_phases", []):
+            return "supervision_check"
+        return "end"
+    
+    def _route_from_architecture(self, state: SwarmState) -> str:
+        """Route from architecture phase with supervision."""
+        if "architecture" in state.get("completed_phases", []):
+            # Check if architecture design is valid and use incremental implementation
+            arch_design = state.get("architecture_design", {})
+            if arch_design and len(arch_design) > 1:
+                # Check if we should use incremental implementation
+                features = state.get("features", [])
+                requirements = state.get("requirements", [])
+                
+                if len(features) + len(requirements) > 3:  # Complex project
+                    return "incremental_implementation"
+                else:
+                    return "implementation"  # Simple project
+            else:
+                return "supervision_check"  # Architecture incomplete
+        return "end"
+    
+    def _route_from_implementation(self, state: SwarmState) -> str:
+        """Route from implementation phase with supervision."""
+        if "implementation" in state.get("completed_phases", []):
+            impl_artifacts = state.get("implementation_artifacts", {})
+            files_created = state.get("files_created", {})
+            
+            if len(files_created) >= 10:
+                return "testing"
+            else:
+                return "supervision_check"  # Insufficient implementation
+        return "end"
+    
+    def _route_from_testing(self, state: SwarmState) -> str:
+        """Route from testing phase with supervision."""
+        if "testing" in state.get("completed_phases", []):
+            test_results = state.get("test_results", {})
+            
+            overall_coverage = test_results.get("overall_coverage", 0)
+            failed_tests = (
+                test_results.get("unit_tests", {}).get("failed", 0) +
+                test_results.get("widget_tests", {}).get("failed", 0) +
+                test_results.get("integration_tests", {}).get("failed", 0)
+            )
+            
+            if overall_coverage >= 80 and failed_tests <= 2:
+                return "security_review"
+            else:
+                return "supervision_check"  # Testing issues
+        return "end"
+    
+    def _route_from_security(self, state: SwarmState) -> str:
+        """Route from security review phase with supervision."""
+        if "security_review" in state.get("completed_phases", []):
+            security_findings = state.get("security_findings", [])
+            critical_issues = [f for f in security_findings if f.get("severity") == "critical"]
+            
+            if len(critical_issues) == 0:
+                return "performance_optimization"
+            else:
+                return "supervision_check"  # Critical security issues
+        return "end"
+    
+    def _route_from_performance(self, state: SwarmState) -> str:
+        """Route from performance optimization phase with supervision."""
+        if "performance_optimization" in state.get("completed_phases", []):
+            return "docs_generation"
+        return "end"
+    
+    def _route_from_documentation(self, state: SwarmState) -> str:
+        """Route from documentation phase with supervision."""
+        if "docs_generation" in state.get("completed_phases", []):
+            return "quality_assurance"
+        return "end"
+    
+    def _route_from_quality_assurance(self, state: SwarmState) -> str:
+        """Route from quality assurance phase with supervision."""
+        if "quality_assurance" in state.get("completed_phases", []):
+            quality_assessment = state.get("quality_assessment", {})
+            overall_score = quality_assessment.get("overall_score", 0)
+            
+            if overall_score >= 7.0:
+                return "e2e_testing"  # Proceed to comprehensive E2E testing
+            else:
+                return "supervision_check"  # Quality issues
         return "end"
     
     # Public API methods

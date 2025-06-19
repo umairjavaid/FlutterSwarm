@@ -108,6 +108,48 @@ agents:
       - validation_testing
       - consistency_checking
 
+  supervision:
+    name: "Process Supervision Agent"
+    role: "Monitor all development processes and handle failures"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.2
+    max_tokens: 4000
+    capabilities:
+      - process_monitoring
+      - failure_detection
+      - intervention_management
+      - recovery_coordination
+      - resource_monitoring
+    supervision:
+      process_timeouts:
+        build: 600
+        test: 300
+        analysis: 180
+        code_generation: 240
+        feature_implementation: 600
+        incremental_implementation: 1800
+        e2e_testing: 900
+      health_check_interval: 15
+      stuck_threshold: 120
+      max_retries: 3
+
+  e2e_testing:
+    name: "End-to-End Testing Agent"
+    role: "Comprehensive testing across all target platforms"
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.3
+    max_tokens: 4000
+    capabilities:
+      - platform_testing
+      - environment_setup
+      - test_automation
+      - performance_validation
+      - compliance_checking
+    e2e_testing:
+      environments: ["android", "ios", "web"]
+      test_timeout: 300
+      emulator_startup_timeout: 120
+
 workflow:
   phases:
     - planning

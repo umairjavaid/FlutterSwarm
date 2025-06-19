@@ -28,6 +28,12 @@ class MessageType(Enum):
     COLLABORATION_REQUEST = "collaboration_request"
     STATE_SYNC = "state_sync"
     ERROR_REPORT = "error_report"
+    # Supervision message types
+    PROCESS_HALT = "process_halt"
+    SUPERVISION_ALERT = "supervision_alert"
+    FEATURE_VALIDATION_REQUEST = "feature_validation_request"
+    HEARTBEAT = "heartbeat"
+    HEALTH_CHECK = "health_check"
 
 @dataclass
 class AgentMessage:
@@ -64,6 +70,25 @@ class ProjectState:
     performance_metrics: Dict[str, Any]
     documentation: Dict[str, str]
     deployment_config: Dict[str, Any]
+    # Supervision fields
+    supervision_status: Optional[str] = None
+    process_health_metrics: Dict[str, Any] = None
+    failed_processes: List[str] = None
+    recovered_processes: List[str] = None
+    e2e_test_results: Dict[str, Any] = None
+    incremental_progress: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.process_health_metrics is None:
+            self.process_health_metrics = {}
+        if self.failed_processes is None:
+            self.failed_processes = []
+        if self.recovered_processes is None:
+            self.recovered_processes = []
+        if self.e2e_test_results is None:
+            self.e2e_test_results = {}
+        if self.incremental_progress is None:
+            self.incremental_progress = {}
 
 @dataclass
 class IssueReport:
@@ -79,6 +104,62 @@ class IssueReport:
     timestamp: datetime
     assigned_agent: Optional[str] = None
     resolution_notes: Optional[str] = None
+
+@dataclass
+class ProcessSupervisionState:
+    """State tracking for process supervision and health monitoring."""
+    process_id: str
+    agent_id: str
+    task_type: str
+    start_time: datetime
+    last_heartbeat: datetime
+    timeout_threshold: float
+    status: str  # running, stuck, timeout, completed, failed
+    cpu_usage: float = 0.0
+    memory_usage: float = 0.0
+    intervention_count: int = 0
+    recovery_attempts: int = 0
+
+@dataclass
+class E2ETestingState:
+    """State for end-to-end testing across platforms."""
+    test_session_id: str
+    project_id: str
+    platforms_tested: List[str]
+    test_results: Dict[str, Dict[str, Any]]  # platform -> results
+    overall_status: str  # pending, running, passed, failed
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    failure_details: Dict[str, str] = None
+    
+    def __post_init__(self):
+        if self.failure_details is None:
+            self.failure_details = {}
+
+@dataclass
+class IncrementalImplementationState:
+    """State for incremental feature implementation and validation."""
+    feature_queue: List[Dict[str, Any]]
+    current_feature: Optional[Dict[str, Any]]
+    completed_features: List[str]
+    failed_features: List[str]
+    feature_dependencies: Dict[str, List[str]]
+    rollback_points: Dict[str, str]  # feature_id -> git_commit_hash
+    validation_results: Dict[str, Dict[str, Any]]
+    
+    def __post_init__(self):
+        if self.feature_queue is None:
+            self.feature_queue = []
+        if self.completed_features is None:
+            self.completed_features = []
+        if self.failed_features is None:
+            self.failed_features = []
+        if self.feature_dependencies is None:
+            self.feature_dependencies = {}
+        if self.rollback_points is None:
+            self.rollback_points = {}
+        if self.validation_results is None:
+            self.validation_results = {}
 
 class SharedState:
     """
@@ -96,6 +177,11 @@ class SharedState:
         self._subscribers: Dict[str, List[Callable]] = {}
         self._current_project_id: Optional[str] = None
         self._issues: Dict[str, List[IssueReport]] = {}  # project_id -> issues
+        
+        # Supervision state tracking
+        self._supervised_processes: Dict[str, ProcessSupervisionState] = {}
+        self._e2e_testing_sessions: Dict[str, E2ETestingState] = {}
+        self._incremental_states: Dict[str, IncrementalImplementationState] = {}  # project_id -> state
         
         # Configure limits from config
         self._max_messages = self._config.get('communication.messaging.queue_size', 500)
@@ -470,6 +556,162 @@ class SharedState:
             context["recent_messages"] = [asdict(msg) for msg in agent_messages]
             
             return context
+    
+    # Supervision state management methods
+    def register_supervised_process(self, process_id: str, agent_id: str, task_type: str, 
+                                   timeout_threshold: float) -> None:
+        """Register a new process for supervision."""
+        with self._lock:
+            now = datetime.now()
+            self._supervised_processes[process_id] = ProcessSupervisionState(
+                process_id=process_id,
+                agent_id=agent_id,
+                task_type=task_type,
+                start_time=now,
+                last_heartbeat=now,
+                timeout_threshold=timeout_threshold,
+                status="running"
+            )
+    
+    def update_process_heartbeat(self, process_id: str, cpu_usage: float = 0.0, 
+                                memory_usage: float = 0.0) -> None:
+        """Update process heartbeat and resource usage."""
+        with self._lock:
+            if process_id in self._supervised_processes:
+                process = self._supervised_processes[process_id]
+                process.last_heartbeat = datetime.now()
+                process.cpu_usage = cpu_usage
+                process.memory_usage = memory_usage
+    
+    def get_supervised_processes(self) -> Dict[str, ProcessSupervisionState]:
+        """Get all supervised processes."""
+        with self._lock:
+            return self._supervised_processes.copy()
+    
+    def get_stuck_processes(self, stuck_threshold: int = 120) -> List[ProcessSupervisionState]:
+        """Get processes that appear stuck."""
+        with self._lock:
+            stuck = []
+            now = datetime.now()
+            for process in self._supervised_processes.values():
+                if process.status == "running":
+                    time_since_heartbeat = (now - process.last_heartbeat).total_seconds()
+                    if time_since_heartbeat > stuck_threshold:
+                        stuck.append(process)
+            return stuck
+    
+    def get_timeout_processes(self) -> List[ProcessSupervisionState]:
+        """Get processes that have exceeded their timeout threshold."""
+        with self._lock:
+            timeout = []
+            now = datetime.now()
+            for process in self._supervised_processes.values():
+                if process.status == "running":
+                    elapsed = (now - process.start_time).total_seconds()
+                    if elapsed > process.timeout_threshold:
+                        timeout.append(process)
+            return timeout
+    
+    def mark_process_completed(self, process_id: str) -> None:
+        """Mark a process as completed."""
+        with self._lock:
+            if process_id in self._supervised_processes:
+                self._supervised_processes[process_id].status = "completed"
+    
+    def mark_process_failed(self, process_id: str, reason: str = "") -> None:
+        """Mark a process as failed."""
+        with self._lock:
+            if process_id in self._supervised_processes:
+                self._supervised_processes[process_id].status = "failed"
+                # Log to project if available
+                if self._current_project_id and self._current_project_id in self._projects:
+                    project = self._projects[self._current_project_id]
+                    project.failed_processes.append(f"{process_id}: {reason}")
+    
+    def increment_process_intervention(self, process_id: str) -> None:
+        """Increment intervention count for a process."""
+        with self._lock:
+            if process_id in self._supervised_processes:
+                self._supervised_processes[process_id].intervention_count += 1
+    
+    def start_e2e_testing_session(self, session_id: str, project_id: str, 
+                                 platforms: List[str]) -> None:
+        """Start a new E2E testing session."""
+        with self._lock:
+            self._e2e_testing_sessions[session_id] = E2ETestingState(
+                test_session_id=session_id,
+                project_id=project_id,
+                platforms_tested=platforms,
+                test_results={},
+                overall_status="running",
+                start_time=datetime.now()
+            )
+    
+    def update_e2e_test_result(self, session_id: str, platform: str, 
+                              results: Dict[str, Any]) -> None:
+        """Update E2E test results for a platform."""
+        with self._lock:
+            if session_id in self._e2e_testing_sessions:
+                session = self._e2e_testing_sessions[session_id]
+                session.test_results[platform] = results
+    
+    def complete_e2e_testing_session(self, session_id: str, overall_status: str) -> None:
+        """Complete an E2E testing session."""
+        with self._lock:
+            if session_id in self._e2e_testing_sessions:
+                session = self._e2e_testing_sessions[session_id]
+                session.overall_status = overall_status
+                session.end_time = datetime.now()
+                
+                # Update project state
+                if session.project_id in self._projects:
+                    project = self._projects[session.project_id]
+                    project.e2e_test_results = {
+                        "session_id": session_id,
+                        "status": overall_status,
+                        "platforms": session.test_results,
+                        "completed_at": session.end_time.isoformat()
+                    }
+    
+    def get_incremental_state(self, project_id: str) -> Optional[IncrementalImplementationState]:
+        """Get incremental implementation state for a project."""
+        with self._lock:
+            return self._incremental_states.get(project_id)
+    
+    def initialize_incremental_implementation(self, project_id: str, 
+                                            feature_queue: List[Dict[str, Any]]) -> None:
+        """Initialize incremental implementation for a project."""
+        with self._lock:
+            self._incremental_states[project_id] = IncrementalImplementationState(
+                feature_queue=feature_queue,
+                current_feature=None,
+                completed_features=[],
+                failed_features=[],
+                feature_dependencies={},
+                rollback_points={},
+                validation_results={}
+            )
+    
+    def start_feature_implementation(self, project_id: str, feature: Dict[str, Any]) -> None:
+        """Start implementing a specific feature."""
+        with self._lock:
+            if project_id in self._incremental_states:
+                state = self._incremental_states[project_id]
+                state.current_feature = feature
+    
+    def complete_feature_implementation(self, project_id: str, feature_id: str, 
+                                      success: bool, rollback_point: str = None) -> None:
+        """Complete feature implementation."""
+        with self._lock:
+            if project_id in self._incremental_states:
+                state = self._incremental_states[project_id]
+                if success:
+                    state.completed_features.append(feature_id)
+                    if rollback_point:
+                        state.rollback_points[feature_id] = rollback_point
+                else:
+                    state.failed_features.append(feature_id)
+                state.current_feature = None
 
 # Global shared state instance
 shared_state = SharedState()

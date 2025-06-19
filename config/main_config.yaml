@@ -125,6 +125,136 @@ application:
       error_retry_limit: 3
       warning_threshold: 3
       critical_threshold: 1
+
+# Process Supervision Configuration
+# ---------------------------------
+supervision:
+  # Process timeouts (in seconds)
+  process_timeouts:
+    build: 600
+    test: 300
+    analysis: 180
+    code_generation: 240
+    feature_implementation: 600
+    incremental_implementation: 1800
+    e2e_testing: 900
+  
+  # Health monitoring
+  health_check_interval: 15  # seconds
+  stuck_threshold: 120  # seconds - process appears stuck
+  max_retries: 3
+  
+  # Resource monitoring
+  resource_monitoring:
+    enable_cpu_monitoring: true
+    enable_memory_monitoring: true
+    cpu_threshold: 90  # percentage
+    memory_threshold: 85  # percentage
+    disk_threshold: 90  # percentage
+  
+  # Recovery configuration
+  recovery:
+    auto_recovery: true
+    recovery_timeout: 300  # seconds
+    max_recovery_attempts: 3
+    recovery_agent_mapping:
+      build_failure: "implementation"
+      test_failure: "testing"
+      security_issue: "security"
+      performance_issue: "performance"
+      code_generation_failure: "implementation"
+      analysis_failure: "architecture"
+
+# End-to-End Testing Configuration
+# --------------------------------
+e2e_testing:
+  # Supported environments
+  environments: ["android", "ios", "web"]
+  test_timeout: 300  # seconds
+  emulator_startup_timeout: 120  # seconds
+  
+  # Platform-specific configurations
+  platforms:
+    android:
+      emulator_name: "test_avd"
+      api_level: "30"
+      startup_timeout: 120
+      test_categories: ["startup", "navigation", "ui", "performance"]
+    
+    ios:
+      simulator_name: "iPhone 14"
+      ios_version: "16.0"
+      startup_timeout: 90
+      test_categories: ["startup", "navigation", "ui", "performance", "app_store"]
+    
+    web:
+      browsers: ["chrome", "firefox"]
+      webdriver_timeout: 60
+      test_categories: ["startup", "navigation", "ui", "responsive", "accessibility"]
+  
+  # Test categories and validation
+  test_categories:
+    startup_performance: 
+      timeout: 60
+      metrics: ["cold_start", "warm_start", "memory_usage"]
+    navigation_flow:
+      timeout: 120
+      tests: ["main_navigation", "deep_linking", "back_navigation"]
+    user_interactions:
+      timeout: 180
+      tests: ["tap", "scroll", "form_input", "gestures"]
+    data_persistence:
+      timeout: 90
+      tests: ["local_storage", "state_persistence", "offline_sync"]
+    network_connectivity:
+      timeout: 120
+      tests: ["online_functionality", "offline_behavior", "error_handling"]
+    responsive_design:
+      timeout: 90
+      tests: ["portrait_layout", "landscape_layout", "tablet_layout"]
+    accessibility:
+      timeout: 120
+      tests: ["screen_reader", "keyboard_navigation", "color_contrast"]
+    device_features:
+      timeout: 150
+      tests: ["camera", "location", "notifications", "biometrics"]
+
+# Incremental Implementation Configuration
+# ----------------------------------------
+incremental:
+  # Feature validation
+  feature_validation_timeout: 180  # seconds
+  max_feature_retries: 3
+  rollback_on_failure: true
+  
+  # Feature prioritization
+  priority_weights:
+    authentication: 1  # highest priority
+    core_functionality: 2
+    user_interface: 3
+    integrations: 4
+    enhancements: 5  # lowest priority
+  
+  # Validation criteria
+  validation_criteria:
+    required: ["compiles_successfully", "no_runtime_errors", "basic_functionality"]
+    authentication: ["login_flow", "logout_flow", "token_validation"]
+    ui_components: ["renders_correctly", "responsive_design", "navigation_works"]
+    api_integration: ["api_calls_work", "error_handling", "data_validation"]
+  
+  # Git integration
+  git_integration:
+    auto_commit: true
+    commit_message_template: "feat: implement {feature_name}"
+    create_rollback_points: true
+    auto_cleanup_failed_branches: true
+  
+  # Performance thresholds
+  performance_thresholds:
+    max_implementation_time: 600  # seconds per feature
+    max_validation_time: 180  # seconds per feature
+    max_total_features: 20
+    max_failed_features: 3
   
   # Example Apps Configuration
   examples:
