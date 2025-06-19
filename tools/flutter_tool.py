@@ -164,17 +164,7 @@ class FlutterTool(BaseTool):
             issues = self._parse_analysis_output(result.output)
             result.data = {
                 "issues_found": len(issues),
-                "issues": issues,
-                "analysis_output": result.output  # Include full output for debugging
-            }
-        elif result.status == ToolStatus.ERROR:
-            # Even if analyze fails, try to parse issues from error output
-            issues = self._parse_analysis_output(result.output)
-            result.data = {
-                "issues_found": len(issues),
-                "issues": issues,
-                "analysis_output": result.output,
-                "error_details": result.error
+                "issues": issues
             }
         
         return result
@@ -336,43 +326,10 @@ class FlutterTool(BaseTool):
                     elif "warning" in line.lower():
                         severity = "warning"
                     
-                    # Try to extract file path and line number
-                    file_path = ""
-                    line_number = ""
-                    if " at " in line:
-                        location_part = line.split(" at ")[-1]
-                        if ":" in location_part:
-                            file_path = location_part.split(":")[0]
-                            line_number = location_part.split(":")[1] if len(location_part.split(":")) > 1 else ""
-                    
                     issues.append({
                         "message": message,
                         "severity": severity,
-                        "file_path": file_path,
-                        "line_number": line_number,
-                        "full_line": line
-                    })
-        
-        # Also check for common error patterns
-        error_patterns = [
-            "Error: ",
-            "Warning: ",
-            "Info: ",
-            "missing_return",
-            "undefined_class",
-            "undefined_method",
-            "invalid_assignment"
-        ]
-        
-        for line in lines:
-            for pattern in error_patterns:
-                if pattern in line and not any(issue["full_line"] == line for issue in issues):
-                    issues.append({
-                        "message": line.strip(),
-                        "severity": "error" if "Error:" in line else "warning",
-                        "file_path": "",
-                        "line_number": "",
-                        "full_line": line
+                        "line": line
                     })
         
         return issues

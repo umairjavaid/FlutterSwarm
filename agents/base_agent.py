@@ -41,6 +41,11 @@ class BaseAgent(ABC):
         self.tool_manager = ToolManager()
         self.tools = self.tool_manager.create_agent_toolbox(agent_id)
         
+        # Initialize monitoring attributes first
+        self.is_running = False
+        self.current_task = None
+        self._monitoring_task = None
+        
         # Register with shared state
         shared_state.register_agent(
             agent_id=self.agent_id,
@@ -49,10 +54,6 @@ class BaseAgent(ABC):
         
         # Enable real-time awareness
         self.enable_real_time_awareness()
-        
-        self.is_running = False
-        self.current_task = None
-        self._monitoring_task = None
         
         # Track last status for monitoring
         self._last_status = AgentStatus.IDLE
