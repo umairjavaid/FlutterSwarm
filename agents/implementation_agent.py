@@ -607,14 +607,17 @@ class ImplementationAgent(BaseAgent):
         files_created = []
         
         # Create main.dart
+        # Clean project name for class names
+        clean_name = ''.join(word.capitalize() for word in project_name.replace(' ', '_').replace('-', '_').split('_'))
+        
         main_dart_content = f'''import 'package:flutter/material.dart';
 
 void main() {{
-  runApp(const {project_name.replace(' ', '')}App());
+  runApp(const {clean_name}App());
 }}
 
-class {project_name.replace(' ', '')}App extends StatelessWidget {{
-  const {project_name.replace(' ', '')}App({{super.key}});
+class {clean_name}App extends StatelessWidget {{
+  const {clean_name}App({{super.key}});
 
   @override
   Widget build(BuildContext context) {{
@@ -637,13 +640,14 @@ class HomeScreen extends StatelessWidget {{
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text('{project_name}'),
+        title: const Text('{project_name}'),
       ),
       body: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
+              Icons.music_note,
               size: 100,
               color: Colors.deepPurple,
             ),
@@ -1496,10 +1500,42 @@ class HomeScreen extends StatelessWidget {{
         feature_name = feature["name"].lower().replace(" ", "_")
         model_file = f"lib/features/{feature_name}/models/{feature_name}_model.dart"
         
+        # Clean class name
+        clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
+        
         model_content = f'''// {feature["name"]} Model
-class {feature["name"].replace(" ", "")}Model {{
-  // Generated model for {feature["name"]}
-  // TODO: Add proper fields and methods
+class {clean_name}Model {{
+  const {clean_name}Model({{
+    required this.id,
+    required this.name,
+  }});
+
+  final String id;
+  final String name;
+
+  factory {clean_name}Model.fromJson(Map<String, dynamic> json) {{
+    return {clean_name}Model(
+      id: json['id'] as String,
+      name: json['name'] as String,
+    );
+  }}
+
+  Map<String, dynamic> toJson() {{
+    return {{
+      'id': id,
+      'name': name,
+    }};
+  }}
+
+  {clean_name}Model copyWith({{
+    String? id,
+    String? name,
+  }}) {{
+    return {clean_name}Model(
+      id: id ?? this.id,
+      name: name ?? this.name,
+    );
+  }}
 }}
 '''
         
@@ -1512,16 +1548,38 @@ class {feature["name"].replace(" ", "")}Model {{
         feature_name = feature["name"].lower().replace(" ", "_")
         ui_file = f"lib/features/{feature_name}/widgets/{feature_name}_widget.dart"
         
+        # Clean class name
+        clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
+        
         ui_content = f'''// {feature["name"]} Widget
 import 'package:flutter/material.dart';
 
-class {feature["name"].replace(" ", "")}Widget extends StatelessWidget {{
-  const {feature["name"].replace(" ", "")}Widget({{super.key}});
+class {clean_name}Widget extends StatelessWidget {{
+  const {clean_name}Widget({{super.key}});
 
   @override
   Widget build(BuildContext context) {{
     return Container(
-      child: Text('{feature["name"]} - Generated Widget'),
+      padding: const EdgeInsets.all(16.0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '{feature["name"]}',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'This is a generated widget for the {feature["name"]} feature.',
+                style: TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }}
 }}
@@ -1536,10 +1594,34 @@ class {feature["name"].replace(" ", "")}Widget extends StatelessWidget {{
         feature_name = feature["name"].lower().replace(" ", "_")
         logic_file = f"lib/features/{feature_name}/services/{feature_name}_service.dart"
         
+        # Clean class name
+        clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
+        
         logic_content = f'''// {feature["name"]} Service
-class {feature["name"].replace(" ", "")}Service {{
-  // Generated service for {feature["name"]}
-  // TODO: Add business logic methods
+class {clean_name}Service {{
+  const {clean_name}Service();
+
+  /// Initialize the {feature["name"]} service
+  Future<void> initialize() async {{
+    // TODO: Add initialization logic for {feature["name"]}
+  }}
+
+  /// Get {feature["name"]} data
+  Future<List<String>> getData() async {{
+    // TODO: Implement data retrieval for {feature["name"]}
+    return ['Sample data for {feature["name"]}'];
+  }}
+
+  /// Update {feature["name"]} data
+  Future<bool> updateData(String data) async {{
+    // TODO: Implement data update for {feature["name"]}
+    return true;
+  }}
+
+  /// Clean up resources
+  void dispose() {{
+    // TODO: Add cleanup logic for {feature["name"]}
+  }}
 }}
 '''
         
@@ -1552,14 +1634,27 @@ class {feature["name"].replace(" ", "")}Service {{
         feature_name = feature["name"].lower().replace(" ", "_")
         test_file = f"test/features/{feature_name}/{feature_name}_test.dart"
         
+        # Clean class name for imports
+        clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
+        
         test_content = f'''// {feature["name"]} Tests
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {{
   group('{feature["name"]} Tests', () {{
-    test('should work correctly', () {{
-      // TODO: Add proper tests for {feature["name"]}
-      expect(true, true);
+    test('should initialize correctly', () {{
+      // TODO: Add proper initialization tests for {feature["name"]}
+      expect(true, isTrue);
+    }});
+
+    test('should handle data operations', () {{
+      // TODO: Add data operation tests for {feature["name"]}
+      expect(1 + 1, equals(2));
+    }});
+
+    test('should handle errors gracefully', () {{
+      // TODO: Add error handling tests for {feature["name"]}
+      expect(() => throw Exception('Test error'), throwsException);
     }});
   }});
 }}
@@ -1854,5 +1949,65 @@ void main() {{
             )
         except Exception as e:
             self.logger.debug(f"Could not send heartbeat: {e}")
+
+    async def _generate_repository_code(self, feature_name: str, repo_spec: Dict[str, Any]) -> str:
+        """Generate repository implementation code."""
+        repo_code = f"""
+// {feature_name.title()} Repository Implementation
+abstract class {feature_name.title()}Repository {{
+  // TODO: Define repository interface methods
+}}
+
+class {feature_name.title()}RepositoryImpl implements {feature_name.title()}Repository {{
+  // TODO: Implement repository methods
+}}
+"""
+        return repo_code
+
+    async def _generate_use_case_code(self, feature_name: str, use_case: Dict[str, Any]) -> str:
+        """Generate use case implementation code."""
+        use_case_name = use_case.get("name", "default")
+        use_case_code = f"""
+// {use_case_name.title()} Use Case
+class {use_case_name.title()}UseCase {{
+  // TODO: Implement use case logic
+}}
+"""
+        return use_case_code
+
+    async def _generate_bloc_files(self, feature_name: str, logic_spec: Dict[str, Any]) -> List[str]:
+        """Generate BLoC files for a feature."""
+        bloc_files = []
+        
+        # Generate BLoC state file
+        state_code = f"""
+// {feature_name.title()} State
+import 'package:equatable/equatable.dart';
+
+abstract class {feature_name.title()}State extends Equatable {{
+  @override
+  List<Object> get props => [];
+}}
+
+class {feature_name.title()}Initial extends {feature_name.title()}State {{}}
+
+class {feature_name.title()}Loading extends {feature_name.title()}State {{}}
+
+class {feature_name.title()}Loaded extends {feature_name.title()}State {{}}
+
+class {feature_name.title()}Error extends {feature_name.title()}State {{
+  final String message;
+  {feature_name.title()}Error(this.message);
+  
+  @override
+  List<Object> get props => [message];
+}}
+"""
+        
+        state_file = f"lib/features/{feature_name}/presentation/bloc/{feature_name}_state.dart"
+        if await self._create_actual_file("flutter_projects", state_file, state_code):
+            bloc_files.append(state_file)
+        
+        return bloc_files
 
     

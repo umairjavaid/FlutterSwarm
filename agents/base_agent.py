@@ -400,3 +400,50 @@ class BaseAgent(ABC):
     async def on_state_change(self, state_data: Dict[str, Any]) -> None:
         """Handle state changes. Override in subclasses."""
         pass
+
+    async def run_command(self, command: str, timeout: int = 30) -> Dict[str, Any]:
+        """Run a shell command using the terminal tool."""
+        try:
+            result = await self.execute_tool(
+                "terminal",
+                operation="run_command",
+                command=command,
+                timeout=timeout
+            )
+            
+            return {
+                "success": result.status.value == "success",
+                "output": result.data if result.data else "",
+                "error": result.error if hasattr(result, 'error') else ""
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e)
+            }
+
+    async def collaborate_with_agent(self, target_agent: str, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Collaborate with another agent (simplified implementation)."""
+        try:
+            # Send a collaboration message
+            self.send_message_to_agent(
+                to_agent=target_agent,
+                message_type=MessageType.COLLABORATION_REQUEST,
+                content={
+                    "collaboration_type": collaboration_type,
+                    "data": data,
+                    "from_agent": self.agent_id
+                }
+            )
+            
+            return {
+                "status": "collaboration_request_sent",
+                "target_agent": target_agent,
+                "collaboration_type": collaboration_type
+            }
+        except Exception as e:
+            return {
+                "status": "collaboration_failed",
+                "error": str(e)
+            }
