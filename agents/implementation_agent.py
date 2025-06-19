@@ -1011,10 +1011,135 @@ class HomeScreen extends StatelessWidget {{
         else:
             print(f"📝 Implementation Agent: QA issue '{issue_type}' not implementation-related")
     
+    async def _handle_general_implementation(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle general implementation tasks that don't match specific patterns."""
+        project_id = task_data.get("project_id", "")
+        
+        self.logger.info(f"🔨 Handling general implementation task: {task_description}")
+        
+        # Create a comprehensive implementation based on the task description
+        implementation_prompt = f"""
+        Handle this Flutter implementation task:
+        
+        Task: {task_description}
+        Data: {task_data}
+        
+        Create a complete Flutter implementation that includes:
+        1. Proper project structure
+        2. Well-structured Dart code
+        3. State management integration
+        4. UI components and screens
+        5. Business logic and data models
+        6. Error handling
+        7. Performance optimizations
+        
+        Follow Flutter best practices and create production-ready code.
+        """
+        
+        try:
+            implementation_code = await self.think(implementation_prompt, task_data)
+            
+            if project_id:
+                files_created = await self._parse_and_create_files(project_id, implementation_code)
+            else:
+                files_created = []
+            
+            return {
+                "status": "completed",
+                "task_description": task_description,
+                "files_created": files_created,
+                "implementation": implementation_code
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in general implementation: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "task_description": task_description
+            }
+
     def _determine_project_type(self, project) -> str:
         """Determine the type of project based on requirements and name."""
         name_lower = project.name.lower()
         requirements_text = ' '.join(project.requirements).lower()
         
+        # Music/Audio apps
+        if any(keyword in name_lower or keyword in requirements_text for keyword in 
+               ['music', 'audio', 'streaming', 'playlist', 'song', 'sound', 'radio']):
+            return 'music_app'
+        
+        # E-commerce apps
+        if any(keyword in name_lower or keyword in requirements_text for keyword in 
+               ['shop', 'store', 'ecommerce', 'cart', 'payment', 'product', 'order']):
+            return 'ecommerce_app'
+        
+        # Social apps
+        if any(keyword in name_lower or keyword in requirements_text for keyword in 
+               ['social', 'chat', 'message', 'post', 'friend', 'follow', 'share']):
+            return 'social_app'
+        
+        # Productivity apps
+        if any(keyword in name_lower or keyword in requirements_text for keyword in 
+               ['todo', 'task', 'note', 'productivity', 'calendar', 'reminder']):
+            return 'productivity_app'
+        
+        # Weather apps
+        if any(keyword in name_lower or keyword in requirements_text for keyword in 
+               ['weather', 'forecast', 'climate', 'temperature']):
+            return 'weather_app'
+        
+        # Default to utility app
+        return 'utility_app'
+
+    async def _generate_ai_driven_app_structure(self, project_path: str, project) -> List[str]:
+        """Generate an AI-driven app structure based on project requirements."""
+        project_type = self._determine_project_type(project)
+        
+        structure_prompt = f"""
+        Generate a complete Flutter app structure for a {project_type}:
+        
+        Project: {project.name}
+        Type: {project_type}
+        Requirements: {project.requirements}
+        
+        Create the following files with complete, production-ready code:
+        
+        1. lib/main.dart - App entry point with proper Material app setup
+        2. lib/core/app_theme.dart - Theme configuration
+        3. lib/core/routes.dart - Navigation and routing
+        4. lib/models/ - Data models relevant to the app type
+        5. lib/screens/ - Main screens for the app
+        6. lib/widgets/ - Reusable widgets
+        7. lib/services/ - API and business logic services
+        8. lib/utils/ - Utility functions and constants
+        
+        For each file, provide:
+        // File: [path]
+        [complete code content]
+        
+        Ensure all code is:
+        - Null-safe Dart
+        - Follows Flutter best practices
+        - Includes proper error handling
+        - Uses Material Design 3
+        - Implements responsive design
+        - Includes comments explaining key functionality
+        """
+        
+        try:
+            structure_code = await self.think(structure_prompt, {
+                "project": project,
+                "project_type": project_type,
+                "project_path": project_path
+            })
+            
+            files_created = await self._parse_and_create_files(project.id, structure_code)
+            return files_created
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating AI-driven structure: {e}")
+            # Fallback to basic structure
+            return await self._create_basic_flutter_app(project_path, project.name)
 
     

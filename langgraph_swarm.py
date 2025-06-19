@@ -242,6 +242,8 @@ class LangGraphFlutterSwarm:
                 task_description="design_flutter_architecture",
                 task_data={
                     "project_id": state["project_id"],
+                    "name": state["name"],
+                    "description": state["description"],
                     "requirements": state["requirements"],
                     "planning_output": state.get("architecture_design", {}).get("planning", {})
                 }
@@ -293,6 +295,8 @@ class LangGraphFlutterSwarm:
                 task_description="implement_flutter_features",
                 task_data={
                     "project_id": state["project_id"],
+                    "name": state["name"],
+                    "description": state["description"],
                     "architecture_design": state.get("architecture_design", {}),
                     "requirements": state["requirements"],
                     "features": state.get("features", [])
@@ -784,6 +788,10 @@ class LangGraphFlutterSwarm:
             # build_monitor.start_monitoring(project_id)
         
         try:
+            # Create project in shared state for compatibility with agents
+            from shared.state import shared_state
+            shared_state.create_project_with_id(project_id, name, description, requirements)
+            
             # Create initial state
             initial_state: SwarmState = {
                 "project_id": project_id,

@@ -183,6 +183,37 @@ class SharedState:
             
             return project_id
     
+    def create_project_with_id(self, project_id: str, name: str, description: str, requirements: List[str]) -> None:
+        """Create a new project with a specific ID."""
+        with self._lock:
+            self._projects[project_id] = ProjectState(
+                project_id=project_id,
+                name=name,
+                description=description,
+                requirements=requirements,
+                current_phase="planning",
+                progress=0.0,
+                files_created={},
+                architecture_decisions=[],
+                test_results={},
+                security_findings=[],
+                performance_metrics={},
+                documentation={},
+                deployment_config={}
+            )
+            self._current_project_id = project_id
+            
+            # Notify all agents about new project
+            self._broadcast_message(
+                from_agent="system",
+                message_type=MessageType.STATE_SYNC,
+                content={
+                    "event": "project_created",
+                    "project_id": project_id,
+                    "project": asdict(self._projects[project_id])
+                }
+            )
+    
     def update_project(self, project_id: str, **updates) -> None:
         """Update project state."""
         with self._lock:

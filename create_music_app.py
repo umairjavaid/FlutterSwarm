@@ -163,10 +163,10 @@ async def print_build_results_with_qa(result):
     """Print build results with QA insights."""
     print("\n📋 Music App Build Summary:")
     print(f"  • Status: {result.get('status', 'Unknown')}")
-    print(f"  • Files Created: {len(result.get('files_created', {}))}")
-    print(f"  • Architecture Decisions: {len(result.get('architecture_design', {}).get('decisions', []))}")
+    print(f"  • Files Created: {result.get('files_created', 0)}")
+    print(f"  • Architecture Decisions: {result.get('architecture_decisions', 0)}")
     print(f"  • Security Findings: {len(result.get('security_findings', []))}")
-    print(f"  • Documentation Files: {len(result.get('documentation', {}))}")
+    print(f"  • Documentation Files: {len(result.get('documentation', []))}")
     
     # Print test results if available
     test_results = result.get('test_results', {})

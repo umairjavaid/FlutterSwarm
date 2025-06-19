@@ -3,6 +3,7 @@ Architecture Agent - Handles system design and architectural decisions for Flutt
 """
 
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -63,11 +64,20 @@ class ArchitectureAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         
+        # Safety check for project state
+        if not project:
+            self.logger.warning(f"Project {project_id} not found in shared state, using task data")
+            project_name = task_data.get("name", "Unknown Project")
+            project_description = task_data.get("description", "No description available")
+        else:
+            project_name = project.name
+            project_description = project.description
+        
         architecture_prompt = f"""
         Design a comprehensive Flutter application architecture for:
         
-        Project: {project.name}
-        Description: {project.description}
+        Project: {project_name}
+        Description: {project_description}
         Requirements: {requirements}
         Planning Context: {planning_output}
         
@@ -118,19 +128,25 @@ class ArchitectureAgent(BaseAgent):
         })
         
         # Create architecture decision record
+        existing_decisions = project.architecture_decisions if project else []
         architecture_decision = {
-            "decision_id": f"arch_{project_id}_{len(project.architecture_decisions) + 1}",
+            "decision_id": f"arch_{project_id}_{len(existing_decisions) + 1}",
             "title": "Flutter Application Architecture Design",
             "description": architecture_design,
             "status": "proposed",
             "created_by": self.agent_id,
-            "created_at": shared_state._agents[self.agent_id].last_update.isoformat(),
+            "created_at": datetime.now().isoformat(),
             "consequences": "Defines the overall structure and patterns for the Flutter application"
         }
         
-        # Add to project state
-        project.architecture_decisions.append(architecture_decision)
-        shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
+        # Add to project state if project exists
+        if project:
+            project.architecture_decisions.append(architecture_decision)
+            shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
+        else:
+            # Update with new list if project not found
+            updated_decisions = existing_decisions + [architecture_decision]
+            shared_state.update_project(project_id, architecture_decisions=updated_decisions)
         
         # Request feedback from other agents
         await self._request_architecture_feedback(project_id, architecture_design)
