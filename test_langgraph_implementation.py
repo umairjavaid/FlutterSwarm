@@ -21,7 +21,7 @@ class TestLangGraphFlutterSwarm:
         assert swarm is not None
         assert swarm.workflow_phases == [
             'planning', 'architecture', 'implementation', 'testing', 
-            'security_review', 'performance_optimization', 'documentation', 
+            'security_review', 'performance_optimization', 'docs_generation', 
             'quality_assurance', 'deployment'
         ]
         assert swarm.graph is not None
@@ -227,7 +227,7 @@ class TestLangGraphFlutterSwarm:
             # Verify all phases completed
             expected_phases = [
                 'planning', 'architecture', 'implementation', 'testing', 
-                'security_review', 'performance_optimization', 'documentation', 
+                'security_review', 'performance_optimization', 'docs_generation', 
                 'quality_assurance', 'deployment'
             ]
             assert all(phase in result["completed_phases"] for phase in expected_phases)
