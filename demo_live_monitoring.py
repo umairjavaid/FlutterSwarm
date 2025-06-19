@@ -56,8 +56,8 @@ class MonitoringDemo:
             project_id = self.swarm.create_project(
                 name="MonitoringDemo",
                 description="A demo Flutter app to showcase live monitoring",
-                requirements=["user authentication", "music player", "offline sync"],
-                features=["auth", "media", "database"]
+                requirements=["user authentication", "data persistence", "offline mode"],
+                features=["auth", "database", "offline"]
             )
             self.current_project_id = project_id
             

@@ -131,15 +131,6 @@ application:
     default_timeout: 300  # seconds (5 minutes)
     monitoring_rounds: 5
     sleep_between_checks: 5  # seconds
-    weather_app:
-      api_base_url: "https://api.openweathermap.org/data/2.5"
-      default_city: "New York"
-      forecast_days: 5
-    
-    music_app:
-      streaming_quality: ["FLAC", "320kbps MP3"]
-      max_playlist_size: 1000
-      offline_storage_limit: "10GB"
     
     ecommerce_app:
       max_products_per_page: 20
@@ -514,6 +505,15 @@ environments:
     monitoring:
       performance:
         enable_monitoring: true
+  
+  testing:
+    system:
+      performance:
+        task_timeout: 60
+    development:
+      testing:
+        test_timeout: 120
+        parallel_testing: false
   
   testing:
     system:
