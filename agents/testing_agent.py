@@ -4,6 +4,7 @@ Testing Agent - Creates unit, widget, and integration tests for Flutter applicat
 
 import asyncio
 import os
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -527,3 +528,223 @@ void main() {
         """Handle general testing tasks."""
         response = await self.think(f"Handle testing task: {task_description}", task_data)
         return {"response": response, "task": task_description}
+
+    # Real-time awareness and proactive collaboration methods
+    def _react_to_peer_activity(self, peer_agent: str, activity_type: str, 
+                               activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """React to peer agent activities with proactive testing preparation."""
+        
+        # Implementation Agent → Prepare tests for new code
+        if peer_agent == "implementation" and activity_type == "code_generated":
+            self._prepare_tests_for_new_code(activity_details, consciousness_update)
+        
+        # Architecture Agent → Prepare testing strategy
+        elif peer_agent == "architecture" and activity_type == "architecture_decision_made":
+            self._prepare_testing_strategy(activity_details, consciousness_update)
+        
+        # Security Agent → Add security test scenarios
+        elif peer_agent == "security" and activity_type == "security_issue_found":
+            self._add_security_test_scenarios(activity_details, consciousness_update)
+        
+        # Performance Agent → Create performance test cases
+        elif peer_agent == "performance" and activity_type == "performance_issue_detected":
+            self._create_performance_test_cases(activity_details, consciousness_update)
+
+    def _prepare_tests_for_new_code(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Proactively prepare tests when new code is implemented."""
+        try:
+            files_created = activity_details.get("files_created", [])
+            feature_name = activity_details.get("feature_name", "unknown")
+            
+            self.logger.info(f"🧪 Proactively preparing tests for new code: {feature_name}")
+            
+            # Broadcast preparation activity
+            self.broadcast_activity(
+                activity_type="test_preparation_started",
+                activity_details={
+                    "trigger": "new_code_implementation",
+                    "target_files": files_created,
+                    "feature_name": feature_name
+                },
+                impact_level="medium",
+                collaboration_relevance=["implementation", "qa", "security"]
+            )
+            
+            # Schedule async test creation
+            import asyncio
+            asyncio.create_task(self._async_create_tests_for_files(files_created))
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error preparing tests for new code: {e}")
+
+    def _prepare_testing_strategy(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Prepare testing strategy based on architecture decisions."""
+        try:
+            architecture_decision = activity_details.get("decision", "")
+            patterns_used = activity_details.get("patterns", [])
+            
+            self.logger.info(f"🎯 Adapting testing strategy for architecture: {architecture_decision}")
+            
+            # Determine optimal test approach based on architecture
+            test_strategy = self._determine_test_strategy_for_architecture(patterns_used)
+            
+            # Update shared consciousness with testing insights
+            shared_state.update_shared_consciousness(
+                f"testing_strategy_{shared_state.get_current_project_id()}",
+                {
+                    "architecture_patterns": patterns_used,
+                    "recommended_test_types": test_strategy,
+                    "testing_framework_suggestions": self._suggest_testing_frameworks(patterns_used),
+                    "updated_at": datetime.now().isoformat()
+                }
+            )
+            
+            # Broadcast strategy update
+            self.broadcast_activity(
+                activity_type="testing_strategy_updated",
+                activity_details={
+                    "trigger": "architecture_decision",
+                    "strategy": test_strategy,
+                    "architecture_patterns": patterns_used
+                },
+                impact_level="medium",
+                collaboration_relevance=["implementation", "qa", "architecture"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error preparing testing strategy: {e}")
+
+    def _add_security_test_scenarios(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Add security-focused test scenarios based on security findings."""
+        try:
+            security_issue = activity_details.get("issue_type", "")
+            affected_components = activity_details.get("affected_components", [])
+            
+            self.logger.info(f"🔒 Adding security test scenarios for: {security_issue}")
+            
+            # Generate security test scenarios
+            security_tests = self._generate_security_test_scenarios(security_issue, affected_components)
+            
+            # Broadcast security test preparation
+            self.broadcast_activity(
+                activity_type="security_tests_prepared",
+                activity_details={
+                    "trigger": "security_finding",
+                    "security_issue": security_issue,
+                    "test_scenarios": security_tests,
+                    "affected_components": affected_components
+                },
+                impact_level="high",
+                collaboration_relevance=["security", "qa", "implementation"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error adding security test scenarios: {e}")
+
+    def _create_performance_test_cases(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Create performance test cases based on performance issues."""
+        try:
+            performance_issue = activity_details.get("issue_type", "")
+            metrics_threshold = activity_details.get("threshold", {})
+            
+            self.logger.info(f"⚡ Creating performance tests for: {performance_issue}")
+            
+            # Generate performance test cases
+            performance_tests = self._generate_performance_test_cases(performance_issue, metrics_threshold)
+            
+            # Broadcast performance test creation
+            self.broadcast_activity(
+                activity_type="performance_tests_created",
+                activity_details={
+                    "trigger": "performance_issue",
+                    "issue_type": performance_issue,
+                    "test_cases": performance_tests,
+                    "thresholds": metrics_threshold
+                },
+                impact_level="medium",
+                collaboration_relevance=["performance", "qa", "implementation"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating performance test cases: {e}")
+
+    async def _async_create_tests_for_files(self, files: List[str]) -> None:
+        """Asynchronously create tests for newly implemented files."""
+        try:
+            if files:
+                await self._create_unit_tests({
+                    "project_id": shared_state.get_current_project_id(),
+                    "target_files": files
+                })
+        except Exception as e:
+            self.logger.error(f"❌ Error in async test creation: {e}")
+
+    def _determine_test_strategy_for_architecture(self, patterns: List[str]) -> Dict[str, Any]:
+        """Determine optimal testing strategy based on architecture patterns."""
+        strategy = {
+            "unit_tests": {"priority": "high", "coverage_target": 80},
+            "widget_tests": {"priority": "high", "coverage_target": 70},
+            "integration_tests": {"priority": "medium", "coverage_target": 60}
+        }
+        
+        # Adjust strategy based on patterns
+        if "BLoC" in patterns:
+            strategy["bloc_tests"] = {"priority": "high", "focus": "state_transitions"}
+        if "Provider" in patterns:
+            strategy["provider_tests"] = {"priority": "high", "focus": "state_management"}
+        if "Clean Architecture" in patterns:
+            strategy["repository_tests"] = {"priority": "high", "focus": "data_layer"}
+            strategy["use_case_tests"] = {"priority": "high", "focus": "business_logic"}
+        
+        return strategy
+
+    def _suggest_testing_frameworks(self, patterns: List[str]) -> List[str]:
+        """Suggest testing frameworks based on architecture patterns."""
+        base_frameworks = ["flutter_test", "mockito", "build_runner"]
+        
+        if "BLoC" in patterns:
+            base_frameworks.append("bloc_test")
+        if "Provider" in patterns:
+            base_frameworks.append("provider_test")
+        if "GetX" in patterns:
+            base_frameworks.append("get_test")
+        
+        return base_frameworks
+
+    def _generate_security_test_scenarios(self, security_issue: str, affected_components: List[str]) -> List[Dict[str, Any]]:
+        """Generate security test scenarios based on security findings."""
+        scenarios = []
+        
+        if "authentication" in security_issue.lower():
+            scenarios.extend([
+                {"name": "test_invalid_credentials", "type": "security", "component": "auth"},
+                {"name": "test_session_timeout", "type": "security", "component": "auth"},
+                {"name": "test_token_validation", "type": "security", "component": "auth"}
+            ])
+        
+        if "data_validation" in security_issue.lower():
+            scenarios.extend([
+                {"name": "test_input_sanitization", "type": "security", "component": "validation"},
+                {"name": "test_sql_injection_prevention", "type": "security", "component": "validation"},
+                {"name": "test_xss_prevention", "type": "security", "component": "validation"}
+            ])
+        
+        return scenarios
+
+    def _generate_performance_test_cases(self, performance_issue: str, thresholds: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate performance test cases based on performance issues."""
+        test_cases = []
+        
+        if "memory" in performance_issue.lower():
+            test_cases.extend([
+                {"name": "test_memory_usage_under_load", "type": "performance", "metric": "memory"},
+                {"name": "test_memory_leak_detection", "type": "performance", "metric": "memory"}
+            ])
+        
+        if "rendering" in performance_issue.lower():
+            test_cases.extend([
+                {"name": "test_frame_rate_consistency", "type": "performance", "metric": "fps"},
+                {"name": "test_widget_build_time", "type": "performance", "metric": "build_time"}
+            ])
+        
+        return test_cases

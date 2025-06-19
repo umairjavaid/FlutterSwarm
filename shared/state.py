@@ -34,6 +34,13 @@ class MessageType(Enum):
     FEATURE_VALIDATION_REQUEST = "feature_validation_request"
     HEARTBEAT = "heartbeat"
     HEALTH_CHECK = "health_check"
+    # Real-time awareness message types
+    REAL_TIME_STATUS_BROADCAST = "real_time_status_broadcast"
+    AGENT_ACTIVITY_UPDATE = "agent_activity_update"
+    PROACTIVE_ASSISTANCE_OFFER = "proactive_assistance_offer"
+    AWARENESS_SUBSCRIPTION = "awareness_subscription"
+    CONSCIOUSNESS_UPDATE = "consciousness_update"
+    PREDICTIVE_COLLABORATION = "predictive_collaboration"
 
 @dataclass
 class AgentMessage:
@@ -161,6 +168,28 @@ class IncrementalImplementationState:
         if self.validation_results is None:
             self.validation_results = {}
 
+@dataclass
+class RealTimeAwarenessState:
+    """Tracks real-time awareness and collaboration state."""
+    agent_subscriptions: Dict[str, List[str]]  # agent_id -> [subscribed_to_agent_ids]
+    active_collaborations: Dict[str, Dict[str, Any]]  # collaboration_id -> details
+    proactive_opportunities: List[Dict[str, Any]]  # detected collaboration opportunities
+    shared_consciousness: Dict[str, Any]  # global shared state
+    agent_activity_streams: Dict[str, List[Dict[str, Any]]]  # agent_id -> activity_log
+    predictive_insights: Dict[str, List[Dict[str, Any]]]  # agent_id -> predictions
+    real_time_metrics: Dict[str, Any]  # performance and awareness metrics
+
+@dataclass
+class AgentActivityEvent:
+    """Represents a real-time activity event from an agent."""
+    agent_id: str
+    activity_type: str
+    activity_details: Dict[str, Any]
+    timestamp: datetime
+    project_id: Optional[str]
+    impact_level: str  # low, medium, high, critical
+    collaboration_relevance: List[str]  # agent types that might be interested
+
 class SharedState:
     """
     Central shared state manager for all agents.
@@ -183,10 +212,24 @@ class SharedState:
         self._e2e_testing_sessions: Dict[str, E2ETestingState] = {}
         self._incremental_states: Dict[str, IncrementalImplementationState] = {}  # project_id -> state
         
+        # Real-time awareness state
+        self._awareness_state = RealTimeAwarenessState(
+            agent_subscriptions={},
+            active_collaborations={},
+            proactive_opportunities=[],
+            shared_consciousness={},
+            agent_activity_streams={},
+            predictive_insights={},
+            real_time_metrics={}
+        )
+        self._activity_event_buffer: List[AgentActivityEvent] = []
+        self._broadcast_enabled = True
+        
         # Configure limits from config
         self._max_messages = self._config.get('communication.messaging.queue_size', 500)
         self._message_ttl = self._config.get('communication.messaging.message_ttl', 3600)
         self._max_collaborations = self._config.get('communication.collaboration.max_concurrent_collaborations', 5)
+        self._max_activity_events = 1000  # Maximum activity events to keep in buffer
         
     def register_agent(self, agent_id: str, capabilities: List[str]) -> None:
         """Register a new agent with the shared state."""
@@ -712,6 +755,503 @@ class SharedState:
                 else:
                     state.failed_features.append(feature_id)
                 state.current_feature = None
+
+    # Real-time awareness methods
+    def subscribe_agent_to_all(self, agent_id: str) -> None:
+        """Subscribe an agent to all other agents' status updates."""
+        with self._lock:
+            if agent_id not in self._awareness_state.agent_subscriptions:
+                self._awareness_state.agent_subscriptions[agent_id] = []
+            
+            # Subscribe to all existing agents
+            for other_agent_id in self._agents.keys():
+                if other_agent_id != agent_id:
+                    if other_agent_id not in self._awareness_state.agent_subscriptions[agent_id]:
+                        self._awareness_state.agent_subscriptions[agent_id].append(other_agent_id)
+            
+            # Initialize activity stream
+            if agent_id not in self._awareness_state.agent_activity_streams:
+                self._awareness_state.agent_activity_streams[agent_id] = []
+    
+    def broadcast_agent_activity(self, event: AgentActivityEvent) -> None:
+        """Broadcast an agent activity event to all subscribed agents."""
+        if not self._broadcast_enabled:
+            return
+            
+        with self._lock:
+            # Add to activity stream
+            if event.agent_id not in self._awareness_state.agent_activity_streams:
+                self._awareness_state.agent_activity_streams[event.agent_id] = []
+            
+            self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
+            
+            # Keep only recent activity (limit buffer size)
+            max_events_per_agent = 100
+            if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
+                self._awareness_state.agent_activity_streams[event.agent_id] = \
+                    self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
+            
+            # Add to global buffer
+            self._activity_event_buffer.append(event)
+            if len(self._activity_event_buffer) > self._max_activity_events:
+                self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
+            
+            # Broadcast to subscribed agents
+            self._broadcast_real_time_update(event)
+            
+            # Check for proactive collaboration opportunities
+            self._detect_collaboration_opportunities(event)
+    
+    def _detect_collaboration_opportunities(self, event: AgentActivityEvent) -> None:
+        """Detect proactive collaboration opportunities based on activity events."""
+        try:
+            # Look for patterns that suggest collaboration opportunities
+            opportunity_type = self._classify_collaboration_opportunity(event)
+            
+            if opportunity_type:
+                opportunity = {
+                    "id": str(uuid.uuid4()),
+                    "type": opportunity_type,
+                    "source_event": asdict(event),
+                    "detected_at": datetime.now().isoformat(),
+                    "priority": self._calculate_opportunity_priority(event),
+                    "details": self._generate_opportunity_details(event, opportunity_type)
+                }
+                
+                # Add to opportunities list
+                self._awareness_state.proactive_opportunities.append(opportunity)
+                
+                # Broadcast opportunity to relevant agents
+                self._broadcast_collaboration_opportunity(opportunity)
+                
+        except Exception as e:
+            print(f"Error detecting collaboration opportunities: {e}")
+    
+    def _classify_collaboration_opportunity(self, event: AgentActivityEvent) -> Optional[str]:
+        """Classify the type of collaboration opportunity."""
+        activity_type = event.activity_type
+        agent_id = event.agent_id
+        
+        # Architecture decisions → Implementation preparation
+        if agent_id == "architecture" and "decision" in activity_type:
+            return "architecture_to_implementation"
+        
+        # Code generation → Testing preparation
+        elif agent_id == "implementation" and "code" in activity_type:
+            return "implementation_to_testing"
+        
+        # Security findings → Testing and implementation updates
+        elif agent_id == "security" and "issue" in activity_type:
+            return "security_to_multi_agent"
+        
+        # Performance issues → Optimization opportunities
+        elif agent_id == "performance" and "issue" in activity_type:
+            return "performance_to_optimization"
+        
+        # Testing failures → Implementation fixes
+        elif agent_id == "testing" and "failure" in activity_type:
+            return "testing_to_implementation"
+        
+        return None
+    
+    def _calculate_opportunity_priority(self, event: AgentActivityEvent) -> str:
+        """Calculate priority of collaboration opportunity."""
+        if event.impact_level == "critical":
+            return "high"
+        elif event.impact_level == "high":
+            return "medium"
+        else:
+            return "low"
+    
+    def _generate_opportunity_details(self, event: AgentActivityEvent, opportunity_type: str) -> Dict[str, Any]:
+        """Generate detailed information about the collaboration opportunity."""
+        details = {
+            "source_agent": event.agent_id,
+            "activity_details": event.activity_details,
+            "suggested_action": "",
+            "target_agents": [],
+            "expected_outcome": ""
+        }
+        
+        if opportunity_type == "architecture_to_implementation":
+            details.update({
+                "suggested_action": "prepare_implementation_structure",
+                "target_agents": ["implementation"],
+                "expected_outcome": "faster_implementation_start"
+            })
+        
+        elif opportunity_type == "implementation_to_testing":
+            details.update({
+                "suggested_action": "prepare_test_suite",
+                "target_agents": ["testing"],
+                "expected_outcome": "immediate_test_coverage"
+            })
+        
+        elif opportunity_type == "security_to_multi_agent":
+            details.update({
+                "suggested_action": "address_security_concern",
+                "target_agents": ["implementation", "testing"],
+                "expected_outcome": "enhanced_security_posture"
+            })
+        
+        return details
+    
+    def _broadcast_collaboration_opportunity(self, opportunity: Dict[str, Any]) -> None:
+        """Broadcast collaboration opportunity to relevant agents."""
+        target_agents = opportunity.get("details", {}).get("target_agents", [])
+        
+        for agent_id in target_agents:
+            if agent_id in self._agents:
+                self.send_message(
+                    from_agent="shared_consciousness",
+                    to_agent=agent_id,
+                    message_type=MessageType.PROACTIVE_ASSISTANCE_OFFER,
+                    content=opportunity
+                )
+    
+    def update_shared_consciousness(self, key: str, value: Any) -> None:
+        """Update the shared consciousness with new insights."""
+        with self._lock:
+            self._awareness_state.shared_consciousness[key] = {
+                "value": value,
+                "updated_at": datetime.now().isoformat(),
+                "update_count": self._awareness_state.shared_consciousness.get(key, {}).get("update_count", 0) + 1
+            }
+    
+    def get_shared_consciousness(self, key: str = None) -> Any:
+        """Get shared consciousness data."""
+        with self._lock:
+            if key:
+                return self._awareness_state.shared_consciousness.get(key)
+            return self._awareness_state.shared_consciousness.copy()
+    
+    def _get_relevant_consciousness_for_agent(self, agent_id: str) -> Dict[str, Any]:
+        """Get consciousness data relevant to a specific agent."""
+        agent_capabilities = self._agents.get(agent_id, AgentState("", AgentStatus.IDLE, "", 0.0, datetime.now(), [], {})).capabilities
+        
+        relevant_consciousness = {}
+        for key, data in self._awareness_state.shared_consciousness.items():
+            # Include consciousness data relevant to agent's capabilities
+            if any(capability in key for capability in agent_capabilities):
+                relevant_consciousness[key] = data
+            # Always include project-wide insights
+            elif "project_" in key or "global_" in key:
+                relevant_consciousness[key] = data
+        
+        return relevant_consciousness
+    
+    def get_current_project_id(self) -> Optional[str]:
+        """Get the current project ID."""
+        with self._lock:
+            return self._current_project_id
+    
+    def get_messages_for_agent(self, agent_id: str) -> List[AgentMessage]:
+        """Get unread messages for an agent (alias for get_messages)."""
+        return self.get_messages(agent_id, mark_read=False, limit=50)
+    
+    def get_collaboration_opportunities(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Get collaboration opportunities relevant to an agent."""
+        with self._lock:
+            agent_capabilities = self._agents.get(agent_id, AgentState("", AgentStatus.IDLE, "", 0.0, datetime.now(), [], {})).capabilities
+            
+            relevant_opportunities = []
+            for opportunity in self._awareness_state.proactive_opportunities:
+                target_agents = opportunity.get("details", {}).get("target_agents", [])
+                
+                # Include if agent is directly targeted or has relevant capabilities
+                if agent_id in target_agents or any(capability in str(opportunity) for capability in agent_capabilities):
+                    relevant_opportunities.append(opportunity)
+            
+            return relevant_opportunities
+    
+    def accept_collaboration_opportunity(self, agent_id: str, opportunity_id: str) -> bool:
+        """Mark a collaboration opportunity as accepted by an agent."""
+        with self._lock:
+            for opportunity in self._awareness_state.proactive_opportunities:
+                if opportunity.get("id") == opportunity_id:
+                    if "accepted_by" not in opportunity:
+                        opportunity["accepted_by"] = []
+                    opportunity["accepted_by"].append({
+                        "agent_id": agent_id,
+                        "accepted_at": datetime.now().isoformat()
+                    })
+                    return True
+            return False
+    
+    def get_agent_activity_stream(self, agent_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent activity stream for an agent."""
+        with self._lock:
+            activities = self._awareness_state.agent_activity_streams.get(agent_id, [])
+            return activities[-limit:] if limit else activities
+
+    # Predictive assistance capabilities
+    def generate_predictive_insights(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Generate predictive insights for an agent based on current state and patterns."""
+        with self._lock:
+            insights = []
+            
+            try:
+                # Analyze current project state
+                if self._current_project_id and self._current_project_id in self._projects:
+                    project = self._projects[self._current_project_id]
+                    
+                    # Predict next likely actions based on current phase
+                    phase_insights = self._predict_from_project_phase(project, agent_id)
+                    insights.extend(phase_insights)
+                    
+                    # Analyze peer agent patterns
+                    peer_insights = self._predict_from_peer_patterns(agent_id)
+                    insights.extend(peer_insights)
+                    
+                    # Check for recurring collaboration patterns
+                    collaboration_insights = self._predict_collaboration_needs(agent_id)
+                    insights.extend(collaboration_insights)
+                    
+                    # Update stored insights
+                    if agent_id not in self._awareness_state.predictive_insights:
+                        self._awareness_state.predictive_insights[agent_id] = []
+                    
+                    # Add new insights with timestamp
+                    for insight in insights:
+                        insight["generated_at"] = datetime.now().isoformat()
+                        insight["confidence"] = self._calculate_insight_confidence(insight)
+                    
+                    self._awareness_state.predictive_insights[agent_id] = insights[-10:]  # Keep last 10
+                    
+            except Exception as e:
+                print(f"Error generating predictive insights: {e}")
+                
+            return insights
+
+    def _predict_from_project_phase(self, project: ProjectState, agent_id: str) -> List[Dict[str, Any]]:
+        """Predict next actions based on current project phase."""
+        insights = []
+        current_phase = project.current_phase
+        
+        if current_phase == "planning" and agent_id == "architecture":
+            insights.append({
+                "type": "phase_transition",
+                "prediction": "architecture_design_needed",
+                "description": "Project in planning phase, architecture design likely needed soon",
+                "suggested_action": "prepare_architecture_analysis",
+                "priority": "high"
+            })
+        
+        elif current_phase == "architecture" and agent_id == "implementation":
+            insights.append({
+                "type": "phase_transition", 
+                "prediction": "implementation_start_upcoming",
+                "description": "Architecture phase active, implementation phase likely next",
+                "suggested_action": "prepare_implementation_structure",
+                "priority": "medium"
+            })
+        
+        elif current_phase == "implementation" and agent_id == "testing":
+            insights.append({
+                "type": "phase_transition",
+                "prediction": "testing_phase_approaching",
+                "description": "Implementation in progress, testing will be needed",
+                "suggested_action": "prepare_test_infrastructure",
+                "priority": "medium"
+            })
+        
+        return insights
+
+    def _predict_from_peer_patterns(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Predict actions based on peer agent activity patterns."""
+        insights = []
+        
+        try:
+            # Analyze recent activities from all agents
+            recent_activities = []
+            for peer_id, activities in self._awareness_state.agent_activity_streams.items():
+                if peer_id != agent_id:
+                    recent_activities.extend(activities[-5:])  # Last 5 activities per peer
+            
+            # Sort by timestamp
+            recent_activities.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            
+            # Look for patterns that suggest upcoming work
+            for activity in recent_activities[:10]:  # Check last 10 activities
+                activity_type = activity.get("activity_type", "")
+                source_agent = activity.get("agent_id", "")
+                
+                # Architecture decisions → Implementation preparation  
+                if source_agent == "architecture" and "decision" in activity_type and agent_id == "implementation":
+                    insights.append({
+                        "type": "peer_pattern",
+                        "prediction": "implementation_work_incoming",
+                        "description": f"Architecture decisions made, implementation work likely needed",
+                        "trigger_activity": activity_type,
+                        "suggested_action": "review_architecture_decisions",
+                        "priority": "medium"
+                    })
+                
+                # Code generation → Testing needed
+                elif source_agent == "implementation" and "code" in activity_type and agent_id == "testing":
+                    insights.append({
+                        "type": "peer_pattern",
+                        "prediction": "testing_work_needed",
+                        "description": f"Code generated, testing work will be needed",
+                        "trigger_activity": activity_type,
+                        "suggested_action": "prepare_test_cases",
+                        "priority": "medium"
+                    })
+                
+                # Security issues → Multiple agent response
+                elif source_agent == "security" and "issue" in activity_type and agent_id in ["implementation", "testing"]:
+                    insights.append({
+                        "type": "peer_pattern",
+                        "prediction": "security_response_needed",
+                        "description": f"Security issue detected, response likely needed",
+                        "trigger_activity": activity_type,
+                        "suggested_action": "review_security_findings",
+                        "priority": "high"
+                    })
+                
+        except Exception as e:
+            print(f"Error predicting from peer patterns: {e}")
+            
+        return insights
+
+    def _predict_collaboration_needs(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Predict collaboration needs based on historical patterns."""
+        insights = []
+        
+        try:
+            # Check for common collaboration patterns
+            agent_capabilities = self._agents.get(agent_id, AgentState("", AgentStatus.IDLE, "", 0.0, datetime.now(), [], {})).capabilities
+            
+            # Look at recent collaboration opportunities
+            recent_opportunities = self._awareness_state.proactive_opportunities[-5:]
+            
+            collaboration_frequency = {}
+            for opportunity in recent_opportunities:
+                target_agents = opportunity.get("details", {}).get("target_agents", [])
+                for target in target_agents:
+                    if target != agent_id:
+                        collaboration_frequency[target] = collaboration_frequency.get(target, 0) + 1
+            
+            # Predict high-frequency collaborations
+            for collaborator, frequency in collaboration_frequency.items():
+                if frequency >= 2:  # If collaborated 2+ times recently
+                    insights.append({
+                        "type": "collaboration_pattern",
+                        "prediction": "frequent_collaboration_likely",
+                        "description": f"High collaboration frequency with {collaborator}",
+                        "collaborator": collaborator,
+                        "frequency": frequency,
+                        "suggested_action": "monitor_collaborator_activities",
+                        "priority": "low"
+                    })
+            
+        except Exception as e:
+            print(f"Error predicting collaboration needs: {e}")
+            
+        return insights
+
+    def _calculate_insight_confidence(self, insight: Dict[str, Any]) -> float:
+        """Calculate confidence score for a predictive insight."""
+        insight_type = insight.get("type", "")
+        priority = insight.get("priority", "low")
+        
+        base_confidence = 0.5
+        
+        # Adjust based on insight type
+        if insight_type == "phase_transition":
+            base_confidence = 0.8  # Phase transitions are highly predictable
+        elif insight_type == "peer_pattern":
+            base_confidence = 0.7  # Peer patterns are fairly predictable
+        elif insight_type == "collaboration_pattern":
+            base_confidence = 0.6  # Collaboration patterns are moderately predictable
+        
+        # Adjust based on priority
+        if priority == "high":
+            base_confidence += 0.1
+        elif priority == "low":
+            base_confidence -= 0.1
+        
+        return min(1.0, max(0.0, base_confidence))
+
+    def get_predictive_insights(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Get stored predictive insights for an agent."""
+        with self._lock:
+            return self._awareness_state.predictive_insights.get(agent_id, [])
+
+    def update_real_time_metrics(self, metric_name: str, value: Any) -> None:
+        """Update real-time awareness metrics."""
+        with self._lock:
+            self._awareness_state.real_time_metrics[metric_name] = {
+                "value": value,
+                "updated_at": datetime.now().isoformat()
+            }
+
+    def get_real_time_metrics(self) -> Dict[str, Any]:
+        """Get all real-time awareness metrics."""
+        with self._lock:
+            return self._awareness_state.real_time_metrics.copy()
+
+    def create_proactive_assistance_offer(self, offering_agent: str, target_agent: str, 
+                                        assistance_type: str, details: Dict[str, Any]) -> str:
+        """Create a proactive assistance offer."""
+        with self._lock:
+            offer_id = str(uuid.uuid4())
+            
+            offer = {
+                "id": offer_id,
+                "offering_agent": offering_agent,
+                "target_agent": target_agent,
+                "assistance_type": assistance_type,
+                "details": details,
+                "created_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            
+            # Send proactive assistance message
+            self.send_message(
+                from_agent=offering_agent,
+                to_agent=target_agent,
+                message_type=MessageType.PROACTIVE_ASSISTANCE_OFFER,
+                content=offer
+            )
+            
+            return offer_id
+    
+    def _broadcast_real_time_update(self, event: AgentActivityEvent) -> None:
+        """Broadcast real-time update to all relevant agents."""
+        # Find agents interested in this type of activity
+        interested_agents = set()
+        
+        # All agents get critical events
+        if event.impact_level == "critical":
+            interested_agents.update(self._agents.keys())
+        else:
+            # Find agents subscribed to this agent or interested in this activity type
+            for agent_id, subscriptions in self._awareness_state.agent_subscriptions.items():
+                if event.agent_id in subscriptions:
+                    interested_agents.add(agent_id)
+                
+                # Check if agent type is relevant
+                if agent_id in self._agents:
+                    agent_capabilities = self._agents[agent_id].capabilities
+                    if any(capability in event.collaboration_relevance for capability in agent_capabilities):
+                        interested_agents.add(agent_id)
+        
+        # Remove the source agent
+        interested_agents.discard(event.agent_id)
+        
+        # Send real-time updates
+        for agent_id in interested_agents:
+            self.send_message(
+                from_agent="shared_consciousness",
+                to_agent=agent_id,
+                message_type=MessageType.REAL_TIME_STATUS_BROADCAST,
+                content={
+                    "event": asdict(event),
+                    "consciousness_update": self._get_relevant_consciousness_for_agent(agent_id),
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
 
 # Global shared state instance
 shared_state = SharedState()

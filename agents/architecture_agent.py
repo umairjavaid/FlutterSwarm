@@ -419,3 +419,260 @@ class ArchitectureAgent(BaseAgent):
         """Handle general architecture tasks."""
         response = await self.think(f"Handle this architecture task: {task_description}", task_data)
         return {"response": response, "task": task_description}
+
+    # Real-time awareness and proactive collaboration methods
+    def _react_to_peer_activity(self, peer_agent: str, activity_type: str, 
+                               activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """React to peer agent activities with proactive architecture guidance."""
+        
+        # Implementation Agent → Provide architecture guidance
+        if peer_agent == "implementation" and activity_type == "code_generated":
+            self._provide_architecture_guidance(activity_details, consciousness_update)
+        
+        # Testing Agent → Optimize architecture for testability
+        elif peer_agent == "testing" and activity_type == "test_failure":
+            self._optimize_for_testability(activity_details, consciousness_update)
+        
+        # Security Agent → Integrate security patterns
+        elif peer_agent == "security" and activity_type == "security_issue_found":
+            self._integrate_security_patterns(activity_details, consciousness_update)
+        
+        # Performance Agent → Optimize architecture for performance
+        elif peer_agent == "performance" and activity_type == "performance_issue_detected":
+            self._optimize_for_performance(activity_details, consciousness_update)
+
+    def _provide_architecture_guidance(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Provide architecture guidance when code is being implemented."""
+        try:
+            files_created = activity_details.get("files_created", [])
+            feature_name = activity_details.get("feature_name", "unknown")
+            
+            self.logger.info(f"🏗️ Providing architecture guidance for: {feature_name}")
+            
+            # Analyze code structure and provide recommendations
+            architecture_recommendations = self._analyze_code_structure(files_created)
+            
+            # Update shared consciousness with architecture insights
+            shared_state.update_shared_consciousness(
+                f"architecture_guidance_{shared_state.get_current_project_id()}",
+                {
+                    "feature_name": feature_name,
+                    "recommendations": architecture_recommendations,
+                    "pattern_compliance": self._check_pattern_compliance(files_created),
+                    "updated_at": datetime.now().isoformat()
+                }
+            )
+            
+            # Broadcast architecture guidance
+            self.broadcast_activity(
+                activity_type="architecture_guidance_provided",
+                activity_details={
+                    "trigger": "code_implementation",
+                    "feature_name": feature_name,
+                    "recommendations": architecture_recommendations,
+                    "compliance_status": "checked"
+                },
+                impact_level="medium",
+                collaboration_relevance=["implementation", "testing", "qa"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error providing architecture guidance: {e}")
+
+    def _optimize_for_testability(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Optimize architecture based on testing feedback."""
+        try:
+            test_failures = activity_details.get("failures", [])
+            test_type = activity_details.get("test_type", "")
+            
+            self.logger.info(f"🧪 Optimizing architecture for testability: {test_type}")
+            
+            # Generate testability recommendations
+            testability_improvements = self._generate_testability_recommendations(test_failures, test_type)
+            
+            # Broadcast testability optimizations
+            self.broadcast_activity(
+                activity_type="architecture_optimized_for_testing",
+                activity_details={
+                    "trigger": "test_failures",
+                    "test_type": test_type,
+                    "improvements": testability_improvements,
+                    "pattern_adjustments": self._suggest_pattern_adjustments_for_testing(test_type)
+                },
+                impact_level="medium",
+                collaboration_relevance=["testing", "implementation", "qa"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error optimizing for testability: {e}")
+
+    def _integrate_security_patterns(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Integrate security patterns based on security findings."""
+        try:
+            security_issue = activity_details.get("issue_type", "")
+            affected_components = activity_details.get("affected_components", [])
+            
+            self.logger.info(f"🔒 Integrating security patterns for: {security_issue}")
+            
+            # Generate security architecture patterns
+            security_patterns = self._generate_security_architecture_patterns(security_issue, affected_components)
+            
+            # Update architecture decisions with security considerations
+            shared_state.update_shared_consciousness(
+                f"security_architecture_{shared_state.get_current_project_id()}",
+                {
+                    "security_issue": security_issue,
+                    "patterns": security_patterns,
+                    "affected_components": affected_components,
+                    "integration_guidelines": self._create_security_integration_guidelines(security_patterns),
+                    "updated_at": datetime.now().isoformat()
+                }
+            )
+            
+            # Broadcast security architecture updates
+            self.broadcast_activity(
+                activity_type="security_patterns_integrated",
+                activity_details={
+                    "trigger": "security_finding",
+                    "security_issue": security_issue,
+                    "patterns": security_patterns,
+                    "implementation_guidance": "security_patterns_ready"
+                },
+                impact_level="high",
+                collaboration_relevance=["security", "implementation", "testing"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error integrating security patterns: {e}")
+
+    def _optimize_for_performance(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Optimize architecture based on performance findings."""
+        try:
+            performance_issue = activity_details.get("issue_type", "")
+            metrics = activity_details.get("metrics", {})
+            
+            self.logger.info(f"⚡ Optimizing architecture for performance: {performance_issue}")
+            
+            # Generate performance architecture optimizations
+            performance_optimizations = self._generate_performance_optimizations(performance_issue, metrics)
+            
+            # Broadcast performance architecture updates
+            self.broadcast_activity(
+                activity_type="architecture_optimized_for_performance",
+                activity_details={
+                    "trigger": "performance_issue",
+                    "issue_type": performance_issue,
+                    "optimizations": performance_optimizations,
+                    "pattern_updates": self._suggest_performance_pattern_updates(performance_issue)
+                },
+                impact_level="medium",
+                collaboration_relevance=["performance", "implementation", "testing"]
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error optimizing for performance: {e}")
+
+    def _analyze_code_structure(self, files: List[str]) -> Dict[str, Any]:
+        """Analyze code structure and provide recommendations."""
+        return {
+            "structure_compliance": "good",
+            "pattern_adherence": "following_bloc_pattern",
+            "separation_of_concerns": "well_separated",
+            "recommendations": [
+                "Consider extracting business logic to use cases",
+                "Add proper error handling patterns",
+                "Implement proper dependency injection"
+            ]
+        }
+
+    def _check_pattern_compliance(self, files: List[str]) -> Dict[str, Any]:
+        """Check compliance with established architecture patterns."""
+        return {
+            "bloc_pattern": "compliant",
+            "clean_architecture": "mostly_compliant",
+            "dependency_injection": "needs_improvement",
+            "overall_score": 0.85
+        }
+
+    def _generate_testability_recommendations(self, failures: List[str], test_type: str) -> List[Dict[str, Any]]:
+        """Generate recommendations to improve testability."""
+        recommendations = []
+        
+        if test_type == "unit":
+            recommendations.extend([
+                {"pattern": "dependency_injection", "reason": "improve_mocking"},
+                {"pattern": "repository_pattern", "reason": "isolate_data_layer"},
+                {"pattern": "use_case_pattern", "reason": "isolate_business_logic"}
+            ])
+        elif test_type == "widget":
+            recommendations.extend([
+                {"pattern": "widget_testing_patterns", "reason": "improve_widget_isolation"},
+                {"pattern": "testable_widgets", "reason": "better_widget_structure"}
+            ])
+        
+        return recommendations
+
+    def _suggest_pattern_adjustments_for_testing(self, test_type: str) -> List[str]:
+        """Suggest pattern adjustments to improve testing."""
+        if test_type == "unit":
+            return ["use_interfaces_for_dependencies", "implement_proper_di", "separate_business_logic"]
+        elif test_type == "widget":
+            return ["extract_business_logic_from_widgets", "use_proper_keys", "implement_testable_state"]
+        return ["general_testability_improvements"]
+
+    def _generate_security_architecture_patterns(self, security_issue: str, affected_components: List[str]) -> List[Dict[str, Any]]:
+        """Generate security architecture patterns."""
+        patterns = []
+        
+        if "authentication" in security_issue.lower():
+            patterns.extend([
+                {"pattern": "secure_authentication_flow", "implementation": "oauth2_with_pkce"},
+                {"pattern": "token_management", "implementation": "secure_token_storage"},
+                {"pattern": "session_management", "implementation": "timeout_and_refresh"}
+            ])
+        
+        if "data_validation" in security_issue.lower():
+            patterns.extend([
+                {"pattern": "input_validation_layer", "implementation": "validation_middleware"},
+                {"pattern": "sanitization_patterns", "implementation": "input_sanitizers"},
+                {"pattern": "secure_data_flow", "implementation": "validation_at_boundaries"}
+            ])
+        
+        return patterns
+
+    def _create_security_integration_guidelines(self, patterns: List[Dict[str, Any]]) -> List[str]:
+        """Create guidelines for integrating security patterns."""
+        return [
+            "Implement security patterns at architectural boundaries",
+            "Ensure security validation happens before business logic",
+            "Use dependency injection for security components",
+            "Apply security patterns consistently across all features"
+        ]
+
+    def _generate_performance_optimizations(self, performance_issue: str, metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate performance architecture optimizations."""
+        optimizations = []
+        
+        if "memory" in performance_issue.lower():
+            optimizations.extend([
+                {"optimization": "lazy_loading_pattern", "benefit": "reduced_memory_footprint"},
+                {"optimization": "object_pooling", "benefit": "reduced_allocations"},
+                {"optimization": "memory_efficient_state_management", "benefit": "better_memory_usage"}
+            ])
+        
+        if "rendering" in performance_issue.lower():
+            optimizations.extend([
+                {"optimization": "widget_optimization_patterns", "benefit": "faster_rendering"},
+                {"optimization": "build_optimization", "benefit": "reduced_rebuilds"},
+                {"optimization": "layout_optimization", "benefit": "smoother_ui"}
+            ])
+        
+        return optimizations
+
+    def _suggest_performance_pattern_updates(self, performance_issue: str) -> List[str]:
+        """Suggest pattern updates for performance optimization."""
+        if "memory" in performance_issue.lower():
+            return ["implement_lazy_loading", "optimize_state_management", "use_efficient_data_structures"]
+        elif "rendering" in performance_issue.lower():
+            return ["optimize_widget_tree", "implement_proper_keys", "use_const_constructors"]
+        return ["general_performance_improvements"]

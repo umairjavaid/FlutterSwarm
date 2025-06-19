@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from shared.state import shared_state, AgentStatus, MessageType, AgentMessage
+from shared.state import shared_state, AgentStatus, MessageType, AgentActivityEvent, AgentMessage
 from config.config_manager import get_config
 from tools import ToolManager, AgentToolbox, ToolResult
 import os
@@ -47,8 +47,12 @@ class BaseAgent(ABC):
             capabilities=self.agent_config.get("capabilities", [])
         )
         
+        # Enable real-time awareness
+        self.enable_real_time_awareness()
+        
         self.is_running = False
         self.current_task = None
+        self._monitoring_task = None
         
         # Track last status for monitoring
         self._last_status = AgentStatus.IDLE
@@ -131,6 +135,18 @@ class BaseAgent(ABC):
         
         # Log to monitoring system
         self._log_status_change(status, task)
+        
+        # Broadcast status change as real-time activity
+        self.broadcast_activity(
+            activity_type="status_change",
+            activity_details={
+                "new_status": status.value,
+                "task": task,
+                "metadata": metadata or {}
+            },
+            impact_level="low" if status == AgentStatus.IDLE else "medium",
+            collaboration_relevance=["all"]  # All agents might be interested in status changes
+        )
     
     async def start(self) -> None:
         """
@@ -447,3 +463,370 @@ class BaseAgent(ABC):
                 "status": "collaboration_failed",
                 "error": str(e)
             }
+
+    # Real-time awareness methods
+    def enable_real_time_awareness(self) -> None:
+        """Enable real-time awareness for this agent."""
+        # Subscribe to all other agents
+        shared_state.subscribe_agent_to_all(self.agent_id)
+        
+        # Start continuous monitoring (if not already running)
+        if not hasattr(self, '_monitoring_enabled'):
+            self._monitoring_enabled = True
+            self.start_continuous_monitoring()
+    
+    def broadcast_activity(self, activity_type: str, activity_details: Dict[str, Any], 
+                          impact_level: str = "medium", 
+                          collaboration_relevance: List[str] = None) -> None:
+        """Broadcast an activity event to other agents."""
+        if collaboration_relevance is None:
+            collaboration_relevance = []
+        
+        event = AgentActivityEvent(
+            agent_id=self.agent_id,
+            activity_type=activity_type,
+            activity_details=activity_details,
+            timestamp=datetime.now(),
+            project_id=shared_state.get_current_project_id(),
+            impact_level=impact_level,
+            collaboration_relevance=collaboration_relevance
+        )
+        
+        shared_state.broadcast_agent_activity(event)
+    
+    def handle_real_time_update(self, message: AgentMessage) -> None:
+        """Handle real-time status updates from other agents."""
+        if message.message_type == MessageType.REAL_TIME_STATUS_BROADCAST:
+            event_data = message.content.get("event", {})
+            consciousness_update = message.content.get("consciousness_update", {})
+            
+            # Process the real-time update
+            self._process_peer_activity(event_data, consciousness_update)
+        
+        elif message.message_type == MessageType.PROACTIVE_ASSISTANCE_OFFER:
+            # Handle proactive collaboration opportunity
+            self._handle_proactive_opportunity(message.content)
+    
+    def _process_peer_activity(self, event_data: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """Process activity from peer agents and react accordingly."""
+        peer_agent = event_data.get("agent_id", "unknown")
+        activity_type = event_data.get("activity_type", "")
+        activity_details = event_data.get("activity_details", {})
+        impact_level = event_data.get("impact_level", "low")
+        
+        # Log the awareness
+        self.logger.debug(f"🔗 Real-time awareness: {peer_agent} -> {activity_type} ({impact_level})")
+        
+        # React based on agent type and activity
+        self._react_to_peer_activity(peer_agent, activity_type, activity_details, consciousness_update)
+    
+    def _react_to_peer_activity(self, peer_agent: str, activity_type: str, 
+                               activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
+        """React to specific peer activities (to be overridden by subclasses)."""
+        # Base implementation - subclasses should override for specific behaviors
+        pass
+    
+    def _handle_proactive_opportunity(self, opportunity: Dict[str, Any]) -> None:
+        """Handle a proactive collaboration opportunity."""
+        opportunity_type = opportunity.get("type", "")
+        details = opportunity.get("details", {})
+        
+        self.logger.info(f"🤝 Proactive opportunity: {opportunity_type}")
+        
+        # Check if this agent wants to accept the opportunity
+        should_accept = self._should_accept_opportunity(opportunity_type, details)
+        
+        if should_accept:
+            opportunity_id = opportunity.get("id", "")
+            shared_state.accept_collaboration_opportunity(self.agent_id, opportunity_id)
+            
+            # Execute the suggested action
+            suggested_action = details.get("suggested_action", "")
+            if suggested_action:
+                self._execute_proactive_action(suggested_action, details)
+    
+    def _should_accept_opportunity(self, opportunity_type: str, details: Dict[str, Any]) -> bool:
+        """Determine if this agent should accept a proactive collaboration opportunity."""
+        # Default: accept medium and high priority opportunities
+        priority = details.get("priority", "low")
+        return priority in ["medium", "high"]
+    
+    def _execute_proactive_action(self, action: str, details: Dict[str, Any]) -> None:
+        """Execute a proactive action (to be overridden by subclasses)."""
+        self.logger.info(f"🎯 Executing proactive action: {action}")
+        # Base implementation - subclasses should override for specific actions
+
+    # Continuous monitoring methods
+    def start_continuous_monitoring(self) -> None:
+        """Start continuous monitoring loop."""
+        import asyncio
+        
+        if self._monitoring_task is None or self._monitoring_task.done():
+            loop = asyncio.get_event_loop()
+            self._monitoring_task = loop.create_task(self._continuous_monitoring_loop())
+            self.logger.debug(f"🔄 Started continuous monitoring for {self.agent_id}")
+
+    async def _continuous_monitoring_loop(self) -> None:
+        """Main continuous monitoring loop."""
+        import asyncio
+        
+        # Get monitoring interval from config (default: 5 seconds)
+        monitoring_interval = self._config_manager.get('application.monitoring.intervals.status_update', 5)
+        
+        try:
+            while self._monitoring_enabled:
+                try:
+                    # Check for new messages
+                    await self._check_for_messages()
+                    
+                    # Monitor system state
+                    await self._monitor_system_state()
+                    
+                    # Check for collaboration opportunities
+                    await self._check_collaboration_opportunities()
+                    
+                    # Update consciousness
+                    await self._update_consciousness()
+                    
+                    # Sleep for monitoring interval
+                    await asyncio.sleep(monitoring_interval)
+                    
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    self.logger.error(f"❌ Error in continuous monitoring: {e}")
+                    await asyncio.sleep(monitoring_interval)
+                    
+        except asyncio.CancelledError:
+            self.logger.debug(f"🛑 Continuous monitoring stopped for {self.agent_id}")
+
+    async def _check_for_messages(self) -> None:
+        """Check for new real-time messages and process them."""
+        try:
+            # Get messages for this agent
+            messages = shared_state.get_messages_for_agent(self.agent_id)
+            
+            for message in messages:
+                if message.message_type in [
+                    MessageType.REAL_TIME_STATUS_BROADCAST,
+                    MessageType.PROACTIVE_ASSISTANCE_OFFER,
+                    MessageType.CONSCIOUSNESS_UPDATE
+                ]:
+                    self.handle_real_time_update(message)
+                    
+        except Exception as e:
+            self.logger.debug(f"Error checking messages: {e}")
+
+    async def _monitor_system_state(self) -> None:
+        """Monitor overall system state and react to changes."""
+        try:
+            # Get current project state
+            current_project_id = shared_state.get_current_project_id()
+            if current_project_id:
+                project_state = shared_state.get_project_state(current_project_id)
+                if project_state:
+                    # Check for significant changes
+                    await self._react_to_project_changes(project_state)
+                    
+            # Monitor peer agent activities
+            peer_activities = self._get_relevant_peer_activities()
+            if peer_activities:
+                await self._analyze_peer_activities(peer_activities)
+                
+        except Exception as e:
+            self.logger.debug(f"Error monitoring system state: {e}")
+
+    async def _check_collaboration_opportunities(self) -> None:
+        """Check for new collaboration opportunities."""
+        try:
+            opportunities = shared_state.get_collaboration_opportunities(self.agent_id)
+            
+            for opportunity in opportunities:
+                if not self._has_seen_opportunity(opportunity):
+                    await self._evaluate_collaboration_opportunity(opportunity)
+                    
+        except Exception as e:
+            self.logger.debug(f"Error checking collaboration opportunities: {e}")
+
+    async def _update_consciousness(self) -> None:
+        """Update shared consciousness with current insights."""
+        try:
+            # Generate insights about current state
+            insights = await self._generate_current_insights()
+            
+            if insights:
+                for key, value in insights.items():
+                    shared_state.update_shared_consciousness(f"{self.agent_id}_{key}", value)
+            
+            # Generate predictive insights
+            predictive_insights = shared_state.generate_predictive_insights(self.agent_id)
+            
+            # Act on high-confidence insights
+            await self._act_on_predictive_insights(predictive_insights)
+                    
+        except Exception as e:
+            self.logger.debug(f"Error updating consciousness: {e}")
+
+    def _get_relevant_peer_activities(self) -> List[Dict[str, Any]]:
+        """Get activities from peer agents that are relevant to this agent."""
+        relevant_activities = []
+        
+        try:
+            # Get activity streams from subscribed agents
+            subscriptions = shared_state._awareness_state.agent_subscriptions.get(self.agent_id, [])
+            
+            for peer_agent_id in subscriptions:
+                recent_activities = shared_state.get_agent_activity_stream(peer_agent_id, limit=5)
+                
+                # Filter for relevant activities
+                for activity in recent_activities:
+                    if self._is_activity_relevant(activity):
+                        relevant_activities.append(activity)
+                        
+        except Exception as e:
+            self.logger.debug(f"Error getting peer activities: {e}")
+            
+        return relevant_activities
+
+    def _is_activity_relevant(self, activity: Dict[str, Any]) -> bool:
+        """Check if an activity is relevant to this agent."""
+        # Check if this agent type is in collaboration relevance
+        collaboration_relevance = activity.get("collaboration_relevance", [])
+        agent_capabilities = self.agent_config.get("capabilities", [])
+        
+        if "all" in collaboration_relevance:
+            return True
+            
+        # Check if any of our capabilities match the relevance
+        return any(capability in collaboration_relevance for capability in agent_capabilities)
+
+    async def _react_to_project_changes(self, project_state) -> None:
+        """React to changes in project state (to be overridden by subclasses)."""
+        # Base implementation - subclasses should override for specific reactions
+        pass
+
+    async def _analyze_peer_activities(self, activities: List[Dict[str, Any]]) -> None:
+        """Analyze peer activities and potentially react (to be overridden by subclasses)."""
+        # Base implementation - subclasses should override for specific analysis
+        pass
+
+    async def _evaluate_collaboration_opportunity(self, opportunity: Dict[str, Any]) -> None:
+        """Evaluate a collaboration opportunity (to be overridden by subclasses)."""
+        # Base implementation uses the existing opportunity handler
+        self._handle_proactive_opportunity(opportunity)
+
+    async def _generate_current_insights(self) -> Dict[str, Any]:
+        """Generate insights about current state (to be overridden by subclasses)."""
+        # Base implementation - subclasses should override for specific insights
+        return {
+            "last_activity": datetime.now().isoformat(),
+            "status": self._last_status.value if hasattr(self, '_last_status') else "unknown"
+        }
+
+    def _has_seen_opportunity(self, opportunity: Dict[str, Any]) -> bool:
+        """Check if this agent has already seen/processed this opportunity."""
+        # Simple implementation - could be enhanced with persistent storage
+        if not hasattr(self, '_seen_opportunities'):
+            self._seen_opportunities = set()
+            
+        opportunity_id = opportunity.get("id", str(hash(str(opportunity))))
+        
+        if opportunity_id in self._seen_opportunities:
+            return True
+            
+        self._seen_opportunities.add(opportunity_id)
+        return False
+
+    async def _act_on_predictive_insights(self, insights: List[Dict[str, Any]]) -> None:
+        """Act on high-confidence predictive insights."""
+        try:
+            for insight in insights:
+                confidence = insight.get("confidence", 0.0)
+                priority = insight.get("priority", "low")
+                suggested_action = insight.get("suggested_action", "")
+                
+                # Act on high-confidence, high-priority insights
+                if confidence >= 0.7 and priority in ["high", "medium"] and suggested_action:
+                    self.logger.info(f"🔮 Acting on predictive insight: {insight.get('description', '')}")
+                    
+                    # Execute the suggested action
+                    await self._execute_predictive_action(suggested_action, insight)
+                    
+                    # Update real-time metrics
+                    shared_state.update_real_time_metrics(
+                        f"{self.agent_id}_predictive_actions",
+                        shared_state.get_real_time_metrics().get(f"{self.agent_id}_predictive_actions", {}).get("value", 0) + 1
+                    )
+                    
+        except Exception as e:
+            self.logger.debug(f"Error acting on predictive insights: {e}")
+    
+    async def _execute_predictive_action(self, action: str, insight: Dict[str, Any]) -> None:
+        """Execute a predictive action (to be overridden by subclasses)."""
+        # Base implementation - log the action
+        self.logger.debug(f"🎯 Predictive action: {action} based on {insight.get('type', 'unknown')} insight")
+        
+        # Common predictive actions
+        if action == "monitor_collaborator_activities":
+            collaborator = insight.get("collaborator", "")
+            if collaborator:
+                # Subscribe to specific collaborator if not already subscribed
+                self._add_targeted_subscription(collaborator)
+        
+        elif action == "prepare_architecture_analysis":
+            # Broadcast readiness for architecture work
+            self.broadcast_activity(
+                activity_type="predictive_preparation",
+                activity_details={
+                    "preparation_type": "architecture_analysis",
+                    "trigger": "predictive_insight",
+                    "insight_confidence": insight.get("confidence", 0.0)
+                },
+                impact_level="low",
+                collaboration_relevance=["architecture", "planning"]
+            )
+        
+        elif action == "prepare_implementation_structure":
+            # Broadcast readiness for implementation work
+            self.broadcast_activity(
+                activity_type="predictive_preparation", 
+                activity_details={
+                    "preparation_type": "implementation_structure",
+                    "trigger": "predictive_insight",
+                    "insight_confidence": insight.get("confidence", 0.0)
+                },
+                impact_level="low",
+                collaboration_relevance=["implementation", "architecture"]
+            )
+        
+        elif action == "prepare_test_infrastructure":
+            # Broadcast readiness for testing work
+            self.broadcast_activity(
+                activity_type="predictive_preparation",
+                activity_details={
+                    "preparation_type": "test_infrastructure",
+                    "trigger": "predictive_insight", 
+                    "insight_confidence": insight.get("confidence", 0.0)
+                },
+                impact_level="low",
+                collaboration_relevance=["testing", "qa"]
+            )
+    
+    def _add_targeted_subscription(self, target_agent: str) -> None:
+        """Add targeted subscription to a specific agent."""
+        try:
+            # Check if already subscribed
+            current_subscriptions = shared_state._awareness_state.agent_subscriptions.get(self.agent_id, [])
+            if target_agent not in current_subscriptions:
+                current_subscriptions.append(target_agent)
+                shared_state._awareness_state.agent_subscriptions[self.agent_id] = current_subscriptions
+                self.logger.debug(f"🔗 Added targeted subscription: {self.agent_id} -> {target_agent}")
+        except Exception as e:
+            self.logger.debug(f"Error adding targeted subscription: {e}")
+
+    def stop_continuous_monitoring(self) -> None:
+        """Stop continuous monitoring loop."""
+        self._monitoring_enabled = False
+        if self._monitoring_task and not self._monitoring_task.done():
+            self._monitoring_task.cancel()
+            self.logger.debug(f"🛑 Stopped continuous monitoring for {self.agent_id}")
