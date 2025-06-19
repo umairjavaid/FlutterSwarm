@@ -444,6 +444,18 @@ class SharedState:
                 
             return sorted_messages
     
+    def get_recent_messages(self, minutes: int = 10) -> List[AgentMessage]:
+        """Get all messages from the last N minutes."""
+        from datetime import timedelta
+        
+        with self._lock:
+            cutoff_time = datetime.now() - timedelta(minutes=minutes)
+            recent_messages = [
+                msg for msg in self._messages 
+                if msg.timestamp >= cutoff_time
+            ]
+            return recent_messages
+    
     def get_project_state(self, project_id: Optional[str] = None) -> Optional[ProjectState]:
         """Get current project state."""
         with self._lock:
