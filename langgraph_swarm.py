@@ -1468,16 +1468,30 @@ class FlutterSwarmGovernance:
         return False
     
     def _check_circuit_breaker(self, gate_name: str) -> bool:
-        """Check if circuit breaker should be triggered for a gate."""
-        failures = self.gate_failure_counts.get(gate_name, 0)
-        threshold = getattr(self, 'max_gate_failures', 3)  # Default to 3 if not set
-        should_trigger = failures >= threshold
+        """Check if circuit breaker has been triggered for a gate."""
+        failure_count = self.gate_failure_counts.get(gate_name, 0)
+        if failure_count >= self.max_gate_failures:
+            self.logger.warning(f"🔄 Circuit breaker triggered for {gate_name} after {failure_count} failures")
+            return True
+        return False
+    
+    def _get_circuit_breaker_status(self, gate_name: str, state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get detailed circuit breaker status information for a gate."""
+        failure_count = self.gate_failure_counts.get(gate_name, 0)
+        timeout = self._check_gate_timeout(gate_name)
         
-        if should_trigger:
-            self.logger.warning(f"🔄 Circuit breaker triggered for {gate_name} after {failures} failures")
-            self.emergency_mode = True  # Enable emergency mode
-        
-        return should_trigger
+        return {
+            "gate": gate_name,
+            "failure_count": failure_count,
+            "max_failures": self.max_gate_failures,
+            "triggered": failure_count >= self.max_gate_failures,
+            "timeout": timeout,
+            "total_routing_steps": self.total_routing_steps,
+            "emergency_mode": self.emergency_mode,
+            "force_completion": self.force_completion,
+            "consecutive_failures": self.consecutive_failures,
+            "global_failures": self.global_failure_count
+        }
     
     def _increment_gate_failure(self, gate_name: str) -> None:
         """Increment failure count for a gate."""
@@ -1627,13 +1641,28 @@ class FlutterSwarmGovernance:
         return any(d.get('type') == 'performance' for d in architecture_decisions)
     
     def _check_scalability_verification(self, project) -> bool:
-        """Check if scalability is verified."""
+        """Check if the architecture includes scalability verification."""
         if not project:
             return False
         
-        # Check for scalability-related architecture decisions
-        architecture_decisions = getattr(project, 'architecture_decisions', [])
-        return any(d.get('type') == 'scalability' for d in architecture_decisions)
+        # Check if architecture decisions include scalability considerations
+        architecture_decisions = project.architecture_decisions
+        return any(
+            'scalability' in str(decision).lower() 
+            for decision in architecture_decisions
+        )
+    
+    def _check_performance_considerations(self, project) -> bool:
+        """Check if the architecture addresses performance considerations."""
+        if not project:
+            return False
+        
+        # Check if architecture decisions include performance considerations
+        architecture_decisions = project.architecture_decisions
+        return any(
+            'performance' in str(decision).lower() 
+            for decision in architecture_decisions
+        )
     
     def _check_documentation_complete(self, project) -> bool:
         """Check if documentation is complete."""
