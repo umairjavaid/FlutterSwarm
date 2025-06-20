@@ -7,6 +7,7 @@ import asyncio
 import json
 import uuid
 import threading
+import copy
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, asdict
@@ -1407,7 +1408,7 @@ class SharedState:
             if current_state:
                 if project_id not in self._state_versions:
                     self._state_versions[project_id] = []
-                self._state_versions[project_id].append(current_state.copy())
+                self._state_versions[project_id].append(copy.deepcopy(current_state))
                 if len(self._state_versions[project_id]) > 10:  # Keep last 10 versions
                     self._state_versions[project_id].pop(0)
             

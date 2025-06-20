@@ -273,7 +273,7 @@ class ArchitectureAgent(BaseAgent):
         return {
             "architecture_design": architecture_design,
             "decision_record": architecture_decision,
-            "status": "designed",
+            "status": "architecture_completed",
             "next_step": "implementation_planning"
         }
     
