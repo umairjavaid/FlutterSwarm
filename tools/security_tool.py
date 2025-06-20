@@ -541,7 +541,6 @@ class SecurityTool(BaseTool):
             output="Network security interceptor implemented",
             data={"implemented": True}
         )
-        )
     
     async def _implement_network_interceptor(self) -> ToolResult:
         """Implement network security interceptor."""
