@@ -129,6 +129,12 @@ class FlutterSwarmGovernance:
         
         # Register agent classes
         self._register_agent_classes()
+
+        initialized_count = self._initialize_all_agents()
+    
+        if initialized_count < 7:  # Expected number of agents
+            self.logger.warning(f"⚠️ Only {initialized_count} agents initialized. Some agents may not be available.")
+    
         
         # Note: Monitoring can be enabled if needed in the future
         self.enable_monitoring = enable_monitoring
@@ -184,6 +190,32 @@ class FlutterSwarmGovernance:
         print("📋 Quality gates configured for all phases")
         print("🤝 Integrated with real-time agent collaboration system")
         print("🤖 LLM interactions will be logged for all governance decisions")
+    
+    
+    def _initialize_all_agents(self):
+        """Initialize all agents during startup to ensure they're registered."""
+        agent_types = [
+            "implementation", "testing", "architecture", 
+            "security", "performance", "documentation", "devops"
+        ]
+        
+        self.logger.info("🤖 Initializing all agents...")
+        
+        for agent_type in agent_types:
+            try:
+                agent = self.agent_registry.get_agent(agent_type)
+                if agent:
+                    self.logger.info(f"✅ {agent_type} agent initialized and registered")
+                else:
+                    self.logger.error(f"❌ Failed to initialize {agent_type} agent")
+            except Exception as e:
+                self.logger.error(f"❌ Error initializing {agent_type} agent: {e}")
+        
+        # Verify all agents are registered
+        registered_agents = shared_state.get_agent_states()
+        self.logger.info(f"📋 Registered agents: {list(registered_agents.keys())}")
+        
+        return len(registered_agents)
     
     def _register_agent_classes(self):
         """Register all agent classes with the registry."""
