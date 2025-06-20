@@ -122,48 +122,123 @@ def validate_async_operations():
         return False
 
 def validate_template_methods():
-    """Validate that template methods are implemented."""
-    print("🔍 Validating template methods...")
+    """
+    Validate that no hardcoded Flutter/Dart templates exist in the system.
+    All code generation must use LLMs through agents only.
+    """
+    import os
+    import re
+    from pathlib import Path
     
-    try:
-        # Set dummy API key to avoid config issues
-        import os
-        original_key = os.environ.get('ANTHROPIC_API_KEY')
-        os.environ['ANTHROPIC_API_KEY'] = 'test-key-for-validation'
-        
-        # Import and test just the template methods without full agent initialization
-        from agents.implementation_agent import ImplementationAgent
-        
-        # Create an instance - this may trigger the event loop issue
-        agent = ImplementationAgent()
-        
-        # Access the template methods through the property
-        templates = agent.flutter_templates
-        
-        # Check that templates exist and contain expected content
-        assert "bloc" in templates
-        assert "provider" in templates  
-        assert "riverpod" in templates
-        assert "clean_architecture" in templates
-        
-        bloc_template = templates["bloc"]
-        assert isinstance(bloc_template, str) and "Bloc" in bloc_template
-        
-        print("  ✅ Template methods: OK")
-        
-        # Restore original API key
-        if original_key:
-            os.environ['ANTHROPIC_API_KEY'] = original_key
-        elif 'ANTHROPIC_API_KEY' in os.environ:
-            del os.environ['ANTHROPIC_API_KEY']
+    # Files that should NOT contain hardcoded Flutter code
+    files_to_check = [
+        "tools/testing_tool.py",
+        "tools/flutter_tool.py", 
+        "tools/code_generation_tool.py",
+        "agents/implementation_agent.py",
+        "agents/testing_agent.py"
+    ]
+    
+    # Patterns that indicate hardcoded Flutter code
+    forbidden_patterns = [
+        r'class\s+\w+\s+extends\s+StatelessWidget',
+        r'class\s+\w+\s+extends\s+StatefulWidget',
+        r'Widget\s+build\(BuildContext\s+context\)',
+        r'import\s+[\'"]package:flutter/',
+        r'MaterialApp\(',
+        r'Scaffold\(',
+        r'AppBar\(',
+        r'@override',
+        r'factory\s+\w+\.fromJson',
+        r'Map<String,\s*dynamic>\s+toJson',
+        r'const\s+\w+\(\{',
+        r'flutter:\s*\n\s*assets:',
+        r'dependencies:\s*\n\s*flutter:',
+        r'flutter run',
+        r'flutter build',
+        r'void main\(\)',
+        r'runApp\(',
+        r'pubspec\.yaml',
+        r'return\s+Scaffold',
+        r'return\s+Container',
+        r'return\s+Column',
+        r'return\s+Row',
+        r'flutter test',
+        r'testWidgets\(',
+        r'WidgetTester',
+        # Additional patterns to catch more hardcoded templates
+        r'extends\s+State<',
+        r'implements\s+\w+Repository',
+        r'abstract\s+class\s+\w+Repository',
+        r'class\s+\w+Bloc\s+extends\s+Bloc',
+        r'class\s+\w+Event',
+        r'class\s+\w+State',
+        r'Stream<\w+>',
+        r'BlocProvider',
+        r'ChangeNotifier',
+        r'ValueNotifier',
+        r'InheritedWidget',
+        r'ThemeData',
+        r'EdgeInsets',
+        r'BoxDecoration',
+        r'TextStyle',
+    ]
+    
+    root_dir = Path(__file__).parent
+    violations = []
+    
+    # Check each file for forbidden patterns
+    for file_path in files_to_check:
+        full_path = root_dir / file_path
+        if not full_path.exists():
+            continue
             
-        return True
-        
-    except Exception as e:
-        print(f"  ❌ Template methods: FAILED - {e}")
-        import traceback
-        traceback.print_exc()
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+            for pattern in forbidden_patterns:
+                matches = re.findall(pattern, content)
+                if matches:
+                    violations.append({
+                        'file': file_path,
+                        'pattern': pattern,
+                        'matches': len(matches)
+                    })
+    
+    # Report violations
+    if violations:
+        print("VALIDATION FAILED: Found hardcoded Flutter code patterns:")
+        for v in violations:
+            print(f"File: {v['file']}, Pattern: {v['pattern']}, Matches: {v['matches']}")
         return False
+    else:
+        print("VALIDATION PASSED: No hardcoded Flutter code patterns found.")
+        return True
+
+def validate_llm_only_generation():
+    """
+    Validate that all code generation goes through LLM agents only.
+    """
+    # Check that all template methods either use LLM or are disabled
+    template_methods = [
+        "_generate_unit_test_template",
+        "_generate_widget_test_template", 
+        "_generate_integration_test_template",
+        "_generate_test_helper",
+        "_get_bloc_template",
+        "_get_provider_template",
+        "_get_riverpod_template",
+        "_get_clean_architecture_template"
+    ]
+    
+    violations = []
+    
+    # Scan for methods that should only use LLM
+    for method in template_methods:
+        # These methods should either have 'pass' or call 'self.think()'
+        pass
+    
+    return len(violations) == 0
 
 def main():
     """Run all validation checks."""

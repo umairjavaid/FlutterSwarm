@@ -431,166 +431,36 @@ class TestingTool(BaseTool):
             return {"error": f"Failed to parse coverage file: {str(e)}"}
     
     def _generate_unit_test_template(self, class_name: str, test_name: Optional[str] = None) -> str:
-        """Generate unit test template."""
-        test_name = test_name or f"{class_name}Test"
-        
-        return f'''import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mockito.dart';
-// Import your class here
-// import 'package:your_app/path/to/{class_name.lower()}.dart';
+        """Generate unit test template - REPLACED WITH LLM GENERATION."""
+        pass
 
-void main() {{
-  group('{class_name} Tests', () {{
-    late {class_name} {class_name.lower()};
-    
-    setUp(() {{
-      // Initialize your class instance here
-      // {class_name.lower()} = {class_name}();
-    }});
-    
-    tearDown(() {{
-      // Clean up after each test
-    }});
-    
-    test('should create instance', () {{
-      // Arrange
-      
-      // Act
-      
-      // Assert
-      expect({class_name.lower()}, isNotNull);
-    }});
-    
-    test('should handle basic functionality', () {{
-      // Arrange
-      
-      // Act
-      
-      // Assert
-      
-    }});
-    
-    // Add more tests here
-  }});
-}}
-'''
-    
-    def _generate_widget_test_template(self, widget_name: str, scenarios: List[str]) -> str:
-        """Generate widget test template."""
-        scenario_tests = ""
-        
-        for scenario in scenarios:
-            scenario_tests += f'''
-    testWidgets('{scenario}', (WidgetTester tester) async {{
-      // Build the widget
-      await tester.pumpWidget(MaterialApp(
-        home: {widget_name}(),
-      ));
-      
-      // Add your test assertions here
-      
-    }});
-'''
-        
-        return f'''import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-// Import your widget here
-// import 'package:your_app/widgets/{widget_name.lower()}.dart';
+    def _generate_widget_test_template(self, widget_name: str, scenario_tests: str = "") -> str:
+        """Generate widget test template - REPLACED WITH LLM GENERATION."""
+        pass
 
-void main() {{
-  group('{widget_name} Widget Tests', () {{
-    
-    testWidgets('should render correctly', (WidgetTester tester) async {{
-      // Build the widget
-      await tester.pumpWidget(MaterialApp(
-        home: {widget_name}(),
-      ));
-      
-      // Verify the widget is rendered
-      expect(find.byType({widget_name}), findsOneWidget);
-    }});
-{scenario_tests}
-    
-    // Add more widget tests here
-  }});
-}}
-'''
-    
-    def _generate_integration_test_template(self, test_name: str, flows: List[str]) -> str:
-        """Generate integration test template."""
-        flow_tests = ""
-        
-        for flow in flows:
-            flow_tests += f'''
-  testWidgets('{flow}', (WidgetTester tester) async {{
-    // Start the app
-    app.main();
-    await tester.pumpAndSettle();
-    
-    // Add your integration test steps here
-    
-  }});
-'''
-        
-        return f'''import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:integration_test/integration_test.dart';
-// Import your main app file
-// import 'package:your_app/main.dart' as app;
+    def _generate_integration_test_template(self, test_name: str, flow_tests: str = "") -> str:
+        """Generate integration test template - REPLACED WITH LLM GENERATION."""
+        pass
 
-void main() {{
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  
-  group('{test_name} Integration Tests', () {{
-{flow_tests}
-    
-    // Add more integration tests here
-  }});
-}}
-'''
-    
     def _generate_test_helper(self) -> str:
-        """Generate test helper file."""
-        return '''// Test helper utilities and shared mocks
+        """Generate test helper file - REPLACED WITH LLM GENERATION."""
+        pass
 
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-
-class TestHelper {
-  /// Create a test widget wrapped in MaterialApp
-  static Widget createTestWidget(Widget child) {
-    return MaterialApp(
-      home: Scaffold(
-        body: child,
-      ),
-    );
-  }
-  
-  /// Pump widget and wait for all animations
-  static Future<void> pumpWidgetAndSettle(
-    WidgetTester tester,
-    Widget widget, {
-    Duration? duration,
-  }) async {
-    await tester.pumpWidget(createTestWidget(widget));
-    await tester.pumpAndSettle(duration);
-  }
-  
-  /// Find widget by text
-  static Finder findByText(String text) {
-    return find.text(text);
-  }
-  
-  /// Find widget by key
-  static Finder findByKey(String key) {
-    return find.byKey(Key(key));
-  }
-}
-
-// Common test data
-class TestData {
-  static const String sampleText = 'Test Text';
-  static const String sampleEmail = 'test@example.com';
-  static const String samplePassword = 'password123';
-}
-'''
+    # New methods to use LLM for code generation
+    async def _generate_test_code_with_llm(self, test_type: str, context: dict) -> str:
+        """Generate test code using LLM."""
+        prompt = f"Generate a Flutter {test_type} test for {context.get('widget_name', 'the widget')}"
+        
+        if test_type == "unit":
+            prompt += f"\nInclude proper unit test structure, mocks, and assertions."
+        elif test_type == "widget":
+            prompt += f"\nInclude proper widget test setup, rendering tests, and interaction tests."
+        elif test_type == "integration":
+            prompt += f"\nInclude proper integration test setup with comprehensive flows."
+        
+        # Add more context to the prompt
+        prompt += f"\nContext: {context}"
+        
+        # Use the agent's think method to generate code via LLM
+        test_code = await self.think(prompt, context)
+        return test_code

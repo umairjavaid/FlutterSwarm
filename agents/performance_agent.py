@@ -1,4 +1,3 @@
-
 """
 Performance Agent - Optimizes code and monitors performance for Flutter applications.
 """
@@ -160,42 +159,28 @@ class PerformanceAgent(BaseAgent):
         }
     
     async def _optimize_widgets(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize widget performance."""
+        """Optimize widget performance using LLM-generated solutions."""
         project_id = task_data["project_id"]
         widget_files = task_data.get("widget_files", [])
         
         optimization_prompt = f"""
         Optimize these Flutter widgets for performance:
         
-           # Widget Files: {widget_files}
+        Widget Files: {widget_files}
         
         Apply these optimization techniques:
         
-        1. **Const Constructors**:
-           DART_CODE_REMOVED
-        
-           # 2. **Widget Extraction**:
-           DART_CODE_REMOVED
-        
-        3. **ListView Optimization**:
-           DART_CODE_REMOVED
-        
-        4. **Avoid Anonymous Functions in Build**:
-           DART_CODE_REMOVED
-        
-        5. **Use RepaintBoundary**:
-           DART_CODE_REMOVED
-        
-           # 6. **Optimize StatefulWidget State**:
-           DART_CODE_REMOVED
-        
-        7. **Use Keys Appropriately**:
-           DART_CODE_REMOVED
-        
-        8. **Lazy Loading**:
-           DART_CODE_REMOVED
+        1. **Const Constructors**: Add const constructors where appropriate
+        2. **Widget Extraction**: Extract widgets to reduce rebuilds
+        3. **ListView Optimization**: Use ListView.builder for large lists
+        4. **Avoid Anonymous Functions in Build**: Move functions outside build method
+        5. **Use RepaintBoundary**: Add RepaintBoundary for expensive widgets
+        6. **Optimize StatefulWidget State**: Minimize state changes
+        7. **Use Keys Appropriately**: Add keys for widgets in lists
+        8. **Lazy Loading**: Implement lazy loading for heavy content
         
         Provide optimized code with performance improvements explained.
+        Generate complete, production-ready optimized Flutter code.
         """
         
         optimized_widgets = await self.think(optimization_prompt, {
@@ -400,4 +385,19 @@ class PerformanceAgent(BaseAgent):
     async def _handle_general_performance_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle general performance tasks."""
         response = await self.think(f"Handle performance task: {task_description}", task_data)
+        return {"response": response, "task": task_description}
+        return {"response": response, "task": task_description}
+        if project:
+            if "performance_issue" in analysis.lower() or "optimization" in analysis.lower():
+                project.performance_metrics[f"{filename}_analysis"] = {
+                    "analysis": analysis,
+                    "status": "analyzed",
+                    "file": filename
+                }
+                shared_state.update_project(project_id, performance_metrics=project.performance_metrics)
+    
+    async def _handle_general_performance_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle general performance tasks."""
+        response = await self.think(f"Handle performance task: {task_description}", task_data)
+        return {"response": response, "task": task_description}
         return {"response": response, "task": task_description}

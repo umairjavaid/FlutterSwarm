@@ -301,7 +301,7 @@ class QualityAssuranceAgent(BaseAgent):
         return {"issues": issues}
     
     async def _generate_fix_recommendations(self, issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Generate fix recommendations for identified issues."""
+        """Generate fix recommendations for identified issues using LLM analysis."""
         recommendations = []
         
         # Group issues by type
@@ -312,68 +312,33 @@ class QualityAssuranceAgent(BaseAgent):
                 issue_groups[issue_type] = []
             issue_groups[issue_type].append(issue)
         
-        # Generate recommendations for each issue type
+        # Generate recommendations for each issue type using LLM
         for issue_type, type_issues in issue_groups.items():
-            recommendation = await self._generate_type_specific_recommendation(issue_type, type_issues)
-            if recommendation:
-                recommendations.append(recommendation)
+            # Use LLM to generate specific recommendations instead of hardcoded mapping
+            recommendation_prompt = f"""
+            Generate fix recommendations for these {issue_type} issues:
+            {type_issues}
+            
+            Provide:
+            1. Action to take
+            2. Description of the fix
+            3. Priority level (critical, high, medium, low)
+            4. Whether it can be automated
+            5. Affected files
+            """
+            
+            llm_recommendation = await self.think(recommendation_prompt, {"issues": type_issues})
+            
+            if llm_recommendation:
+                recommendations.append({
+                    "issue_type": issue_type,
+                    "issue_count": len(type_issues),
+                    "llm_recommendation": llm_recommendation,
+                    "details": type_issues
+                })
         
         return recommendations
     
-    async def _generate_type_specific_recommendation(self, issue_type: str, issues: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Generate recommendations for specific issue types."""
-        recommendation_map = {
-            "missing_required_file": {
-                "action": "create_missing_files",
-                "description": "Create missing required files",
-                "priority": "high",
-                "automated": True
-            },
-            "missing_recommended_directory": {
-                "action": "create_directories",
-                "description": "Create recommended directory structure",
-                "priority": "medium",
-                "automated": True
-            },
-            "hardcoded_secret": {
-                "action": "move_to_secure_storage",
-                "description": "Move hardcoded secrets to secure configuration",
-                "priority": "critical",
-                "automated": False
-            },
-            "insecure_network": {
-                "action": "implement_https",
-                "description": "Replace HTTP calls with HTTPS and implement certificate pinning",
-                "priority": "high",
-                "automated": False
-            },
-            "performance_issue": {
-                "action": "optimize_performance",
-                "description": "Optimize identified performance bottlenecks",
-                "priority": "medium",
-                "automated": False
-            },
-            "unused_symbol": {
-                "action": "remove_dead_code",
-                "description": "Remove unused code to improve maintainability",
-                "priority": "low",
-                "automated": True
-            }
-        }
-        
-        if issue_type in recommendation_map:
-            base_recommendation = recommendation_map[issue_type]
-            
-            return {
-                **base_recommendation,
-                "issue_type": issue_type,
-                "issue_count": len(issues),
-                "affected_files": list(set(issue.get("file", "") for issue in issues if issue.get("file"))),
-                "details": issues
-            }
-        
-        return None
-
     async def _analyze_new_file(self, change_data: Dict[str, Any]) -> None:
         """Analyze newly created files for immediate issues."""
         file_path = change_data.get("file_path", "")
@@ -554,6 +519,41 @@ class QualityAssuranceAgent(BaseAgent):
         else:
             return 'text'
     
+    async def _generate_fix_recommendations(self, issues: List[Dict[str, Any]]) -> List[str]:
+        """Generate high-level fix recommendations."""
+        recommendations = []
+        
+        for issue in issues:
+            if issue["severity"] == "critical":
+                recommendations.append(f"🚨 Critical: {issue['description']} - Immediate attention required")
+            elif issue["severity"] == "high":
+                recommendations.append(f"⚠️ High: {issue['description']} - Should be fixed soon")
+            else:
+                recommendations.append(f"📝 Medium: {issue['description']} - Consider fixing")
+        
+        return recommendations
+    
+    async def _handle_general_qa_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle general QA tasks."""
+        qa_prompt = f"""
+        Handle this quality assurance task: {task_description}
+        
+        Task data: {task_data}
+        
+        Provide a thorough quality assurance response with:
+        1. Analysis of the situation
+        2. Quality assessment
+        3. Specific recommendations
+        4. Action items for improvement
+        """
+        
+        response = await self.think(qa_prompt, task_data)
+        
+        return {
+            "task": task_description,
+            "qa_response": response,
+            "status": "completed"
+        }
     async def _generate_fix_recommendations(self, issues: List[Dict[str, Any]]) -> List[str]:
         """Generate high-level fix recommendations."""
         recommendations = []

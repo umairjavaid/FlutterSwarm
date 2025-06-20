@@ -247,7 +247,7 @@ incremental:
   # Git integration
   git_integration:
     auto_commit: true
-    commit_message_template: "feat: implement {feature_name}"
+    commit_message_template: "feat: implement {feature_name} (LLM-generated)"
     create_rollback_points: true
     auto_cleanup_failed_branches: true
   

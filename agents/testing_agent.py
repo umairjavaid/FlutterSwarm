@@ -241,72 +241,45 @@ class TestingAgent(BaseAgent):
         }
     
     async def _create_test_helpers(self) -> None:
-        """Create test helper files."""
-        # Create test utils
-        test_utils_code = '''
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
+        """Create test helper files using LLM."""
+        helper_prompt = """
+        Generate comprehensive test helper utilities for Flutter testing:
+        
+        Include:
+        1. Widget testing utilities
+        2. Mock creation helpers
+        3. Test data factories
+        4. Common test setup functions
+        5. Custom matchers and assertions
+        6. Integration test utilities
+        
+        Follow Flutter testing best practices and create reusable, maintainable helpers.
+        """
+        
+        helper_code = await self.think(helper_prompt, {})
+        
+        # Write helper file using tools
+        await self.write_file("test/helpers/test_helpers.dart", helper_code)
 
-class TestUtils {
-  static Widget makeTestableWidget(Widget child) {
-    return MaterialApp(
-      home: child,
-    );
-  }
-  
-  static Future<void> pumpUntilFound(
-    WidgetTester tester,
-    Finder finder, {
-    Duration timeout = const Duration(seconds: 10),
-  }) async {
-    bool timerDone = false;
-    final timer = Timer(timeout, () => timerDone = true);
-    
-    while (timerDone != true) {
-      await tester.pump();
-      
-      final found = tester.any(finder);
-      if (found) {
-        timerDone = true;
-      }
-    }
-    
-    timer.cancel();
-  }
-}
-'''
-        
-        await self.write_file("test/test_utils.dart", test_utils_code)
-        
-        # Create mock data factory
-        mock_data_code = '''
-class MockDataFactory {
-  static Map<String, dynamic> createUserJson() {
-    return {
-      'id': '1',
-      'name': 'Test User',
-      'email': 'test@example.com',
-    };
-  }
-  
-  // Add more mock data factories as needed
-}
-'''
-        
-        await self.write_file("test/fixtures/mock_data.dart", mock_data_code)
-    
     async def _create_mock_config(self) -> None:
-        """Create build runner configuration for mocks."""
-        build_yaml_content = '''
-targets:
-  $default:
-    builders:
-      mockito|mockBuilder:
-        generate_for:
-          - test/**_test.dart
-'''
+        """Create mock configuration using LLM."""
+        mock_config_prompt = """
+        Generate mock configuration for Flutter testing:
         
-        await self.write_file("build.yaml", build_yaml_content)
+        Include:
+        1. build.yaml configuration for mockito
+        2. Mock generation annotations
+        3. Repository and service mocks
+        4. API client mocks
+        5. Database mocks
+        
+        Ensure proper mock generation setup for the project.
+        """
+        
+        mock_config = await self.think(mock_config_prompt, {})
+        
+        # Write mock config using tools
+        await self.write_file("build.yaml", mock_config)
     
     async def _ensure_integration_test_dependencies(self) -> None:
         """Ensure integration test dependencies are added."""
@@ -381,113 +354,67 @@ targets:
         return matches
     
     async def _generate_unit_test_code(self, analysis: Dict[str, Any]) -> str:
-        """Generate unit test code based on analysis of the Dart code."""
-        # Simplified test code generation
-        test_code = '''
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mockito.dart';
-import 'package:myapp/[[FILE_PATH]]';
-
-class MockService extends Mock implements [[SERVICE_NAME]] {}
-
-void main() {
-  group('[[CLASS_NAME]]', () {
-    MockService mockService;
-    [[CLASS_NAME]] instance;
-
-    setUp(() {
-      mockService = MockService();
-      instance = [[CLASS_NAME]](mockService);
-    });
-
-    test('should do something', () async {
-      // Arrange
-      when(mockService.someMethod()).thenAnswer((_) async => 'some value');
-
-      // Act
-      final result = await instance.someFunction();
-
-      // Assert
-      expect(result, 'expected value');
-      verify(mockService.someMethod()).called(1);
-    });
-  });
-}
-'''
+        """Generate unit test code using LLM."""
+        test_prompt = f"""
+        Generate comprehensive unit tests for the analyzed code:
         
-        # Replace placeholders with actual values
-        file_path = analysis["file_path"].replace("/", ".").replace(".dart", "")
-        service_name = analysis["dependencies"][0] if analysis["dependencies"] else "MyService"
-        class_name = analysis["functions"][0] + "Test" if analysis["functions"] else "MyServiceTest"
+        Analysis: {analysis}
         
-        test_code = test_code.replace("[[FILE_PATH]]", file_path)
-        test_code = test_code.replace("[[SERVICE_NAME]]", service_name)
-        test_code = test_code.replace("[[CLASS_NAME]]", class_name)
+        Create complete, production-ready unit tests that include:
+        1. Proper test setup and teardown
+        2. Multiple test scenarios
+        3. Edge case testing
+        4. Mock usage where appropriate
+        5. Proper assertions
+        6. Error case testing
         
+        Use Flutter testing best practices and ensure null safety.
+        """
+        
+        test_code = await self.think(test_prompt, analysis)
         return test_code
-    
+
     async def _generate_widget_test_code(self, analysis: Dict[str, Any]) -> str:
-        """Generate widget test code based on analysis of the Flutter widget code."""
-        # Simplified widget test code generation
-        test_code = '''
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:myapp/[[FILE_PATH]]';
-
-void main() {
-  testWidgets('should build [[WIDGET_NAME]] correctly', (WidgetTester tester) async {
-    // Arrange
-    await tester.pumpWidget(MaterialApp(home: [[WIDGET_NAME]]()));
-
-    // Act
-    // Interact with the widget if needed
-
-    // Assert
-    expect(find.byType([[WIDGET_NAME]]), findsOneWidget);
-  });
-}
-'''
+        """Generate widget test code using LLM."""
+        widget_test_prompt = f"""
+        Generate comprehensive widget tests for the analyzed widget:
         
-        # Replace placeholders with actual values
-        file_path = analysis["file_path"].replace("/", ".").replace(".dart", "")
-        widget_name = analysis["key_widgets"][0] if analysis["key_widgets"] else "MyWidget"
+        Analysis: {analysis}
         
-        test_code = test_code.replace("[[FILE_PATH]]", file_path)
-        test_code = test_code.replace("[[WIDGET_NAME]]", widget_name)
+        Create complete widget tests that include:
+        1. Widget rendering tests
+        2. Interaction tests (taps, gestures, input)
+        3. State change verification
+        4. Golden tests where appropriate
+        5. Accessibility tests
+        6. Responsive design tests
         
-        return test_code
-    
+        Use Flutter widget testing best practices.
+        """
+        
+        widget_test_code = await self.think(widget_test_prompt, analysis)
+        return widget_test_code
+
     async def _generate_integration_test_code(self, scenario: Dict[str, Any]) -> str:
-        """Generate integration test code based on the user scenario."""
-        # Simplified integration test code generation
-        test_code = '''
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:myapp/[[APP_PATH]]' as app;
-
-void main() {
-  testWidgets('[[SCENARIO_NAME]]', (WidgetTester tester) async {
-    // Arrange
-    app.main();
-    await tester.pumpAndSettle();
-
-    // Act
-    // Perform actions for the scenario
-
-    // Assert
-    // Verify expected outcomes
-  });
-}
-'''
+        """Generate integration test code using LLM."""
+        integration_test_prompt = f"""
+        Generate comprehensive integration tests for the scenario:
         
-        scenario_name = scenario.get("name", "test_scenario")
-        app_path = scenario.get("app_path", "lib/main.dart")
+        Scenario: {scenario}
         
-        # Replace placeholders with actual values
-        test_code = test_code.replace("[[SCENARIO_NAME]]", scenario_name)
-        test_code = test_code.replace("[[APP_PATH]]", app_path)
+        Create complete integration tests that include:
+        1. End-to-end user flows
+        2. Multi-screen navigation tests
+        3. Data persistence verification
+        4. API integration tests
+        5. Performance benchmarks
+        6. Error recovery scenarios
         
-        return test_code
+        Use Flutter integration testing best practices and patrol/integration_test packages.
+        """
+        
+        integration_test_code = await self.think(integration_test_prompt, scenario)
+        return integration_test_code
     
     async def _provide_test_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Provide testing strategy recommendations."""
