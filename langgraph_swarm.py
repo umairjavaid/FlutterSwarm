@@ -13,6 +13,8 @@ from datetime import datetime
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
+from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
 
 # Import shared state for integration with real-time awareness system
 from shared.state import shared_state, AgentStatus
@@ -290,6 +292,11 @@ class FlutterSwarmGovernance:
         }
         
         all_criteria_met = all(architecture_criteria.values())
+
+        if not all_criteria_met:
+            self.logger.warning(f"Architecture approval gate FAILED for {state['name']}. Criteria check:")
+            for criterion, passed in architecture_criteria.items():
+                self.logger.warning(f"  - {criterion}: {'PASSED' if passed else 'FAILED'}")
         
         # Update governance state
         state['governance_decisions'].append({
@@ -1084,11 +1091,11 @@ class FlutterSwarmGovernance:
             "coordination_fallback_active": False,
             "stuck_processes": []
         }
-        
+        config = RunnableConfig(recursion_limit=150)
         try:
             # Execute the governance workflow
             print("🚀 Starting governance workflow execution...")
-            final_state = await self.app.ainvoke(initial_state)
+            final_state = await self.app.ainvoke(initial_state, config=config)
             
             # Create governance summary
             governance_summary = {
@@ -1109,7 +1116,24 @@ class FlutterSwarmGovernance:
             
             print(f"🎉 Governance completed! Status: {governance_summary['governance_status']}")
             return governance_summary
-            
+        except GraphRecursionError:
+            print("⚠️ Governance execution failed: Hit recursion limit after 150 steps.")
+            return {
+                "project_id": project_id,
+                "governance_status": "failed",
+                "error": "Recursion limit of 150 reached without hitting a stop condition.",
+                "completed_phases": [],
+                "current_phase": "project_initiation",
+                "overall_progress": 0.0,  # Add missing overall_progress field
+                "project_health": "critical",
+                "gate_statuses": {phase: "pending" for phase in self.governance_phases},
+                "approval_status": {phase: "pending" for phase in self.governance_phases},
+                "governance_decisions": [],
+                "quality_criteria_met": {},
+                "compliance_status": {},
+                "coordination_fallback_used": False,
+                "stuck_processes": []
+            }
         except Exception as e:
             print(f"⚠️ Governance execution failed: {e}")
             return {

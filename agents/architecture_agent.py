@@ -61,73 +61,75 @@ class ArchitectureAgent(BaseAgent):
         project_id = task_data["project_id"]
         requirements = task_data["requirements"]
         planning_output = task_data.get("planning_output", "")
-        
+
+        self.logger.info(f"[ARCH] Called _design_flutter_architecture for project_id={project_id}")
+        self.logger.info(f"[ARCH] Requirements: {requirements}")
+        self.logger.info(f"[ARCH] Planning output: {planning_output}")
+
         project = shared_state.get_project_state(project_id)
-        
-        # Safety check for project state
         if not project:
-            self.logger.warning(f"Project {project_id} not found in shared state, using task data")
+            self.logger.warning(f"[ARCH] Project {project_id} not found in shared state, using task data")
             project_name = task_data.get("name", "Unknown Project")
             project_description = task_data.get("description", "No description available")
         else:
             project_name = project.name
             project_description = project.description
-        
+            self.logger.info(f"[ARCH] Project found: {project_name} - {project_description}")
+            self.logger.info(f"[ARCH] Existing architecture decisions: {getattr(project, 'architecture_decisions', None)}")
+
         architecture_prompt = f"""
         Design a comprehensive Flutter application architecture for:
-        
         Project: {project_name}
         Description: {project_description}
         Requirements: {requirements}
         Planning Context: {planning_output}
-        
         Create a detailed architecture that includes:
-        
         1. **Overall Architecture Style**: Choose and justify (Clean, Layered, Hexagonal, etc.)
-        
         2. **State Management**: Recommend the best solution (BLoC, Provider, Riverpod, etc.)
            - Justify your choice based on app complexity and team requirements
-        
         3. **Project Structure**: Define folder organization
            - lib/
              - core/
              - features/
              - shared/
              - etc.
-        
         4. **Data Layer Architecture**:
            - Repository pattern implementation
            - Data sources (remote, local)
            - Models and DTOs
            - Caching strategy
-        
         5. **Dependency Injection**: Choose DI approach (get_it, injectable, etc.)
-        
         6. **Navigation**: Routing strategy (GoRouter, Navigator 2.0, etc.)
-        
         7. **Error Handling**: Global error handling strategy
-        
         8. **Networking**: HTTP client setup and configuration
-        
         9. **Local Storage**: Database choice (Hive, SQLite, Isar, etc.)
-        
         10. **Testing Strategy**: Unit, widget, and integration test architecture
-        
         11. **Performance Considerations**: Lazy loading, caching, optimization
-        
         12. **Security Architecture**: Authentication, data protection, secure storage
-        
         Provide specific package recommendations and code structure examples.
         Consider scalability, maintainability, and testability.
         """
-        
-        architecture_design = await self.think(architecture_prompt, {
-            "project": project,
-            "available_patterns": self.design_patterns,
-            "architecture_styles": self.architecture_styles
-        })
-        
-        # Create architecture decision record
+
+        try:
+            architecture_design = await self.think(architecture_prompt, {
+                "project": project,
+                "available_patterns": self.design_patterns,
+                "architecture_styles": self.architecture_styles
+            })
+            self.logger.info(f"[ARCH] LLM architecture_design result: {architecture_design}")
+        except Exception as e:
+            self.logger.error(f"[ARCH] Exception during LLM call: {e}")
+            architecture_design = None
+
+        # Fallback: If LLM returns nothing, create a minimal placeholder architecture
+        if not architecture_design or not str(architecture_design).strip():
+            architecture_design = (
+                "[Placeholder] Minimal architecture: Clean Architecture, Riverpod for state management, "
+                "GoRouter for navigation, Repository pattern for data, get_it for DI, "
+                "Hive for local storage, and standard Flutter testing."
+            )
+            self.logger.warning(f"[ARCH] LLM returned no architecture design for project {project_id}, using fallback.")
+
         existing_decisions = project.architecture_decisions if project else []
         architecture_decision = {
             "decision_id": f"arch_{project_id}_{len(existing_decisions) + 1}",
@@ -138,19 +140,24 @@ class ArchitectureAgent(BaseAgent):
             "created_at": datetime.now().isoformat(),
             "consequences": "Defines the overall structure and patterns for the Flutter application"
         }
-        
+
+        self.logger.info(f"[ARCH] New architecture_decision: {architecture_decision}")
+
         # Add to project state if project exists
         if project:
             project.architecture_decisions.append(architecture_decision)
             shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
+            self.logger.info(f"[ARCH] Updated project.architecture_decisions: {project.architecture_decisions}")
         else:
-            # Update with new list if project not found
             updated_decisions = existing_decisions + [architecture_decision]
             shared_state.update_project(project_id, architecture_decisions=updated_decisions)
-        
-        # Request feedback from other agents
-        await self._request_architecture_feedback(project_id, architecture_design)
-        
+            self.logger.info(f"[ARCH] Updated shared_state with new architecture_decisions: {updated_decisions}")
+
+        try:
+            await self._request_architecture_feedback(project_id, architecture_design)
+        except Exception as e:
+            self.logger.error(f"[ARCH] Exception during feedback request: {e}")
+
         return {
             "architecture_design": architecture_design,
             "decision_record": architecture_decision,
