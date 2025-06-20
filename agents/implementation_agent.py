@@ -359,92 +359,940 @@ class ImplementationAgent(BaseAgent):
     
     async def _setup_project_structure(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Set up the initial project structure using LLM-generated code only."""
-        pass
-        # Return minimal structure for compatibility
-        return {
-            "architecture_style": task_data.get("architecture_style", "clean"),
-            "files_created": [],
-            "project_path": "",
-            "status": "project_structure_created"
-        }
+        project_id = task_data.get("project_id")
+        project_name = task_data.get("name", "flutter_app")
+        architecture_style = task_data.get("architecture_style", "clean")
+        
+        self.logger.info(f"🏗️ Setting up project structure for {project_name}")
+        
+        # Get project state for context
+        project_state = shared_state.get_project_state(project_id)
+        
+        try:
+            # Create Flutter project using tool
+            create_result = await self.execute_tool(
+                "flutter", 
+                operation="create", 
+                project_name=project_name
+            )
+            
+            if create_result.status != ToolStatus.SUCCESS:
+                self.logger.error(f"Failed to create Flutter project: {create_result.error}")
+                return {
+                    "status": "failed",
+                    "error": create_result.error,
+                    "files_created": [],
+                    "project_path": ""
+                }
+            
+            project_path = create_result.data.get("project_path", f"flutter_projects/{project_name}")
+            
+            # Generate project structure via LLM
+            structure_prompt = f"""
+            Generate a comprehensive Flutter project structure for {architecture_style} architecture.
+            
+            Project: {project_name}
+            Requirements: {project_state.requirements if project_state else []}
+            
+            Generate directory structure with:
+            - Clean Architecture layers (lib/core, lib/features, lib/shared)
+            - Proper folder organization for data, domain, presentation
+            - Configuration folders
+            - Test structure
+            - Asset organization
+            
+            Return as JSON with directories to create and their purposes.
+            """
+            
+            structure_design = await self.think(structure_prompt, {
+                "project": project_state.to_dict() if project_state else {},
+                "architecture": architecture_style,
+                "name": project_name
+            })
+            
+            # Parse and create directories
+            files_created = []
+            try:
+                import json
+                structure_data = json.loads(structure_design)
+                directories = structure_data.get("directories", [])
+                
+                for directory in directories:
+                    dir_path = directory.get("path", "")
+                    if dir_path:
+                        full_path = f"{project_path}/{dir_path}"
+                        dir_result = await self.execute_tool(
+                            "file", 
+                            operation="create_directory", 
+                            directory=full_path
+                        )
+                        if dir_result.status == ToolStatus.SUCCESS:
+                            files_created.append(full_path)
+                            
+            except (json.JSONDecodeError, KeyError) as e:
+                self.logger.warning(f"Could not parse structure design, creating basic structure: {e}")
+                # Create basic Clean Architecture structure
+                basic_dirs = [
+                    "lib/core/constants",
+                    "lib/core/errors", 
+                    "lib/core/utils",
+                    "lib/core/themes",
+                    "lib/features",
+                    "lib/shared/widgets",
+                    "lib/shared/utils",
+                    "test/features",
+                    "test/core"
+                ]
+                
+                for directory in basic_dirs:
+                    full_path = f"{project_path}/{directory}"
+                    dir_result = await self.execute_tool(
+                        "file", 
+                        operation="create_directory", 
+                        directory=full_path
+                    )
+                    if dir_result.status == ToolStatus.SUCCESS:
+                        files_created.append(full_path)
+            
+            # Generate and create main.dart with proper structure
+            main_dart_prompt = f"""
+            Generate a Flutter main.dart file for {project_name} with:
+            - Proper imports for {architecture_style} architecture
+            - App widget setup
+            - Theme configuration
+            - Route configuration
+            - Error handling
+            - Material Design 3 support
+            """
+            
+            main_dart_code = await self.think(main_dart_prompt, {
+                "project_name": project_name,
+                "architecture": architecture_style
+            })
+            
+            main_file_result = await self.execute_tool(
+                "file",
+                operation="write",
+                file_path=f"{project_path}/lib/main.dart",
+                content=main_dart_code
+            )
+            
+            if main_file_result.status == ToolStatus.SUCCESS:
+                files_created.append(f"{project_path}/lib/main.dart")
+            
+            # Update shared state
+            if project_state:
+                shared_state.update_project(
+                    project_id,
+                    project_path=project_path,
+                    architecture_style=architecture_style
+                )
+            
+            self.logger.info(f"✅ Project structure created: {len(files_created)} items")
+            
+            return {
+                "architecture_style": architecture_style,
+                "files_created": files_created,
+                "project_path": project_path,
+                "status": "project_structure_created"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error setting up project structure: {e}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "files_created": [],
+                "project_path": ""
+            }
     
     async def _parse_and_create_files(self, project_id: str, code_content: str) -> List[str]:
         """Parse generated code and create actual files in the Flutter project using LLM-generated code only."""
-        pass
-        return []
+        if not code_content or not code_content.strip():
+            return []
+            
+        # Get project state for file paths
+        project_state = shared_state.get_project_state(project_id)
+        project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id}"
+        
+        try:
+            # Use LLM to parse code content into individual files
+            parsing_prompt = f"""
+            Parse this Flutter/Dart code content into individual files with their proper paths.
+            
+            Code Content:
+            {code_content}
+            
+            Return JSON with format:
+            {{
+                "files": [
+                    {{
+                        "path": "lib/features/feature_name/file.dart",
+                        "content": "actual dart code here",
+                        "description": "what this file does"
+                    }}
+                ]
+            }}
+            
+            Ensure:
+            - Proper Flutter/Dart file structure
+            - Correct imports
+            - Valid Dart syntax
+            - Appropriate file paths for Clean Architecture
+            """
+            
+            parsed_result = await self.think(parsing_prompt, {
+                "project_id": project_id,
+                "project_path": project_path,
+                "code_content": code_content
+            })
+            
+            created_files = []
+            
+            try:
+                import json
+                files_data = json.loads(parsed_result)
+                files_list = files_data.get("files", [])
+                
+                for file_info in files_list:
+                    file_path = file_info.get("path", "")
+                    file_content = file_info.get("content", "")
+                    
+                    if file_path and file_content:
+                        # Create file using the file tool
+                        full_path = f"{project_path}/{file_path}"
+                        
+                        # Ensure directory exists
+                        import os
+                        dir_path = os.path.dirname(full_path)
+                        dir_result = await self.execute_tool(
+                            "file",
+                            operation="create_directory",
+                            directory=dir_path
+                        )
+                        
+                        # Write the file
+                        file_result = await self.execute_tool(
+                            "file",
+                            operation="write",
+                            file_path=full_path,
+                            content=file_content
+                        )
+                        
+                        if file_result.status == ToolStatus.SUCCESS:
+                            created_files.append(full_path)
+                            self.logger.info(f"✅ Created file: {file_path}")
+                        else:
+                            self.logger.error(f"❌ Failed to create file {file_path}: {file_result.error}")
+            
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ Failed to parse LLM response as JSON: {e}")
+                # Fallback: try to extract files by common patterns
+                created_files = await self._fallback_file_extraction(project_path, code_content)
+            
+            # Format all created Dart files
+            if created_files:
+                try:
+                    format_result = await self.run_command(f"dart format {project_path}/lib/")
+                    if format_result.status == ToolStatus.SUCCESS:
+                        self.logger.info("✅ Formatted generated files")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not format files: {e}")
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error parsing and creating files: {e}")
+            return []
 
     async def _create_actual_file(self, project_path: str, file_path: str, content: str) -> bool:
         """Create actual file using LLM-generated content only."""
-        pass
-        return False
+        try:
+            # Ensure content is not empty
+            if not content or not content.strip():
+                self.logger.error(f"❌ Cannot create file {file_path}: empty content")
+                return False
+            
+            # Create full path
+            import os
+            full_path = os.path.join(project_path, file_path)
+            
+            # Create directory if it doesn't exist
+            dir_path = os.path.dirname(full_path)
+            dir_result = await self.execute_tool(
+                "file",
+                operation="create_directory", 
+                directory=dir_path
+            )
+            
+            if dir_result.status != ToolStatus.SUCCESS:
+                self.logger.error(f"❌ Failed to create directory {dir_path}: {dir_result.error}")
+                return False
+            
+            # Write the file content
+            file_result = await self.execute_tool(
+                "file",
+                operation="write",
+                file_path=full_path,
+                content=content
+            )
+            
+            if file_result.status == ToolStatus.SUCCESS:
+                self.logger.info(f"✅ Created file: {file_path}")
+                return True
+            else:
+                self.logger.error(f"❌ Failed to write file {file_path}: {file_result.error}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error creating file {file_path}: {e}")
+            return False
     
-    # Remove ALL hardcoded template generation methods
+    # Template methods removed - all code generated via LLM
     def _get_bloc_template(self) -> str:
         """REMOVED: No hardcoded BLoC template - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via _generate_bloc_files() instead")
 
     def _get_provider_template(self) -> str:
         """REMOVED: No hardcoded Provider template - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     def _get_riverpod_template(self) -> str:
         """REMOVED: No hardcoded Riverpod template - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     def _get_clean_architecture_template(self) -> str:
         """REMOVED: No hardcoded Clean Architecture template - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     def _get_widget_template(self, widget_type: str) -> str:
         """REMOVED: No hardcoded widget templates - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     def _get_model_template(self, model_name: str) -> str:
         """REMOVED: No hardcoded model templates - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     def _get_repository_template(self, repo_name: str) -> str:
         """REMOVED: No hardcoded repository templates - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via _generate_repository_code() instead")
 
     def _get_service_template(self, service_name: str) -> str:
         """REMOVED: No hardcoded service templates - use LLM generation only."""
-        pass
+        raise NotImplementedError("Use LLM generation via self.think() instead")
 
     async def _create_feature_models(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
-        """REMOVED: No hardcoded model creation - use LLM generation only."""
-        pass
+        """Generate feature models using LLM only."""
+        try:
+            feature_name = feature.get("name", "unknown")
+            models = feature.get("models", [])
+            
+            if not models:
+                return []
+            
+            created_files = []
+            
+            for model in models:
+                model_prompt = f"""
+                Generate a complete Flutter data model for {feature_name} feature.
+                
+                Model Specification:
+                {model}
+                
+                Generate:
+                - Properties with proper types and null safety
+                - fromJson() factory constructor
+                - toJson() method
+                - copyWith() method
+                - Equatable implementation
+                - toString() method
+                - Proper imports
+                - Documentation comments
+                
+                Follow Clean Architecture - this is a data layer model.
+                Return complete, production-ready Dart code.
+                """
+                
+                model_code = await self.think(model_prompt, {
+                    "feature": feature_name,
+                    "model": model
+                })
+                
+                # Create model file
+                model_name = model.get("name", "unknown_model")
+                file_path = f"lib/features/{feature_name.lower()}/data/models/{model_name.lower()}_model.dart"
+                
+                if await self._create_file_with_content(file_path, model_code):
+                    created_files.append(file_path)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating feature models: {e}")
+            return []
 
     async def _create_feature_ui(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
-        """REMOVED: No hardcoded UI creation - use LLM generation only."""
-        pass
+        """Generate feature UI using LLM only."""
+        try:
+            feature_name = feature.get("name", "unknown")
+            screens = feature.get("screens", [])
+            widgets = feature.get("widgets", [])
+            
+            created_files = []
+            
+            # Generate screens
+            for screen in screens:
+                screen_prompt = f"""
+                Generate a complete Flutter screen/page for {feature_name} feature.
+                
+                Screen Specification:
+                {screen}
+                
+                Generate:
+                - StatelessWidget or StatefulWidget as appropriate
+                - BLoC integration with BlocBuilder/BlocListener
+                - Responsive design
+                - Material Design 3 components
+                - Proper navigation
+                - Error handling UI
+                - Loading states
+                - Accessibility support
+                - Proper imports
+                
+                Return complete, production-ready Dart code.
+                """
+                
+                screen_code = await self.think(screen_prompt, {
+                    "feature": feature_name,
+                    "screen": screen
+                })
+                
+                screen_name = screen.get("name", "unknown_screen")
+                file_path = f"lib/features/{feature_name.lower()}/presentation/pages/{screen_name.lower()}_page.dart"
+                
+                if await self._create_file_with_content(file_path, screen_code):
+                    created_files.append(file_path)
+            
+            # Generate custom widgets
+            for widget in widgets:
+                widget_prompt = f"""
+                Generate a custom Flutter widget for {feature_name} feature.
+                
+                Widget Specification:
+                {widget}
+                
+                Generate:
+                - Reusable widget class
+                - Proper parameter handling
+                - Theme integration
+                - Responsive design
+                - Documentation comments
+                - Proper imports
+                
+                Return complete, production-ready Dart code.
+                """
+                
+                widget_code = await self.think(widget_prompt, {
+                    "feature": feature_name,
+                    "widget": widget
+                })
+                
+                widget_name = widget.get("name", "unknown_widget")
+                file_path = f"lib/features/{feature_name.lower()}/presentation/widgets/{widget_name.lower()}_widget.dart"
+                
+                if await self._create_file_with_content(file_path, widget_code):
+                    created_files.append(file_path)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating feature UI: {e}")
+            return []
 
     async def _create_feature_logic(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
-        """REMOVED: No hardcoded logic creation - use LLM generation only."""
-        pass
+        """Generate feature business logic using LLM only."""
+        try:
+            feature_name = feature.get("name", "unknown")
+            use_cases = feature.get("use_cases", [])
+            repositories = feature.get("repositories", [])
+            
+            created_files = []
+            
+            # Generate use cases
+            for use_case in use_cases:
+                use_case_code = await self._generate_use_case_code(feature_name, use_case)
+                
+                use_case_name = use_case.get("name", "unknown_use_case")
+                file_path = f"lib/features/{feature_name.lower()}/domain/usecases/{use_case_name.lower()}_usecase.dart"
+                
+                if await self._create_file_with_content(file_path, use_case_code):
+                    created_files.append(file_path)
+            
+            # Generate repository interfaces
+            for repo in repositories:
+                repo_interface_prompt = f"""
+                Generate an abstract repository interface for {feature_name} feature.
+                
+                Repository Specification:
+                {repo}
+                
+                Generate:
+                - Abstract class with method signatures
+                - Proper return types (Future<Result<T, Error>>)
+                - Documentation comments
+                - Proper imports
+                
+                This is the domain layer interface.
+                Return complete, production-ready Dart code.
+                """
+                
+                repo_interface_code = await self.think(repo_interface_prompt, {
+                    "feature": feature_name,
+                    "repository": repo
+                })
+                
+                repo_name = repo.get("name", "unknown_repository")
+                file_path = f"lib/features/{feature_name.lower()}/domain/repositories/{repo_name.lower()}_repository.dart"
+                
+                if await self._create_file_with_content(file_path, repo_interface_code):
+                    created_files.append(file_path)
+                
+                # Generate repository implementation
+                repo_impl_code = await self._generate_repository_code(feature_name, repo)
+                impl_file_path = f"lib/features/{feature_name.lower()}/data/repositories/{repo_name.lower()}_repository_impl.dart"
+                
+                if await self._create_file_with_content(impl_file_path, repo_impl_code):
+                    created_files.append(impl_file_path)
+            
+            # Generate entities
+            entities = feature.get("entities", [])
+            for entity in entities:
+                entity_prompt = f"""
+                Generate a domain entity for {feature_name} feature.
+                
+                Entity Specification:
+                {entity}
+                
+                Generate:
+                - Immutable class with required properties
+                - Equatable implementation
+                - Business logic methods if needed
+                - Documentation comments
+                - Proper imports
+                
+                This is a domain layer entity (business object).
+                Return complete, production-ready Dart code.
+                """
+                
+                entity_code = await self.think(entity_prompt, {
+                    "feature": feature_name,
+                    "entity": entity
+                })
+                
+                entity_name = entity.get("name", "unknown_entity")
+                file_path = f"lib/features/{feature_name.lower()}/domain/entities/{entity_name.lower()}_entity.dart"
+                
+                if await self._create_file_with_content(file_path, entity_code):
+                    created_files.append(file_path)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating feature logic: {e}")
+            return []
 
     async def _create_feature_tests(self, project_id: str, feature: Dict[str, Any]) -> List[str]:
-        """REMOVED: No hardcoded test creation - use LLM generation only."""
-        pass
+        """Generate feature tests using LLM only."""
+        try:
+            feature_name = feature.get("name", "unknown")
+            
+            created_files = []
+            
+            # Generate unit tests for use cases
+            use_cases = feature.get("use_cases", [])
+            for use_case in use_cases:
+                test_prompt = f"""
+                Generate comprehensive unit tests for a Flutter use case.
+                
+                Use Case to Test:
+                {use_case}
+                Feature: {feature_name}
+                
+                Generate:
+                - Test class with proper setup and teardown
+                - Mock dependencies using mockito
+                - Test success scenarios
+                - Test error scenarios
+                - Test edge cases
+                - Proper assertions
+                - Documentation comments
+                
+                Return complete, production-ready Dart test code.
+                """
+                
+                test_code = await self.think(test_prompt, {
+                    "feature": feature_name,
+                    "use_case": use_case
+                })
+                
+                use_case_name = use_case.get("name", "unknown_use_case")
+                file_path = f"test/features/{feature_name.lower()}/domain/usecases/{use_case_name.lower()}_usecase_test.dart"
+                
+                if await self._create_file_with_content(file_path, test_code):
+                    created_files.append(file_path)
+            
+            # Generate widget tests for screens
+            screens = feature.get("screens", [])
+            for screen in screens:
+                widget_test_prompt = f"""
+                Generate widget tests for a Flutter screen.
+                
+                Screen to Test:
+                {screen}
+                Feature: {feature_name}
+                
+                Generate:
+                - Widget test class with proper setup
+                - Mock BLoC dependencies
+                - Test widget rendering
+                - Test user interactions
+                - Test different states (loading, success, error)
+                - Proper finder and matcher usage
+                - Documentation comments
+                
+                Return complete, production-ready Dart widget test code.
+                """
+                
+                widget_test_code = await self.think(widget_test_prompt, {
+                    "feature": feature_name,
+                    "screen": screen
+                })
+                
+                screen_name = screen.get("name", "unknown_screen")
+                file_path = f"test/features/{feature_name.lower()}/presentation/pages/{screen_name.lower()}_page_test.dart"
+                
+                if await self._create_file_with_content(file_path, widget_test_code):
+                    created_files.append(file_path)
+            
+            # Generate repository tests
+            repositories = feature.get("repositories", [])
+            for repo in repositories:
+                repo_test_prompt = f"""
+                Generate tests for a repository implementation.
+                
+                Repository to Test:
+                {repo}
+                Feature: {feature_name}
+                
+                Generate:
+                - Test class with proper setup
+                - Mock data sources
+                - Test all repository methods
+                - Test success and error scenarios
+                - Test data transformation
+                - Proper assertions
+                - Documentation comments
+                
+                Return complete, production-ready Dart test code.
+                """
+                
+                repo_test_code = await self.think(repo_test_prompt, {
+                    "feature": feature_name,
+                    "repository": repo
+                })
+                
+                repo_name = repo.get("name", "unknown_repository")
+                file_path = f"test/features/{feature_name.lower()}/data/repositories/{repo_name.lower()}_repository_impl_test.dart"
+                
+                if await self._create_file_with_content(file_path, repo_test_code):
+                    created_files.append(file_path)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating feature tests: {e}")
+            return []
 
     async def _create_basic_flutter_app(self, project_path: str, project_name: str) -> List[str]:
-        """REMOVED: No hardcoded app creation - use LLM generation only."""
-        pass
+        """Generate basic Flutter app structure using LLM only."""
+        try:
+            created_files = []
+            
+            # Generate main.dart
+            main_prompt = f"""
+            Generate a complete main.dart file for a Flutter app named {project_name}.
+            
+            Generate:
+            - Main function with proper app initialization
+            - MyApp widget with MaterialApp setup
+            - Theme configuration (light and dark)
+            - Router configuration
+            - Error handling
+            - Material Design 3 support
+            - Proper imports
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            main_code = await self.think(main_prompt, {
+                "project_name": project_name,
+                "project_path": project_path
+            })
+            
+            main_file = f"{project_path}/lib/main.dart"
+            if await self._create_file_with_content(main_file, main_code):
+                created_files.append(main_file)
+            
+            # Generate app theme
+            theme_prompt = f"""
+            Generate a comprehensive theme configuration for Flutter app {project_name}.
+            
+            Generate:
+            - AppTheme class with light and dark themes
+            - Color scheme definition
+            - Typography configuration
+            - Component themes (buttons, cards, etc.)
+            - Material Design 3 support
+            - Custom theme extensions if needed
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            theme_code = await self.think(theme_prompt, {
+                "project_name": project_name
+            })
+            
+            theme_file = f"{project_path}/lib/core/themes/app_theme.dart"
+            if await self._create_file_with_content(theme_file, theme_code):
+                created_files.append(theme_file)
+            
+            # Generate app constants
+            constants_prompt = f"""
+            Generate app constants for Flutter app {project_name}.
+            
+            Generate:
+            - App-wide constants (strings, dimensions, durations)
+            - API constants
+            - Asset paths
+            - Route names
+            - Error messages
+            - Configuration values
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            constants_code = await self.think(constants_prompt, {
+                "project_name": project_name
+            })
+            
+            constants_file = f"{project_path}/lib/core/constants/app_constants.dart"
+            if await self._create_file_with_content(constants_file, constants_code):
+                created_files.append(constants_file)
+            
+            # Generate error classes
+            errors_prompt = f"""
+            Generate custom error classes for Flutter app {project_name}.
+            
+            Generate:
+            - Base exception class
+            - Network exceptions
+            - Validation exceptions
+            - Business logic exceptions
+            - Error handling utilities
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            errors_code = await self.think(errors_prompt, {
+                "project_name": project_name
+            })
+            
+            errors_file = f"{project_path}/lib/core/errors/exceptions.dart"
+            if await self._create_file_with_content(errors_file, errors_code):
+                created_files.append(errors_file)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating basic Flutter app: {e}")
+            return []
 
     async def _generate_repository_code(self, feature_name: str, repo_spec: Dict[str, Any]) -> str:
         """Generate repository implementation code using LLM only."""
-        pass
-        return ""
+        try:
+            repository_prompt = f"""
+            Generate a complete Flutter repository implementation for the {feature_name} feature.
+            
+            Repository Specification:
+            {repo_spec}
+            
+            Generate:
+            1. Abstract repository interface
+            2. Repository implementation class
+            3. Data source integration
+            4. Error handling with custom exceptions
+            5. Model mapping (entity <-> model)
+            6. Proper imports and dependencies
+            
+            Follow Clean Architecture principles:
+            - Repository interface in domain layer
+            - Implementation in data layer
+            - Dependency injection ready
+            - Result pattern for error handling
+            - Proper null safety
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            repository_code = await self.think(repository_prompt, {
+                "feature_name": feature_name,
+                "specification": repo_spec,
+                "architecture": "clean"
+            })
+            
+            return repository_code
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating repository code: {e}")
+            return f"// Error generating repository code: {e}"
 
     async def _generate_use_case_code(self, feature_name: str, use_case: Dict[str, Any]) -> str:
         """Generate use case implementation code using LLM only."""
-        pass
-        return ""
+        try:
+            use_case_prompt = f"""
+            Generate a complete Flutter use case implementation for the {feature_name} feature.
+            
+            Use Case Specification:
+            {use_case}
+            
+            Generate:
+            1. Use case class with call method
+            2. Input/output parameters
+            3. Repository dependency injection
+            4. Business logic implementation
+            5. Error handling
+            6. Result pattern implementation
+            7. Proper imports and types
+            
+            Follow Clean Architecture principles:
+            - Single responsibility
+            - Dependency inversion
+            - Testable design
+            - Result/Either pattern for error handling
+            - Proper null safety
+            
+            Return complete, production-ready Dart code.
+            """
+            
+            use_case_code = await self.think(use_case_prompt, {
+                "feature_name": feature_name,
+                "use_case": use_case,
+                "architecture": "clean"
+            })
+            
+            return use_case_code
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating use case code: {e}")
+            return f"// Error generating use case code: {e}"
 
     async def _generate_bloc_files(self, feature_name: str, logic_spec: Dict[str, Any]) -> List[str]:
         """Generate BLoC files for a feature using LLM only."""
-        pass
-        return []
+        try:
+            # Generate BLoC events
+            events_prompt = f"""
+            Generate Flutter BLoC events for the {feature_name} feature.
+            
+            Logic Specification:
+            {logic_spec}
+            
+            Generate:
+            - Abstract base event class
+            - Concrete event classes for each user action
+            - Proper equatable implementation
+            - Input validation
+            - Documentation comments
+            
+            Return complete, production-ready Dart code for events.
+            """
+            
+            events_code = await self.think(events_prompt, {
+                "feature_name": feature_name,
+                "logic_spec": logic_spec
+            })
+            
+            # Generate BLoC states
+            states_prompt = f"""
+            Generate Flutter BLoC states for the {feature_name} feature.
+            
+            Logic Specification:
+            {logic_spec}
+            
+            Generate:
+            - Abstract base state class
+            - Loading, success, error states
+            - Data holding states
+            - Proper equatable implementation
+            - Immutable design
+            - Documentation comments
+            
+            Return complete, production-ready Dart code for states.
+            """
+            
+            states_code = await self.think(states_prompt, {
+                "feature_name": feature_name,
+                "logic_spec": logic_spec
+            })
+            
+            # Generate BLoC implementation
+            bloc_prompt = f"""
+            Generate Flutter BLoC implementation for the {feature_name} feature.
+            
+            Logic Specification:
+            {logic_spec}
+            
+            Generate:
+            - BLoC class extending Bloc<Event, State>
+            - Event handlers for each event type
+            - Use case dependency injection
+            - Proper error handling
+            - Stream transformers if needed
+            - Documentation comments
+            
+            Return complete, production-ready Dart code for BLoC.
+            """
+            
+            bloc_code = await self.think(bloc_prompt, {
+                "feature_name": feature_name,
+                "logic_spec": logic_spec,
+                "events": events_code,
+                "states": states_code
+            })
+            
+            # Create the files
+            created_files = []
+            feature_path = f"lib/features/{feature_name.lower()}/presentation/bloc"
+            
+            # Create events file
+            events_file = f"{feature_path}/{feature_name.lower()}_event.dart"
+            if await self._create_file_with_content(events_file, events_code):
+                created_files.append(events_file)
+            
+            # Create states file  
+            states_file = f"{feature_path}/{feature_name.lower()}_state.dart"
+            if await self._create_file_with_content(states_file, states_code):
+                created_files.append(states_file)
+            
+            # Create bloc file
+            bloc_file = f"{feature_path}/{feature_name.lower()}_bloc.dart"
+            if await self._create_file_with_content(bloc_file, bloc_code):
+                created_files.append(bloc_file)
+            
+            return created_files
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating BLoC files: {e}")
+            return []
 
     async def _implement_incremental_features(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement features incrementally with validation at each step."""
@@ -1291,5 +2139,92 @@ class ImplementationAgent(BaseAgent):
         }
         
         return improvements.get(issue_type.lower(), {"general": "5-15% performance improvement"})
+    
+    async def _create_file_with_content(self, file_path: str, content: str) -> bool:
+        """Helper method to create a file with LLM-generated content."""
+        try:
+            if not content or not content.strip():
+                self.logger.error(f"❌ Cannot create file {file_path}: empty content")
+                return False
+            
+            # Get project state for base path
+            project_id = getattr(self, '_current_project_id', None)
+            if project_id:
+                project_state = shared_state.get_project_state(project_id)
+                project_path = project_state.project_path if project_state else "flutter_projects"
+            else:
+                project_path = "flutter_projects"
+            
+            # Create full path
+            import os
+            full_path = os.path.join(project_path, file_path)
+            
+            # Create directory if needed
+            dir_path = os.path.dirname(full_path)
+            dir_result = await self.execute_tool(
+                "file",
+                operation="create_directory",
+                directory=dir_path
+            )
+            
+            if dir_result.status != ToolStatus.SUCCESS:
+                self.logger.error(f"❌ Failed to create directory {dir_path}")
+                return False
+            
+            # Write file
+            file_result = await self.execute_tool(
+                "file",
+                operation="write",
+                file_path=full_path,
+                content=content
+            )
+            
+            if file_result.status == ToolStatus.SUCCESS:
+                self.logger.info(f"✅ Created file: {file_path}")
+                return True
+            else:
+                self.logger.error(f"❌ Failed to write file {file_path}: {file_result.error}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error creating file {file_path}: {e}")
+            return False
+    
+    async def _fallback_file_extraction(self, project_path: str, code_content: str) -> List[str]:
+        """Fallback method to extract files from code content when JSON parsing fails."""
+        created_files = []
+        
+        try:
+            # Simple pattern matching for Dart files
+            import re
+            
+            # Look for file patterns like "// lib/path/file.dart" followed by code
+            file_pattern = r'(?://\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=//\s*lib/|$)'
+            matches = re.findall(file_pattern, code_content, re.MULTILINE | re.DOTALL)
+            
+            for file_path, file_content in matches:
+                if file_content.strip():
+                    full_path = f"{project_path}/{file_path}"
+                    
+                    # Create directory
+                    import os
+                    dir_path = os.path.dirname(full_path)
+                    await self.execute_tool("file", operation="create_directory", directory=dir_path)
+                    
+                    # Write file
+                    result = await self.execute_tool(
+                        "file",
+                        operation="write", 
+                        file_path=full_path,
+                        content=file_content.strip()
+                    )
+                    
+                    if result.status == ToolStatus.SUCCESS:
+                        created_files.append(full_path)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Fallback file extraction failed: {e}")
+        
+        return created_files
 
 
