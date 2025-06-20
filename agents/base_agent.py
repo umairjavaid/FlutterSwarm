@@ -15,7 +15,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from shared.state import shared_state, AgentStatus, MessageType, AgentActivityEvent, AgentMessage
 from config.config_manager import get_config
-from tools import ToolManager, ToolResult
+from tools import ToolManager, ToolResult, ToolStatus
 import os
 from dotenv import load_dotenv
 import logging
@@ -92,7 +92,7 @@ class BaseAgent(ABC):
             llm_config = self._config_manager.get_llm_config()
             agent_llm_config = self.agent_config.get('llm', {})
             
-            # Merge configurations
+            # Merge configurations (agent-specific overrides global)
             final_config = {**llm_config, **agent_llm_config}
             
             # Get API key from environment
@@ -113,6 +113,9 @@ class BaseAgent(ABC):
             default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
             default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
             
+            self.logger.debug(f"Initializing LLM for agent {self.agent_id} with model {final_config.get('model', default_model)}")
+            
+            # Create ChatAnthropic instance with appropriate configuration
             return ChatAnthropic(
                 model=final_config.get("model", default_model),
                 temperature=final_config.get("temperature", default_temperature),
@@ -121,8 +124,8 @@ class BaseAgent(ABC):
             )
         except Exception as e:
             self.logger.error(f"Failed to initialize LLM: {e}")
-            # Return a mock LLM or raise a more descriptive error
-            raise ValueError(f"LLM initialization failed: {e}. Please check your API key configuration.")
+            # Raise a descriptive error with troubleshooting guidance
+            raise ValueError(f"LLM initialization failed for agent {self.agent_id}: {e}. Please check your API key configuration and network connection.")
     
     def _log_status_change(self, new_status: AgentStatus, task: Optional[str] = None):
         """Log status change to monitoring system."""
@@ -686,7 +689,7 @@ Please contact the system administrator if this problem continues.
             error_msg = f"Tool '{tool_name}' not found in the agent's toolbox"
             self.logger.error(f"⚠️ {error_msg}")
             return ToolResult(
-                status="error", 
+                status=ToolStatus.ERROR, 
                 error=error_msg,
                 output=None,
                 data=None
@@ -722,7 +725,7 @@ Please contact the system administrator if this problem continues.
             except Exception as e:
                 self.logger.warning(f"Failed to log tool usage: {e}")
             
-            if result.status.value != "success":
+            if result.status != ToolStatus.SUCCESS:
                 self.logger.warning(f"⚠️ Tool '{tool_name}' failed: {result.error}")
             else:
                 self.logger.debug(f"✅ Tool '{tool_name}' completed successfully in {execution_time:.2f}s")
@@ -752,7 +755,7 @@ Please contact the system administrator if this problem continues.
                 self.logger.warning(f"Failed to log tool timeout: {e}")
                 
             return ToolResult(
-                status="error",
+                status=ToolStatus.ERROR,
                 error=error_msg,
                 output=None,
                 data=None
@@ -781,7 +784,7 @@ Please contact the system administrator if this problem continues.
                 self.logger.warning(f"Failed to log tool error: {log_error}")
                 
             return ToolResult(
-                status="error",
+                status=ToolStatus.ERROR,
                 error=error_msg,
                 output=None,
                 data=None
@@ -811,7 +814,7 @@ Please contact the system administrator if this problem continues.
             )
             
             return {
-                "success": result.status.value == "success",
+                "success": result.status == ToolStatus.SUCCESS,
                 "output": result.data.get("output", "") if result.data else "",
                 "error": result.error if result.error else "",
                 "exit_code": result.data.get("exit_code", -1) if result.data else -1
@@ -849,7 +852,7 @@ Please contact the system administrator if this problem continues.
             )
             
             # Log success or failure
-            if result.status.value == "success":
+            if result.status == ToolStatus.SUCCESS:
                 self.logger.debug(f"📄 Successfully read file: {file_path}")
             else:
                 self.logger.warning(f"⚠️ Failed to read file: {file_path} - {result.error}")
@@ -859,7 +862,7 @@ Please contact the system administrator if this problem continues.
         except Exception as e:
             error_msg = f"Error reading file {file_path}: {str(e)}"
             self.logger.error(f"❌ {error_msg}")
-            return ToolResult(status="error", error=error_msg, output=None, data=None)
+            return ToolResult(status=ToolStatus.ERROR, error=error_msg, output=None, data=None)
     
     async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
         """
@@ -890,7 +893,7 @@ Please contact the system administrator if this problem continues.
             )
             
             # Log success or failure
-            if result.status.value == "success":
+            if result.status == ToolStatus.SUCCESS:
                 self.logger.debug(f"💾 Successfully wrote file: {file_path}")
             else:
                 self.logger.warning(f"⚠️ Failed to write file: {file_path} - {result.error}")
@@ -900,7 +903,7 @@ Please contact the system administrator if this problem continues.
         except Exception as e:
             error_msg = f"Error writing file {file_path}: {str(e)}"
             self.logger.error(f"❌ {error_msg}")
-            return ToolResult(status="error", error=error_msg, output=None, data=None)
+            return ToolResult(status=ToolStatus.ERROR, error=error_msg, output=None, data=None)
             
     async def _ensure_directory_exists(self, file_path: str) -> None:
         """Ensure the directory for a file exists."""
@@ -1377,11 +1380,15 @@ class AgentToolbox:
         
     async def execute(self, tool_name, **kwargs):
         """Execute a tool with the given parameters."""
-        return await self.tool_manager.execute_tool(tool_name, self.agent_id, **kwargs)
+        return await self.tool_manager.execute_tool(tool_name, **kwargs)
         
     def list_available_tools(self):
         """List tools available to this agent."""
-        return self.tool_manager.list_tools_for_agent(self.agent_id)
+        # First try agent-specific method if available
+        if hasattr(self.tool_manager, 'get_tools_for_agent'):
+            return self.tool_manager.get_tools_for_agent(self.agent_id)
+        # Fallback to general list
+        return self.tool_manager.list_tools()
         
     def has_tool(self, tool_name):
         """Check if a specific tool is available to this agent."""
