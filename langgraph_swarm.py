@@ -1890,5 +1890,29 @@ class FlutterSwarmGovernance:
             project = shared_state.get_project_state(state['project_id'])
             architecture_insights = shared_state.get_shared_consciousness(f"architecture_guidance_{state['project_id']}")
             
-            # Check architecture approval criteria
-                'architecture_design_complete':
+            architecture_criteria = {
+                'architecture_design_complete': self._check_architecture_design_complete(project),
+                'security_review_passed': self._check_security_review(project),
+                'performance_considerations_addressed': self._check_performance_considerations(project),
+                'scalability_verified': self._check_scalability_verification(project)
+            }
+            
+            all_criteria_met = all(architecture_criteria.values())            
+        
+        # Update governance state                
+        state['governance_decisions'].append({
+            'gate': 'architecture_approval',
+            'timestamp': datetime.now().isoformat(),
+            'criteria_met': architecture_criteria,
+            'approved': all_criteria_met,
+            'notes': 'Architecture approval gate evaluation completed'
+        })
+        
+        state['gate_statuses']['architecture_approval'] = 'passed' if all_criteria_met else 'failed'
+        state['approval_status']['architecture_approval'] = 'approved' if all_criteria_met else 'rejected'
+        
+        # Update overall progress (architecture approval is ~10% of total)
+        state['overall_progress'] = 0.10 if all_criteria_met else 0.05
+        
+        print(f"✅ Architecture approval gate {'PASSED' if all_criteria_met else 'FAILED'}")
+        return state
