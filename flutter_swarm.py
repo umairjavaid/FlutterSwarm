@@ -4,13 +4,17 @@ Now powered by LangGraph for better orchestration and state management.
 """
 
 # Import the new LangGraph-based implementation
-from langgraph_swarm import LangGraphFlutterSwarm, run_flutter_swarm
+from langgraph_swarm import FlutterSwarmGovernance, run_flutter_swarm_governance
 
 # For backward compatibility, alias the classes
-FlutterSwarm = LangGraphFlutterSwarm
+FlutterSwarm = FlutterSwarmGovernance
+LangGraphFlutterSwarm = FlutterSwarmGovernance
+
+# Alias the run function
+run_flutter_swarm = run_flutter_swarm_governance
 
 # Export main functionality
-__all__ = ['FlutterSwarm', 'run_flutter_swarm']
+__all__ = ['FlutterSwarm', 'LangGraphFlutterSwarm', 'run_flutter_swarm']
 
 if __name__ == "__main__":
     # Example usage with the new LangGraph system
