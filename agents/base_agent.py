@@ -7,6 +7,7 @@ import asyncio
 import yaml
 import time
 import threading
+import random
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -14,10 +15,11 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from shared.state import shared_state, AgentStatus, MessageType, AgentActivityEvent, AgentMessage
 from config.config_manager import get_config
-from tools import ToolManager, AgentToolbox, ToolResult
+from tools import ToolManager, ToolResult
 import os
 from dotenv import load_dotenv
 import logging
+import random
 
 load_dotenv()
 
@@ -38,9 +40,12 @@ class BaseAgent(ABC):
         # Initialize LLM with configuration
         self.llm = self._initialize_llm()
         
-        # Initialize tools
+        # Initialize tools with proper toolbox
         self.tool_manager = ToolManager()
-        self.tools = self.tool_manager.create_agent_toolbox(agent_id)
+        # Create agent-specific toolbox
+        self.toolbox = AgentToolbox(self.tool_manager, self.agent_id)
+        # Keep backward compatibility with old code
+        self.tools = self.toolbox
         
         # Initialize monitoring attributes first
         self.is_running = False
@@ -331,68 +336,85 @@ class BaseAgent(ABC):
         all_agents = shared_state.get_agent_states()
         return {aid: state for aid, state in all_agents.items() if aid != self.agent_id}
     
-    async def think(self, prompt: str, context: Dict[str, Any] = None) -> str:
-        """Use LLM to think/reason about a problem."""
-        system_prompt = f"""
-        You are the {self.agent_config['name']}.
-        Role: {self.agent_config['role']}
-        Capabilities: {', '.join(self.agent_config['capabilities'])}
-        
-        You are part of a multi-agent system building Flutter applications.
-        You have access to shared state and can collaborate with other agents.
-        
-        Current context: {context or 'No additional context'}
+    async def think(self, prompt: str, context: Dict[str, Any] = None, task_complexity: str = "normal") -> str:
         """
+        Use LLM to think/reason about a problem.
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            context: Optional additional context for the LLM
+            task_complexity: Complexity of the task ("low", "normal", "high")
+                             affects model selection and parameters
+        
+        Returns:
+            Generated response from the LLM
+        """
+        # Import LLM logger
+        from utils.llm_logger import llm_logger
+        
+        # Create combined context with shared state for better reasoning
+        combined_context = self._build_combined_context(context)
+        
+        # Select appropriate model based on task complexity
+        model_config = self._select_model_config(task_complexity)
+        
+        # Build comprehensive system prompt with role information and context
+        system_prompt = self._build_system_prompt(combined_context)
         
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=prompt)
         ]
         
-        # Import LLM logger
-        from utils.llm_logger import llm_logger
+        # Get selected model config
+        model = model_config.get('model')
+        provider = model_config.get('provider', 'anthropic')
+        temperature = model_config.get('temperature')
+        max_tokens = model_config.get('max_tokens')
         
-        # Get LLM config for logging
-        llm_config = self.agent_config.get('llm', {})
-        model = llm_config.get('model', 'claude-3-5-sonnet-20241022')
-        provider = llm_config.get('provider', 'anthropic')
-        temperature = llm_config.get('temperature', 0.7)
-        max_tokens = llm_config.get('max_tokens', 4000)
-        
-        # Log LLM request
+        # Log LLM request before sending
         interaction_id = llm_logger.log_llm_request(
             agent_id=self.agent_id,
             model=model,
             provider=provider,
             request_type="think",
             prompt=prompt,
-            context=context,
+            context=combined_context,
             temperature=temperature,
             max_tokens=max_tokens
         )
         
+        self.logger.debug(f"🧠 Sending {task_complexity} complexity '{prompt[:50]}...' to {model}")
+        
+        # Use retry mechanism for resilience
         start_time = time.time()
         response = None
         error = None
+        response_content = ""
         
         try:
-            response = await self.llm.ainvoke(messages)
+            # Use safe_execute_with_retry for resilient LLM calls
+            async def _llm_call():
+                return await self.llm.ainvoke(messages)
+            
+            response = await self.safe_execute_with_retry(_llm_call, max_retries=3)
             response_content = response.content
+            
+            # Validate response (simple check)
+            if not response_content or len(response_content.strip()) < 10:
+                self.logger.warning(f"⚠️ LLM returned unusually short response: '{response_content}'")
+            
         except Exception as e:
             error = str(e)
-            response_content = ""
             self.logger.error(f"❌ LLM request failed in {self.agent_id}: {error}")
+            # Return a fallback response if possible
+            response_content = self._generate_fallback_response(prompt, combined_context, error)
+            
         finally:
             duration = time.time() - start_time
             
             # Extract token usage if available
-            token_usage = None
-            if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                token_usage = {
-                    "input_tokens": getattr(response.usage_metadata, 'input_tokens', 0),
-                    "output_tokens": getattr(response.usage_metadata, 'output_tokens', 0),
-                    "total_tokens": getattr(response.usage_metadata, 'total_tokens', 0)
-                }
+            token_usage = self._extract_token_usage(response)
             
             # Log LLM response
             llm_logger.log_llm_response(
@@ -404,77 +426,536 @@ class BaseAgent(ABC):
                 prompt=prompt,
                 response=response_content,
                 duration=duration,
-                context=context,
+                context=combined_context,
                 token_usage=token_usage,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 error=error
             )
+            
+            self.logger.debug(f"🧠 LLM response received in {duration:.2f}s")
         
-        return response_content
+        # Post-process response if needed (filtering, formatting, etc.)
+        processed_response = self._post_process_response(response_content)
+        
+        return processed_response
+        
+    def _build_combined_context(self, user_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Build a combined context with shared state and user context."""
+        # Start with a basic context
+        combined = {
+            "agent_id": self.agent_id,
+            "agent_role": self.agent_config.get("role", ""),
+            "agent_capabilities": self.agent_config.get("capabilities", []),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Add project state if available
+        try:
+            project_state = shared_state.get_project_state()
+            if project_state:
+                combined["project_state"] = {
+                    "id": project_state.get("id", ""),
+                    "name": project_state.get("name", ""),
+                    "current_phase": project_state.get("current_phase", ""),
+                    "files_created": len(project_state.get("files_created", [])),
+                }
+        except Exception:
+            # Skip if project state can't be accessed
+            pass
+            
+        # Add information about other agents
+        try:
+            other_agents = self.get_other_agents()
+            if other_agents:
+                combined["other_agents"] = {
+                    agent_id: {
+                        "status": state.get("status", "unknown"),
+                        "current_task": state.get("current_task", None)
+                    } for agent_id, state in other_agents.items()
+                }
+        except Exception:
+            # Skip if agent info can't be accessed
+            pass
+            
+        # Add user-provided context (overrides any conflicts)
+        if user_context:
+            combined.update(user_context)
+            
+        return combined
     
-    async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
+    def _select_model_config(self, task_complexity: str) -> Dict[str, Any]:
+        """Select appropriate model configuration based on task complexity."""
+        # Get agent-specific LLM config
+        llm_config = self.agent_config.get('llm', {})
+        
+        # Get global config defaults
+        default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
+        default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
+        default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
+        
+        # Set up defaults based on task complexity
+        if task_complexity == "high":
+            # Use more powerful model with more careful thinking
+            return {
+                "model": llm_config.get("high_complexity_model", "claude-3-5-opus-20240229"),
+                "temperature": llm_config.get("high_complexity_temperature", 0.5),
+                "max_tokens": llm_config.get("high_complexity_max_tokens", 8000),
+                "provider": llm_config.get("provider", "anthropic")
+            }
+        elif task_complexity == "low":
+            # Use faster model with higher creativity for simple tasks
+            return {
+                "model": llm_config.get("low_complexity_model", "claude-3-5-sonnet-20241022"),
+                "temperature": llm_config.get("low_complexity_temperature", 0.8),
+                "max_tokens": llm_config.get("low_complexity_max_tokens", 2000),
+                "provider": llm_config.get("provider", "anthropic")
+            }
+        else:  # "normal" complexity or any other value
+            # Use standard configuration
+            return {
+                "model": llm_config.get("model", default_model),
+                "temperature": llm_config.get("temperature", default_temperature),
+                "max_tokens": llm_config.get("max_tokens", default_max_tokens),
+                "provider": llm_config.get("provider", "anthropic")
+            }
+            
+    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
+        """Build comprehensive system prompt with role information and context."""
+        # Get agent-specific information
+        agent_name = self.agent_config.get('name', self.agent_id)
+        agent_role = self.agent_config.get('role', 'Generic Agent')
+        agent_capabilities = self.agent_config.get('capabilities', [])
+        agent_description = self.agent_config.get('description', '')
+        
+        # Format capabilities for better readability
+        capabilities_formatted = '\n'.join([f"- {cap}" for cap in agent_capabilities])
+        
+        # Get project context
+        project_id = shared_state.get_current_project_id() or "Unknown"
+        project_state = context.get("project_state", {})
+        project_name = project_state.get("name", "Unknown Project")
+        current_phase = project_state.get("current_phase", "planning")
+        
+        # Build comprehensive system prompt
+        system_prompt = f"""
+You are {agent_name}, an AI agent specializing in Flutter application development.
+
+ROLE AND RESPONSIBILITIES:
+{agent_role}
+
+CAPABILITIES:
+{capabilities_formatted}
+
+AGENT DESCRIPTION:
+{agent_description}
+
+PROJECT CONTEXT:
+- Project Name: {project_name}
+- Project ID: {project_id}
+- Current Phase: {current_phase}
+- You are part of a multi-agent system collaboratively building a Flutter application
+- You can access shared state and collaborate with other specialized agents
+
+GENERAL GUIDELINES:
+1. Provide clear, actionable responses focused on Flutter development
+2. When generating code, ensure it follows modern Flutter best practices
+3. Consider potential edge cases and error handling
+4. Think step-by-step when solving complex problems
+5. Your responses should be helpful for building production-ready Flutter applications
+6. Consider platform compatibility (iOS, Android, web) in your solutions
+
+COLLABORATION CONTEXT:
+You are collaborating with specialized agents, each with their own expertise.
+Current collaboration state:
+{self._format_collaboration_context(context)}
+
+RESPONSE REQUIREMENTS:
+- Be precise and specific in your responses
+- Prioritize code quality and maintainability
+- Consider performance implications of your recommendations
+- When uncertain, acknowledge limitations rather than providing incorrect information
+- Always consider the overall architecture and project requirements
+"""
+        
+        return system_prompt
+        
+    def _format_collaboration_context(self, context: Dict[str, Any]) -> str:
+        """Format collaboration context for the system prompt."""
+        other_agents = context.get("other_agents", {})
+        
+        if not other_agents:
+            return "No active collaborators at the moment."
+            
+        # Format information about other agents
+        agent_info = []
+        for agent_id, state in other_agents.items():
+            status = state.get("status", "unknown")
+            task = state.get("current_task", "none")
+            agent_info.append(f"- {agent_id}: Status: {status}, Current Task: {task}")
+            
+        return "\n".join(agent_info)
+    
+    def _extract_token_usage(self, response) -> Dict[str, int]:
+        """Extract token usage information from LLM response."""
+        if not response:
+            return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            
+        token_usage = {}
+        
+        # Extract token usage if available
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            token_usage = {
+                "input_tokens": getattr(response.usage_metadata, 'input_tokens', 0),
+                "output_tokens": getattr(response.usage_metadata, 'output_tokens', 0),
+                "total_tokens": getattr(response.usage_metadata, 'total_tokens', 0)
+            }
+        
+        return token_usage
+    
+    def _generate_fallback_response(self, prompt: str, context: Dict[str, Any], error: str) -> str:
+        """Generate a fallback response when LLM call fails."""
+        self.logger.warning(f"⚠️ Generating fallback response for failed LLM call: {error}")
+        
+        # Basic fallback response that acknowledges the error
+        return f"""
+I apologize, but I encountered an issue while processing your request.
+
+Error: {error}
+
+As {self.agent_config.get('name', self.agent_id)}, I recommend:
+1. Check if the request can be handled without LLM processing
+2. Try again with a more specific prompt
+3. Consult with other agents in the system for assistance
+4. If the error persists, there might be an issue with the LLM service
+
+Please contact the system administrator if this problem continues.
+"""
+    
+    def _post_process_response(self, response: str) -> str:
+        """
+        Post-process the LLM response.
+        This could include formatting, filtering, or other transformations.
+        """
+        # For now, just basic filtering of repetitive or irrelevant content
+        if not response:
+            return ""
+            
+        # Remove any "I'm Claude" or similar identification phrases
+        response = self._remove_identity_phrases(response)
+        
+        return response.strip()
+        
+    def _remove_identity_phrases(self, text: str) -> str:
+        """Remove LLM identity phrases from the response."""
+        identity_phrases = [
+            "I'm Claude, an AI assistant",
+            "As Claude, I",
+            "I'm an AI assistant",
+            "I'm Claude",
+            "As an AI assistant",
+        ]
+        
+        result = text
+        for phrase in identity_phrases:
+            result = result.replace(phrase, f"As {self.agent_config.get('name', self.agent_id)}, I")
+            
+        return result
+    
+    async def execute_tool(self, tool_name: str, operation: str = None, **kwargs) -> ToolResult:
         """
         Execute a tool with the given parameters.
         
         Args:
             tool_name: Name of the tool to execute
+            operation: The specific operation to perform with the tool
             **kwargs: Tool-specific parameters
             
         Returns:
             ToolResult with execution outcome
         """
         start_time = time.time()
-        self.logger.debug(f"🔧 Executing tool: {tool_name}")
+        self.logger.debug(f"🔧 Executing tool: {tool_name} (operation: {operation or 'default'})")
         
-        result = await self.tools.execute(tool_name, **kwargs)
-        execution_time = time.time() - start_time
-        
-        # Log tool usage to monitoring system
-        try:
-            from monitoring import build_monitor
-            build_monitor.log_tool_usage(
-                self.agent_id,
-                tool_name,
-                kwargs.get('operation', 'execute'),
-                result.status.value,
-                execution_time,
-                kwargs,
-                {"output": result.output} if result.output else None,
-                result.error
-            )
-        except ImportError:
-            pass
-        except Exception as e:
-            self.logger.warning(f"Failed to log tool usage: {e}")
-        
-        if result.status.value != "success":
-            self.logger.warning(f"⚠️ Tool '{tool_name}' failed: {result.error}")
-        else:
-            self.logger.debug(f"✅ Tool '{tool_name}' completed successfully")
+        # Add operation to kwargs if provided
+        if operation:
+            kwargs["operation"] = operation
             
-        return result
+        # Validate tool exists before attempting to use it
+        if not self.toolbox.has_tool(tool_name):
+            error_msg = f"Tool '{tool_name}' not found in the agent's toolbox"
+            self.logger.error(f"⚠️ {error_msg}")
+            return ToolResult(
+                status="error", 
+                error=error_msg,
+                output=None,
+                data=None
+            )
+            
+        # Add timeout handling
+        timeout = kwargs.pop("timeout", 60)  # Default 60 second timeout
+        try:
+            # Use asyncio.wait_for to implement timeout
+            result = await asyncio.wait_for(
+                self.toolbox.execute(tool_name, **kwargs),
+                timeout=timeout
+            )
+            
+            # Record execution time
+            execution_time = time.time() - start_time
+            
+            # Log tool usage to monitoring system 
+            try:
+                from monitoring import build_monitor
+                build_monitor.log_tool_usage(
+                    self.agent_id,
+                    tool_name,
+                    kwargs.get('operation', 'execute'),
+                    result.status.value,
+                    execution_time,
+                    kwargs,
+                    {"output": result.output} if result.output else None,
+                    result.error
+                )
+            except ImportError:
+                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log tool usage: {e}")
+            
+            if result.status.value != "success":
+                self.logger.warning(f"⚠️ Tool '{tool_name}' failed: {result.error}")
+            else:
+                self.logger.debug(f"✅ Tool '{tool_name}' completed successfully in {execution_time:.2f}s")
+                
+            return result
+            
+        except asyncio.TimeoutError:
+            error_msg = f"Tool '{tool_name}' execution timed out after {timeout} seconds"
+            self.logger.error(f"⏱️ {error_msg}")
+            
+            # Log timeout to monitoring
+            try:
+                from monitoring import build_monitor
+                build_monitor.log_tool_usage(
+                    self.agent_id,
+                    tool_name,
+                    kwargs.get('operation', 'execute'),
+                    "timeout",
+                    timeout,
+                    kwargs,
+                    None,
+                    error_msg
+                )
+            except ImportError:
+                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to log tool timeout: {e}")
+                
+            return ToolResult(
+                status="error",
+                error=error_msg,
+                output=None,
+                data=None
+            )
+        except Exception as e:
+            error_msg = f"Tool '{tool_name}' execution failed with error: {str(e)}"
+            self.logger.error(f"❌ {error_msg}")
+            
+            # Log error to monitoring
+            try:
+                from monitoring import build_monitor
+                execution_time = time.time() - start_time
+                build_monitor.log_tool_usage(
+                    self.agent_id,
+                    tool_name,
+                    kwargs.get('operation', 'execute'),
+                    "error",
+                    execution_time,
+                    kwargs,
+                    None,
+                    str(e)
+                )
+            except ImportError:
+                pass
+            except Exception as log_error:
+                self.logger.warning(f"Failed to log tool error: {log_error}")
+                
+            return ToolResult(
+                status="error",
+                error=error_msg,
+                output=None,
+                data=None
+            )
     
-    async def run_command(self, command: str, **kwargs) -> ToolResult:
+    async def run_command(self, command: str, timeout: int = 30, capture_output: bool = True) -> Dict[str, Any]:
         """
         Execute a shell command using the terminal tool.
         
         Args:
             command: Command to execute
-            **kwargs: Additional parameters
+            timeout: Maximum execution time in seconds
+            capture_output: Whether to capture and return command output
             
         Returns:
-            ToolResult with command output
+            Dictionary with command execution results
         """
-        return await self.execute_tool("terminal", command=command, **kwargs)
+        try:
+            self.logger.debug(f"⌨️ Executing command: {command}")
+            
+            result = await self.execute_tool(
+                "terminal",
+                operation="run_command",
+                command=command,
+                timeout=timeout,
+                capture_output=capture_output
+            )
+            
+            return {
+                "success": result.status.value == "success",
+                "output": result.data.get("output", "") if result.data else "",
+                "error": result.error if result.error else "",
+                "exit_code": result.data.get("exit_code", -1) if result.data else -1
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Command execution failed: {str(e)}")
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "exit_code": -1
+            }
     
     async def read_file(self, file_path: str, **kwargs) -> ToolResult:
-        """Read a file using the file tool."""
-        return await self.execute_tool("file", operation="read", file_path=file_path, **kwargs)
+        """
+        Read a file using the file tool.
+        
+        Args:
+            file_path: Path to the file to read
+            **kwargs: Additional parameters for the file tool
+            
+        Returns:
+            ToolResult with file contents
+        """
+        try:
+            # Add timeout for file operations (default: 10 seconds)
+            timeout = kwargs.pop('timeout', 10)
+            
+            result = await self.execute_tool(
+                "file", 
+                operation="read", 
+                file_path=file_path, 
+                timeout=timeout,
+                **kwargs
+            )
+            
+            # Log success or failure
+            if result.status.value == "success":
+                self.logger.debug(f"📄 Successfully read file: {file_path}")
+            else:
+                self.logger.warning(f"⚠️ Failed to read file: {file_path} - {result.error}")
+                
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error reading file {file_path}: {str(e)}"
+            self.logger.error(f"❌ {error_msg}")
+            return ToolResult(status="error", error=error_msg, output=None, data=None)
     
     async def write_file(self, file_path: str, content: str, **kwargs) -> ToolResult:
-        """Write a file using the file tool."""
-        return await self.execute_tool("file", operation="write", file_path=file_path, content=content, **kwargs)
+        """
+        Write a file using the file tool.
+        
+        Args:
+            file_path: Path to the file to write
+            content: Content to write to the file
+            **kwargs: Additional parameters for the file tool
+            
+        Returns:
+            ToolResult with operation result
+        """
+        try:
+            # Add timeout for file operations (default: 15 seconds)
+            timeout = kwargs.pop('timeout', 15)
+            
+            # Create directory if it doesn't exist
+            await self._ensure_directory_exists(file_path)
+            
+            result = await self.execute_tool(
+                "file", 
+                operation="write", 
+                file_path=file_path, 
+                content=content,
+                timeout=timeout,
+                **kwargs
+            )
+            
+            # Log success or failure
+            if result.status.value == "success":
+                self.logger.debug(f"💾 Successfully wrote file: {file_path}")
+            else:
+                self.logger.warning(f"⚠️ Failed to write file: {file_path} - {result.error}")
+                
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error writing file {file_path}: {str(e)}"
+            self.logger.error(f"❌ {error_msg}")
+            return ToolResult(status="error", error=error_msg, output=None, data=None)
+            
+    async def _ensure_directory_exists(self, file_path: str) -> None:
+        """Ensure the directory for a file exists."""
+        import os
+        directory = os.path.dirname(file_path)
+        
+        if directory:
+            try:
+                # Use file tool to create directory if it doesn't exist
+                await self.execute_tool(
+                    "file",
+                    operation="create_directory",
+                    directory_path=directory
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to create directory {directory}: {str(e)}")
+                # Continue anyway, the write operation will fail if necessary
+    
+    async def safe_execute_with_retry(self, operation_func, max_retries=3, base_delay=1):
+        """
+        Execute an async operation with exponential backoff retry.
+        
+        Args:
+            operation_func: Async function to execute
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay for exponential backoff (in seconds)
+            
+        Returns:
+            Result of the operation
+            
+        Raises:
+            Exception: If all retry attempts fail
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return await operation_func()
+            except Exception as e:
+                last_exception = e
+                
+                if attempt == max_retries - 1:
+                    # Last attempt failed, re-raise the exception
+                    self.logger.error(f"❌ All {max_retries} retry attempts failed: {str(e)}")
+                    raise
+                    
+                # Calculate wait time with exponential backoff and small jitter
+                wait_time = (base_delay * (2 ** attempt)) + (random.random() * 0.5)
+                self.logger.warning(f"Retry {attempt + 1}/{max_retries} after error: {str(e)}. Waiting {wait_time:.2f}s")
+                
+                # Wait before retrying
+                await asyncio.sleep(wait_time)
+        
+        # This should never be reached due to the raise above, but adding as a safeguard
+        raise last_exception
     
     # Abstract methods that must be implemented by subclasses
     @abstractmethod
@@ -490,27 +971,7 @@ class BaseAgent(ABC):
         """Handle state changes. Override in subclasses."""
         pass
 
-    async def run_command(self, command: str, timeout: int = 30) -> Dict[str, Any]:
-        """Run a shell command using the terminal tool."""
-        try:
-            result = await self.execute_tool(
-                "terminal",
-                operation="run_command",
-                command=command,
-                timeout=timeout
-            )
-            
-            return {
-                "success": result.status.value == "success",
-                "output": result.data if result.data else "",
-                "error": result.error if hasattr(result, 'error') else ""
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "output": "",
-                "error": str(e)
-            }
+    # The run_command method is now implemented above
 
     async def collaborate_with_agent(self, target_agent: str, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Collaborate with another agent (simplified implementation)."""
@@ -906,3 +1367,23 @@ class BaseAgent(ABC):
         if self._monitoring_task and not self._monitoring_task.done():
             self._monitoring_task.cancel()
             self.logger.debug(f"🛑 Stopped continuous monitoring for {self.agent_id}")
+
+class AgentToolbox:
+    """Extension of the tool management for agents."""
+    
+    def __init__(self, tool_manager, agent_id):
+        self.tool_manager = tool_manager
+        self.agent_id = agent_id
+        
+    async def execute(self, tool_name, **kwargs):
+        """Execute a tool with the given parameters."""
+        return await self.tool_manager.execute_tool(tool_name, self.agent_id, **kwargs)
+        
+    def list_available_tools(self):
+        """List tools available to this agent."""
+        return self.tool_manager.list_tools_for_agent(self.agent_id)
+        
+    def has_tool(self, tool_name):
+        """Check if a specific tool is available to this agent."""
+        available_tools = self.list_available_tools()
+        return tool_name in available_tools
