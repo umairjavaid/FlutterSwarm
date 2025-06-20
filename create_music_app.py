@@ -10,7 +10,7 @@ import os
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flutter_swarm import Swarm
+from flutter_swarm import FlutterSwarm as Swarm
 from config.config_manager import get_config
 
 async def create_music_app():

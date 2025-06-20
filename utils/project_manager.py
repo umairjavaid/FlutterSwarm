@@ -18,13 +18,14 @@ class ProjectManager:
     
     def __init__(self):
         self.config = get_config()
-        project_config = self.config.get_project_config()
+        project_config = self.config.get_section('project') if hasattr(self.config, 'get_section') else {}
         
-        # Get settings from config with fallbacks to environment variables
-        self.output_dir = project_config.get('defaults', {}).get('output_directory') or os.getenv('OUTPUT_DIR', './projects')
+        # Get settings from config with fallbacks
+        self.output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'flutter_projects')
         
         # Ensure output directory exists
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        print(f"✅ Output directory set to: {self.output_dir}")
     
     def get_project_path(self, project_name: str) -> str:
         """Get the full path for a project directory."""
@@ -129,3 +130,6 @@ class ProjectManager:
             "path": project_path,
             "files": [os.path.join(dp, f) for dp, dn, fn in os.walk(project_path) for f in fn]
         }
+    
+    def create_flutter_project_structure(self, project_name: str) -> str:
+        pass
