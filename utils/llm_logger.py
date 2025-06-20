@@ -47,13 +47,13 @@ class LLMLogger:
         if self.enable_file_logging:
             self.log_dir.mkdir(exist_ok=True)
         
-        # Setup logging
-        self.logger = logging.getLogger('FlutterSwarm.LLM')
-        self._setup_logging()
-        
-        # Session tracking
+        # Session tracking - MUST be set before _setup_logging()
         self.session_start = datetime.now()
         self.session_id = self.session_start.strftime("%Y%m%d_%H%M%S")
+        
+        # Setup logging (depends on session_id)
+        self.logger = logging.getLogger('FlutterSwarm.LLM')
+        self._setup_logging()
         
         # Metrics
         self.total_requests = 0
