@@ -150,6 +150,16 @@ class FlutterSwarmGovernance:
         self.total_routing_steps = 0  # Track total routing steps
         self.max_routing_steps = 50  # Maximum routing steps before emergency exit
         
+        # Ensure these are initialized
+        if not hasattr(self, 'max_gate_failures'):
+            self.max_gate_failures = 3
+        if not hasattr(self, 'gate_failure_counts'):
+            self.gate_failure_counts = {}
+        if not hasattr(self, 'total_routing_steps'):
+            self.total_routing_steps = 0
+        if not hasattr(self, 'max_routing_steps'):
+            self.max_routing_steps = 50
+        
         # Quality gates criteria
         self.quality_gates = {
             'architecture_approval': {
@@ -641,6 +651,12 @@ class FlutterSwarmGovernance:
                     task_data
                 )
                 
+                # Add small delay to ensure state persistence
+                await asyncio.sleep(0.1)
+                
+                # Re-fetch project to ensure we have latest state
+                project = shared_state.get_project_state(project_id)
+                
                 # Process the result
                 if result.get("status") == "architecture_completed":
                     architecture_decisions = result.get("architecture_decisions", [])
@@ -783,7 +799,7 @@ class FlutterSwarmGovernance:
                 # Execute the implementation task
                 self.logger.info(f"🚀 Executing implementation task for project {project_id}")
                 result = await implementation_agent.execute_task(
-                    "implement_incremental_features", 
+                    "implement_incremental", 
                     task_data
                 )
                 
@@ -1199,7 +1215,13 @@ class FlutterSwarmGovernance:
     def _check_circuit_breaker(self, gate_name: str) -> bool:
         """Check if circuit breaker should be triggered for a gate."""
         failures = self.gate_failure_counts.get(gate_name, 0)
-        return failures >= self.max_gate_failures
+        threshold = getattr(self, 'max_gate_failures', 3)  # Default to 3 if not set
+        should_trigger = failures >= threshold
+        
+        if should_trigger:
+            self.logger.warning(f"🔄 Circuit breaker triggered for {gate_name} after {failures} failures")
+        
+        return should_trigger
     
     def _increment_gate_failure(self, gate_name: str) -> None:
         """Increment failure count for a gate."""
@@ -1210,6 +1232,12 @@ class FlutterSwarmGovernance:
         # Basic implementation - should be enhanced with actual metrics
         return {'healthy': True, 'metric': 'collaboration_rate', 'value': 0.8}
     
+    def _check_architecture_design_completion(self, project) -> bool:
+        """Check if architecture design is complete."""
+        if not project or not hasattr(project, 'architecture_decisions'):
+            return False
+        return len(project.architecture_decisions) > 0
+
     def _check_security_approval(self, project) -> bool:
         """Check if security reviews are complete."""
         if not project:

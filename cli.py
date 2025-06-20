@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import sys
+import logging
 from datetime import datetime
 from pathlib import Path
 from flutter_swarm import FlutterSwarm
@@ -16,6 +17,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.live import Live
 from rich.panel import Panel
 from config.config_manager import get_config
+
+# Reduce log spam - only show INFO and above for agents
+logging.getLogger('flutterswarm').setLevel(logging.INFO)
+logging.getLogger('flutterswarm.security').setLevel(logging.WARNING)
+logging.getLogger('flutterswarm.performance').setLevel(logging.WARNING)
+logging.getLogger('flutterswarm.documentation').setLevel(logging.WARNING)
+logging.getLogger('flutterswarm.devops').setLevel(logging.WARNING)
 
 # Initialize configuration-aware console
 config = get_config()

@@ -1083,6 +1083,11 @@ class SharedState:
     # Predictive assistance capabilities
     def generate_predictive_insights(self, agent_id: str) -> List[Dict[str, Any]]:
         """Generate predictive insights for an agent based on current state and patterns."""
+        # Add busy check to prevent spam
+        agent_state = self.get_agent_state(agent_id)
+        if agent_state and agent_state.status != AgentStatus.IDLE:
+            return []  # Don't predict if agent is busy
+        
         with self._lock:
             insights = []
             

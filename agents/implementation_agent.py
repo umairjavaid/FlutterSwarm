@@ -69,6 +69,10 @@ class ImplementationAgent(BaseAgent):
                 result = await self.safe_execute_with_retry(
                     lambda: self._implement_incremental_features(task_data)
                 )
+            elif "implement_incremental" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_incremental_features(task_data)
+                )
             elif "validate_feature" in task_description:
                 result = await self.safe_execute_with_retry(
                     lambda: self._validate_feature(task_data)
