@@ -124,9 +124,14 @@ class FlutterSwarmGovernance:
         self.graph = self._build_governance_graph()
         self.app = self.graph.compile()
         
+        # Import LLM logger for governance system
+        from utils.llm_logger import llm_logger
+        self.llm_logger = llm_logger
+        
         print("🏛️ FlutterSwarm Project Governance initialized")
         print("📋 Quality gates configured for all phases")
         print("🤝 Integrated with real-time agent collaboration system")
+        print("🤖 LLM interactions will be logged for all governance decisions")
     
     def _build_governance_graph(self) -> StateGraph:
         """Build the governance StateGraph focused on quality gates and project oversight."""

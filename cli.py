@@ -128,6 +128,25 @@ class FlutterSwarmCLI:
         
         console.print(table)
         
+        # Add LLM usage summary
+        try:
+            from utils.llm_logger import llm_logger
+            llm_summary = llm_logger.get_session_summary()
+            
+            console.print(f"\n🤖 [bold blue]LLM Usage Summary[/bold blue]")
+            console.print(f"  • Total Requests: {llm_summary.get('total_requests', 0)}")
+            console.print(f"  • Total Tokens: {llm_summary.get('total_tokens', 0):,}")
+            console.print(f"  • Success Rate: {llm_summary.get('success_rate', 0):.1%}")
+            console.print(f"  • Average Duration: {llm_summary.get('average_duration', 0):.2f}s")
+            console.print(f"  • Total Duration: {llm_summary.get('total_duration', 0):.2f}s")
+            
+            if llm_summary.get('error_count', 0) > 0:
+                console.print(f"  • [red]Errors: {llm_summary.get('error_count', 0)}[/red]")
+        except ImportError:
+            pass
+        except Exception as e:
+            console.print(f"  • [red]LLM metrics error: {e}[/red]")
+        
         if result.get('test_results'):
             console.print("\n📋 [bold blue]Test Results[/bold blue]")
             for test_type, results in result['test_results'].items():

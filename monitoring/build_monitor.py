@@ -324,6 +324,23 @@ class BuildMonitor:
         
         build_duration = datetime.now() - self.build_start_time if self.build_start_time else None
         
+        # Get LLM usage summary
+        llm_metrics = {}
+        try:
+            from utils.llm_logger import llm_logger
+            llm_summary = llm_logger.get_session_summary()
+            llm_metrics = {
+                "total_llm_requests": llm_summary.get("total_requests", 0),
+                "total_tokens_used": llm_summary.get("total_tokens", 0),
+                "llm_success_rate": llm_summary.get("success_rate", 0),
+                "average_llm_duration": llm_summary.get("average_duration", 0),
+                "llm_error_count": llm_summary.get("error_count", 0)
+            }
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.debug(f"Could not get LLM metrics: {e}")
+        
         return {
             "project_id": self.current_project_id,
             "is_monitoring": self.is_monitoring,
@@ -333,6 +350,7 @@ class BuildMonitor:
             "active_agents": list(self.active_agents),
             "current_phase": self.progress_tracker.get_current_phase(self.current_project_id or ""),
             "overall_progress": self.progress_tracker.get_overall_progress(),
+            "llm_metrics": llm_metrics,
             "recent_events": [
                 {
                     "timestamp": event.timestamp.isoformat(),

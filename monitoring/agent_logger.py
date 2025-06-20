@@ -352,7 +352,25 @@ class AgentLogger:
             if entry.level == "ERROR":
                 error_count += 1
         
-        return {
+        # Get LLM interaction summary
+        llm_summary = {}
+        try:
+            from utils.llm_logger import llm_logger
+            llm_data = llm_logger.get_session_summary()
+            llm_summary = {
+                "llm_requests": llm_data.get("total_requests", 0),
+                "llm_tokens": llm_data.get("total_tokens", 0),
+                "llm_success_rate": llm_data.get("success_rate", 0),
+                "llm_errors": llm_data.get("error_count", 0),
+                "most_used_model": max(llm_data.get("model_usage", {}).items(), 
+                                     key=lambda x: x[1], default=("none", 0))[0]
+            }
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.debug(f"Could not get LLM summary: {e}")
+        
+        base_summary = {
             "session_id": self.session_id,
             "session_duration": str(datetime.now() - self.session_start),
             "total_entries": len(self.log_entries),
@@ -362,7 +380,9 @@ class AgentLogger:
             "session_start": self.session_start.isoformat(),
             "last_entry": self.log_entries[-1].timestamp.isoformat() if self.log_entries else None
         }
-
-
-# Global logger instance
-agent_logger = AgentLogger()
+        
+        # Merge LLM summary if available
+        if llm_summary:
+            base_summary["llm_metrics"] = llm_summary
+        
+        return base_summary

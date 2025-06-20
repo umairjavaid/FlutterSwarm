@@ -110,6 +110,37 @@ class ArchitectureAgent(BaseAgent):
         Consider scalability, maintainability, and testability.
         """
 
+        # Import LLM logger
+        from utils.llm_logger import llm_logger
+        
+        # Get LLM config for logging
+        llm_config = self.agent_config.get('llm', {})
+        model = llm_config.get('model', 'claude-3-5-sonnet-20241022')
+        provider = llm_config.get('provider', 'anthropic')
+        temperature = llm_config.get('temperature', 0.7)
+        max_tokens = llm_config.get('max_tokens', 4000)
+        
+        # Log LLM request
+        interaction_id = llm_logger.log_llm_request(
+            agent_id=self.agent_id,
+            model=model,
+            provider=provider,
+            request_type="design_flutter_architecture",
+            prompt=architecture_prompt,
+            context={
+                "project_id": project_id,
+                "project_name": project_name,
+                "requirements_count": len(requirements),
+                "has_planning_output": bool(planning_output)
+            },
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        start_time = time.time()
+        architecture_design = None
+        error = None
+        
         try:
             architecture_design = await self.think(architecture_prompt, {
                 "project": project,
@@ -118,8 +149,32 @@ class ArchitectureAgent(BaseAgent):
             })
             self.logger.info(f"[ARCH] LLM architecture_design result: {architecture_design}")
         except Exception as e:
+            error = str(e)
             self.logger.error(f"[ARCH] Exception during LLM call: {e}")
             architecture_design = None
+        finally:
+            duration = time.time() - start_time
+            
+            # Log LLM response (the think method already logged, but this gives us task-specific context)
+            llm_logger.log_llm_response(
+                interaction_id=interaction_id,
+                agent_id=self.agent_id,
+                model=model,
+                provider=provider,
+                request_type="design_flutter_architecture",
+                prompt=architecture_prompt,
+                response=architecture_design or "",
+                duration=duration,
+                context={
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "requirements_count": len(requirements),
+                    "architecture_created": bool(architecture_design)
+                },
+                temperature=temperature,
+                max_tokens=max_tokens,
+                error=error
+            )
 
         # Fallback: If LLM returns nothing, create a minimal placeholder architecture
         if not architecture_design or not str(architecture_design).strip():

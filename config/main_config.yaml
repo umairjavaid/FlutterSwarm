@@ -315,6 +315,22 @@ agents:
       tokens_per_minute: 50000
       burst_allowance: 10
       cooldown_period: 60
+    
+    # LLM Logging Configuration
+    logging:
+      enable_logging: true
+      log_requests: true
+      log_responses: true
+      log_token_usage: true
+      log_errors: true
+      log_performance_metrics: true
+      truncate_long_prompts: true
+      max_prompt_length_in_logs: 500
+      truncate_long_responses: true
+      max_response_length_in_logs: 500
+      include_context_in_logs: true
+      export_interactions: true
+      detailed_error_logging: true
   
   # Agent-specific overrides
   overrides:

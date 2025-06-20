@@ -349,8 +349,69 @@ class BaseAgent(ABC):
             HumanMessage(content=prompt)
         ]
         
-        response = await self.llm.ainvoke(messages)
-        return response.content
+        # Import LLM logger
+        from utils.llm_logger import llm_logger
+        
+        # Get LLM config for logging
+        llm_config = self.agent_config.get('llm', {})
+        model = llm_config.get('model', 'claude-3-5-sonnet-20241022')
+        provider = llm_config.get('provider', 'anthropic')
+        temperature = llm_config.get('temperature', 0.7)
+        max_tokens = llm_config.get('max_tokens', 4000)
+        
+        # Log LLM request
+        interaction_id = llm_logger.log_llm_request(
+            agent_id=self.agent_id,
+            model=model,
+            provider=provider,
+            request_type="think",
+            prompt=prompt,
+            context=context,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        start_time = time.time()
+        response = None
+        error = None
+        
+        try:
+            response = await self.llm.ainvoke(messages)
+            response_content = response.content
+        except Exception as e:
+            error = str(e)
+            response_content = ""
+            self.logger.error(f"❌ LLM request failed in {self.agent_id}: {error}")
+        finally:
+            duration = time.time() - start_time
+            
+            # Extract token usage if available
+            token_usage = None
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                token_usage = {
+                    "input_tokens": getattr(response.usage_metadata, 'input_tokens', 0),
+                    "output_tokens": getattr(response.usage_metadata, 'output_tokens', 0),
+                    "total_tokens": getattr(response.usage_metadata, 'total_tokens', 0)
+                }
+            
+            # Log LLM response
+            llm_logger.log_llm_response(
+                interaction_id=interaction_id,
+                agent_id=self.agent_id,
+                model=model,
+                provider=provider,
+                request_type="think",
+                prompt=prompt,
+                response=response_content,
+                duration=duration,
+                context=context,
+                token_usage=token_usage,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                error=error
+            )
+        
+        return response_content
     
     async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
         """

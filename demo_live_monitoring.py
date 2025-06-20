@@ -115,12 +115,28 @@ class MonitoringDemo:
             console.print(f"👥 Active agents: {len(summary.get('active_agents', []))}")
             console.print(f"⏱️ Build duration: {summary.get('build_duration', 'Unknown')}")
             console.print(f"📈 Build events: {summary.get('total_events', 0)}")
+            
+            # LLM usage summary
+            llm_metrics = summary.get('llm_metrics', {})
+            if llm_metrics:
+                console.print(f"\n🤖 [bold blue]LLM Usage Summary[/bold blue]")
+                console.print(f"🚀 Total LLM requests: {llm_metrics.get('total_llm_requests', 0)}")
+                console.print(f"🎯 Total tokens used: {llm_metrics.get('total_tokens_used', 0):,}")
+                console.print(f"✅ LLM success rate: {llm_metrics.get('llm_success_rate', 0):.1%}")
+                console.print(f"⚡ Avg LLM duration: {llm_metrics.get('average_llm_duration', 0):.2f}s")
+                if llm_metrics.get('llm_error_count', 0) > 0:
+                    console.print(f"❌ LLM errors: {llm_metrics.get('llm_error_count', 0)}")
         
         # Agent logger summary
         logger_summary = agent_logger.get_session_summary()
         console.print(f"\n📝 Log entries: {logger_summary.get('total_entries', 0)}")
         console.print(f"❌ Errors logged: {logger_summary.get('error_count', 0)}")
         console.print(f"⏰ Session duration: {logger_summary.get('session_duration', 'Unknown')}")
+        
+        # Show LLM metrics from agent logger if available
+        llm_logger_metrics = logger_summary.get('llm_metrics', {})
+        if llm_logger_metrics:
+            console.print(f"🤖 LLM requests (agent logger): {llm_logger_metrics.get('llm_requests', 0)}")
         
         # Export reports
         console.print("\n📄 [bold]Exporting detailed reports...[/bold]")
@@ -133,6 +149,16 @@ class MonitoringDemo:
         # Export logs
         log_file = agent_logger.export_logs_to_json()
         console.print(f"📋 Detailed logs: {log_file}")
+        
+        # Export LLM interactions
+        try:
+            from utils.llm_logger import llm_logger
+            llm_file = llm_logger.export_interactions_to_json()
+            console.print(f"🤖 LLM interactions: {llm_file}")
+        except ImportError:
+            pass
+        except Exception as e:
+            console.print(f"⚠️ Could not export LLM interactions: {e}")
         
         console.print("\n💡 [dim]Check the exported files for complete details![/dim]")
     

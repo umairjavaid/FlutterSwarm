@@ -260,6 +260,22 @@ class LiveDisplay:
                 f"{Fore.WHITE}{content}{Style.RESET_ALL}"
             )
         
+        # Add LLM usage summary
+        try:
+            from utils.llm_logger import llm_logger
+            llm_summary = llm_logger.get_session_summary()
+            
+            lines.append("")
+            lines.append(f"{Style.BRIGHT}{Fore.MAGENTA}🤖 LLM Usage Summary:{Style.RESET_ALL}")
+            lines.append(f"{Fore.CYAN}Total Requests: {llm_summary.get('total_requests', 0)}{Style.RESET_ALL}")
+            lines.append(f"{Fore.CYAN}Total Tokens: {llm_summary.get('total_tokens', 0):,}{Style.RESET_ALL}")
+            lines.append(f"{Fore.CYAN}Success Rate: {llm_summary.get('success_rate', 0):.1%}{Style.RESET_ALL}")
+            lines.append(f"{Fore.CYAN}Avg Duration: {llm_summary.get('average_duration', 0):.2f}s{Style.RESET_ALL}")
+        except ImportError:
+            pass
+        except Exception as e:
+            lines.append(f"{Fore.RED}LLM metrics error: {e}{Style.RESET_ALL}")
+        
         return lines
     
     def _build_footer(self) -> List[str]:
