@@ -149,9 +149,22 @@ class ArchitectureAgent(BaseAgent):
             shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
             self.logger.info(f"[ARCH] Updated project.architecture_decisions: {project.architecture_decisions}")
         else:
-            updated_decisions = existing_decisions + [architecture_decision]
-            shared_state.update_project(project_id, architecture_decisions=updated_decisions)
-            self.logger.info(f"[ARCH] Updated shared_state with new architecture_decisions: {updated_decisions}")
+            # Create a minimal project in shared state if it doesn't exist
+            try:
+                shared_state.create_project_with_id(
+                    project_id,
+                    task_data.get("name", "Unknown Project"),
+                    task_data.get("description", "No description"),
+                    task_data.get("requirements", [])
+                )
+                project = shared_state.get_project_state(project_id)
+                if project:
+                    project.architecture_decisions.append(architecture_decision)
+                    shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
+                    self.logger.info(f"[ARCH] Created project and added architecture_decisions: {project.architecture_decisions}")
+            except Exception as e:
+                self.logger.warning(f"[ARCH] Could not create project in shared state: {e}")
+                # Continue anyway - the decision was created
 
         try:
             await self._request_architecture_feedback(project_id, architecture_design)
