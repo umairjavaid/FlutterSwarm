@@ -281,12 +281,12 @@ class TestingAgent(BaseAgent):
         # Write mock config using tools
         await self.write_file("build.yaml", mock_config)
     
-    async def _ensure_integration_test_dependencies(self) -> None:
+    async def _ensure_integration_test_dependencies(self, pubspec_path: str) -> None:
         """Ensure integration test dependencies are added."""
         integration_deps = ["integration_test"]
         
         # Check if already in pubspec
-        pubspec_result = await self.read_file("pubspec.yaml")
+        pubspec_result = await self.read_file(pubspec_path)
         if pubspec_result.status == ToolStatus.SUCCESS:
             if "integration_test" not in pubspec_result.output:
                 await self.execute_tool("flutter", operation="pub_add", packages=integration_deps, dev=True)
@@ -299,9 +299,9 @@ class TestingAgent(BaseAgent):
             "functions": self._extract_functions(code),
             "dependencies": self._extract_dependencies(code),
             "has_flutter_widget": "MaterialApp" in code or "CupertinoApp" in code,
-            "is_bloc_used": "BlocProvider" in code or "BlocListener" in code,
-            "is_getx_used": "GetMaterialApp" in code or "GetBuilder" in code,
-            "is_provider_used": "ChangeNotifierProvider" in code or "Provider" in code,
+            "is_bloc_used": "Bloc" in code,
+            "is_getx_used": "Get" in code,
+            "is_provider_used": "Provider" in code,
             "mockable_services": self._identify_mockable_services(code)
         }
     

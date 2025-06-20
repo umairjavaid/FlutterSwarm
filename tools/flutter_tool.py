@@ -368,10 +368,8 @@ class FlutterTool(BaseTool):
         
         return issues
     
-    async def get_project_info(self) -> ToolResult:
+    async def get_project_info(self, pubspec_path: str) -> ToolResult:
         """Get information about the current Flutter project - analysis only."""
-        pubspec_path = os.path.join(self.project_directory, "dependencies_file.yaml")
-        pubspec_path = pubspec_path.replace("dependencies_file.yaml", "pubspec.yaml")
         
         if not os.path.exists(pubspec_path):
             return ToolResult(
