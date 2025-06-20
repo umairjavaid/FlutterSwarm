@@ -52,18 +52,62 @@ class ProcessSupervisionAgent(BaseAgent):
     
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute supervision tasks."""
-        if "start_monitoring" in task_description:
-            return await self._start_monitoring(task_data)
-        elif "stop_monitoring" in task_description:
-            return await self._stop_monitoring(task_data)
-        elif "check_process_health" in task_description:
-            return await self._check_process_health(task_data)
-        elif "intervene_process" in task_description:
-            return await self._intervene_process(task_data)
-        elif "recover_from_failure" in task_description:
-            return await self._recover_from_failure(task_data)
-        else:
-            return await self._handle_general_supervision_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand supervision requirements
+            analysis = await self.think(f"Analyze this supervision task: {task_description}", {
+                "task_data": task_data,
+                "task_description": task_description,
+                "agent_id": self.agent_id
+            })
+            
+            self.logger.info(f"👁️ Supervision Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "start_monitoring" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._start_monitoring(task_data)
+                )
+            elif "stop_monitoring" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._stop_monitoring(task_data)
+                )
+            elif "check_process_health" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._check_process_health(task_data)
+                )
+            elif "intervene_process" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._intervene_process(task_data)
+                )
+            elif "recover_from_failure" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._recover_from_failure(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_supervision_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing supervision task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

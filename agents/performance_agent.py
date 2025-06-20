@@ -27,16 +27,59 @@ class PerformanceAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute performance tasks."""
-        if "performance_audit" in task_description:
-            return await self._perform_performance_audit(task_data)
-        elif "optimize_widgets" in task_description:
-            return await self._optimize_widgets(task_data)
-        elif "optimize_images" in task_description:
-            return await self._optimize_images(task_data)
-        elif "setup_monitoring" in task_description:
-            return await self._setup_performance_monitoring(task_data)
-        else:
-            return await self._handle_general_performance_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand performance requirements
+            analysis = await self.think(f"Analyze this performance task: {task_description}", {
+                "task_data": task_data,
+                "optimization_areas": self.optimization_areas,
+                "metrics": self.metrics
+            })
+            
+            self.logger.info(f"⚡ Performance Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "performance_audit" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._perform_performance_audit(task_data)
+                )
+            elif "optimize_widgets" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._optimize_widgets(task_data)
+                )
+            elif "optimize_images" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._optimize_images(task_data)
+                )
+            elif "setup_monitoring" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_performance_monitoring(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_performance_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "optimization_areas_considered": self.optimization_areas,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing performance task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

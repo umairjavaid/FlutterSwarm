@@ -101,17 +101,23 @@ def validate_async_operations():
         from datetime import datetime
         
         async def test_async():
-            state = SharedState()
-            
             # Test async lock creation
-            lock = await state._get_async_lock()
+            lock = await shared_state._get_async_lock()
             print("  ✅ Async lock creation: OK")
             
-            # Test async message sending
-            await state.async_send_message('test', None, MessageType.STATUS_UPDATE, {'async': True})
-            print("  ✅ Async message sending: OK")
+            # Test state versioning
+            project_id = "test_project"
+            await shared_state.update_project_async(project_id, name="Test Project")
+            await shared_state.update_project_async(project_id, description="Test Description")
+            print("  ✅ Async state updates: OK")
             
-            return True
+            # Test rollback
+            rollback_success = shared_state.rollback_state(project_id)
+            print(f"  ✅ State rollback: {'OK' if rollback_success else 'N/A'}")
+            
+            # Test state persistence
+            persist_success = await shared_state.persist_state("test_state.json")
+            print(f"  ✅ State persistence: {'OK' if persist_success else 'Failed'}")
         
         # Run async test
         result = asyncio.run(test_async())

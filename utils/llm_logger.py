@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from threading import Lock
+import asyncio
+import uuid
 
 @dataclass
 class LLMInteraction:
@@ -42,6 +44,7 @@ class LLMLogger:
         self.enable_file_logging = enable_file_logging
         self.interactions: List[LLMInteraction] = []
         self._lock = Lock()
+        self._async_lock = asyncio.Lock()  # Add async lock
         
         # Create log directory
         if self.enable_file_logging:
@@ -322,6 +325,61 @@ class LLMLogger:
                     for i in error_interactions[-10:]  # Last 10 errors
                 ]
             }
+    
+    async def log_llm_request_async(self, agent_id: str, model: str, provider: str, 
+                                  request_type: str, prompt: str, context: Optional[Dict[str, Any]] = None,
+                                  temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
+        """Async version of log_llm_request."""
+        request_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        async with self._async_lock:
+            log_entry = {
+                "id": request_id,
+                "agent_id": agent_id,
+                "type": "request",
+                "model": model,
+                "provider": provider,
+                "request_type": request_type,
+                "prompt": prompt,
+                "context": context,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timestamp": timestamp
+            }
+            self.interactions.append(log_entry)
+        
+        return request_id
+    
+    async def log_llm_response_async(self, interaction_id: str, agent_id: str, model: str, 
+                                   provider: str, request_type: str, prompt: str, response: str,
+                                   duration: float, context: Optional[Dict[str, Any]] = None,
+                                   token_usage: Optional[Dict[str, int]] = None,
+                                   temperature: Optional[float] = None, max_tokens: Optional[int] = None,
+                                   error: Optional[str] = None) -> None:
+        """Async version of log_llm_response."""
+        timestamp = datetime.now().isoformat()
+        
+        async with self._async_lock:
+            log_entry = {
+                "id": str(uuid.uuid4()),
+                "interaction_id": interaction_id,
+                "agent_id": agent_id,
+                "type": "response",
+                "model": model,
+                "provider": provider,
+                "request_type": request_type,
+                "prompt": prompt,
+                "response": response,
+                "duration": duration,
+                "context": context,
+                "token_usage": token_usage,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "error": error,
+                "timestamp": timestamp
+            }
+            self.interactions.append(log_entry)
 
 # Global LLM logger instance
 llm_logger = LLMLogger()

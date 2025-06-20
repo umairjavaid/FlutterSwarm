@@ -246,11 +246,16 @@ class SharedState:
             self._max_collaborations = 5
         self._max_activity_events = 1000  # Maximum activity events to keep in buffer
         
-    async def _get_async_lock(self):
-        """Get or create async lock for async operations."""
-        if self._async_lock is None:
-            self._async_lock = asyncio.Lock()
-        return self._async_lock
+        # Async locks and state versioning
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._state_versions: Dict[str, List[Dict[str, Any]]] = {}
+        self._version_counter = 0
+    
+    async def _get_async_lock(self, lock_name: str = "default") -> asyncio.Lock:
+        """Get or create an async lock with the given name."""
+        if lock_name not in self._locks:
+            self._locks[lock_name] = asyncio.Lock()
+        return self._locks[lock_name]
         
     def register_agent(self, agent_id: str, capabilities: List[str], overwrite: bool = False) -> None:
         """Register a new agent with the shared state."""
@@ -1387,6 +1392,94 @@ class SharedState:
         async with async_lock:
             # Call the synchronous version which has all the logic
             self.broadcast_agent_activity(event)
+
+    async def update_project_async(self, project_id: str, **kwargs) -> None:
+        """Thread-safe async version of update_project."""
+        lock = await self._get_async_lock(f"project_{project_id}")
+        async with lock:
+            # Store the previous state for versioning
+            current_state = self.get_project_state(project_id)
+            if current_state:
+                if project_id not in self._state_versions:
+                    self._state_versions[project_id] = []
+                self._state_versions[project_id].append(current_state.copy())
+                if len(self._state_versions[project_id]) > 10:  # Keep last 10 versions
+                    self._state_versions[project_id].pop(0)
+            
+            # Update the project state
+            self.update_project(project_id, **kwargs)
+            self._version_counter += 1
+    
+    def rollback_state(self, project_id: str, version_index: int = -1) -> bool:
+        """Rollback to a previous state version."""
+        if project_id in self._state_versions and self._state_versions[project_id]:
+            try:
+                previous_state = self._state_versions[project_id][version_index]
+                # Replace current state with previous state
+                self.update_project(project_id, **previous_state)
+                return True
+            except IndexError:
+                return False
+        return False
+    
+    def validate_state_update(self, update_data: Dict[str, Any]) -> bool:
+        """Validate state update data before applying."""
+        # Basic validation - could be expanded based on specific requirements
+        if not isinstance(update_data, dict):
+            return False
+            
+        # Check for required fields or other validation logic
+        required_fields = ["project_id"]
+        for field in required_fields:
+            if field not in update_data:
+                return False
+                
+        return True
+    
+    async def persist_state(self, filepath: str = "state_backup.json") -> bool:
+        """Persist current state to a file."""
+        import json
+        try:
+            lock = await self._get_async_lock("persist_state")
+            async with lock:
+                # Get all the data to persist
+                data = {
+                    "projects": self._projects,
+                    "agents": self._agents,
+                    "version": self._version_counter,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Write to file
+                with open(filepath, 'w') as f:
+                    json.dump(data, f)
+                return True
+        except Exception as e:
+            print(f"Error persisting state: {e}")
+            return False
+    
+    async def load_state(self, filepath: str = "state_backup.json") -> bool:
+        """Load state from a file."""
+        import json
+        import os
+        
+        if not os.path.exists(filepath):
+            return False
+            
+        try:
+            lock = await self._get_async_lock("load_state")
+            async with lock:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                
+                # Restore state
+                self._projects = data.get("projects", {})
+                self._agents = data.get("agents", {})
+                self._version_counter = data.get("version", 0)
+                return True
+        except Exception as e:
+            print(f"Error loading state: {e}")
+            return False
 
 # Global shared state instance
 shared_state = SharedState()

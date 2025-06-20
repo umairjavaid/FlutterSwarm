@@ -21,16 +21,60 @@ class DevOpsAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute DevOps tasks."""
-        if "setup_ci_cd" in task_description:
-            return await self._setup_ci_cd_pipeline(task_data)
-        elif "configure_deployment" in task_description:
-            return await self._configure_deployment(task_data)
-        elif "setup_monitoring" in task_description:
-            return await self._setup_monitoring(task_data)
-        elif "create_build_scripts" in task_description:
-            return await self._create_build_scripts(task_data)
-        else:
-            return await self._handle_general_devops_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand DevOps requirements
+            analysis = await self.think(f"Analyze this DevOps task: {task_description}", {
+                "task_data": task_data,
+                "platforms": self.platforms,
+                "ci_systems": self.ci_systems,
+                "deployment_targets": self.deployment_targets
+            })
+            
+            self.logger.info(f"🚀 DevOps Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "setup_ci_cd" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_ci_cd_pipeline(task_data)
+                )
+            elif "configure_deployment" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._configure_deployment(task_data)
+                )
+            elif "setup_monitoring" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_monitoring(task_data)
+                )
+            elif "create_build_scripts" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._create_build_scripts(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_devops_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "platforms_considered": self.platforms,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing DevOps task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

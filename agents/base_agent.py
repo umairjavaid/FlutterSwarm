@@ -922,21 +922,8 @@ Please contact the system administrator if this problem continues.
                 self.logger.warning(f"⚠️ Failed to create directory {directory}: {str(e)}")
                 # Continue anyway, the write operation will fail if necessary
     
-    async def safe_execute_with_retry(self, operation_func, max_retries=3, base_delay=1):
-        """
-        Execute an async operation with exponential backoff retry.
-        
-        Args:
-            operation_func: Async function to execute
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay for exponential backoff (in seconds)
-            
-        Returns:
-            Result of the operation
-            
-        Raises:
-            Exception: If all retry attempts fail
-        """
+    async def safe_execute_with_retry(self, operation_func, max_retries=3):
+        """Execute operation with exponential backoff retry."""
         last_exception = None
         
         for attempt in range(max_retries):
@@ -951,7 +938,7 @@ Please contact the system administrator if this problem continues.
                     raise
                     
                 # Calculate wait time with exponential backoff and small jitter
-                wait_time = (base_delay * (2 ** attempt)) + (random.random() * 0.5)
+                wait_time = (2 ** attempt) + (random.random() * 0.5)
                 self.logger.warning(f"Retry {attempt + 1}/{max_retries} after error: {str(e)}. Waiting {wait_time:.2f}s")
                 
                 # Wait before retrying
@@ -1381,6 +1368,19 @@ class AgentToolbox:
     async def execute(self, tool_name, **kwargs):
         """Execute a tool with the given parameters."""
         return await self.tool_manager.execute_tool(tool_name, **kwargs)
+        
+    def list_available_tools(self):
+        """List tools available to this agent."""
+        # First try agent-specific method if available
+        if hasattr(self.tool_manager, 'get_tools_for_agent'):
+            return self.tool_manager.get_tools_for_agent(self.agent_id)
+        # Fallback to general list
+        return self.tool_manager.list_tools()
+        
+    def has_tool(self, tool_name):
+        """Check if a specific tool is available to this agent."""
+        available_tools = self.list_available_tools()
+        return tool_name in available_tools
         
     def list_available_tools(self):
         """List tools available to this agent."""

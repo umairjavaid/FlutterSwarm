@@ -25,16 +25,60 @@ class ArchitectureAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute architecture-related tasks."""
-        if "design_flutter_architecture" in task_description:
-            return await self._design_flutter_architecture(task_data)
-        elif "review_architecture" in task_description:
-            return await self._review_architecture(task_data)
-        elif "select_state_management" in task_description:
-            return await self._select_state_management(task_data)
-        elif "design_navigation" in task_description:
-            return await self._design_navigation(task_data)
-        else:
-            return await self._handle_general_architecture_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand architecture requirements
+            analysis = await self.think(f"Analyze this architecture task: {task_description}", {
+                "task_data": task_data,
+                "design_patterns": self.design_patterns,
+                "architecture_styles": self.architecture_styles,
+                "project_id": task_data.get("project_id", "")
+            })
+            
+            self.logger.info(f"🏛️ Architecture Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "design_flutter_architecture" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._design_flutter_architecture(task_data)
+                )
+            elif "review_architecture" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._review_architecture(task_data)
+                )
+            elif "select_state_management" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._select_state_management(task_data)
+                )
+            elif "design_navigation" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._design_navigation(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_architecture_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "patterns_considered": self.design_patterns,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing architecture task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

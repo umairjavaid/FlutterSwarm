@@ -29,28 +29,82 @@ class ImplementationAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute implementation tasks."""
-        if "implement_feature" in task_description:
-            return await self._implement_feature(task_data)
-        elif "generate_models" in task_description:
-            return await self._generate_models(task_data)
-        elif "create_screens" in task_description:
-            return await self._create_screens(task_data)
-        elif "implement_state_management" in task_description:
-            return await self._implement_state_management(task_data)
-        elif "setup_project_structure" in task_description:
-            return await self._setup_project_structure(task_data)
-        elif "fix_implementation_issue" in task_description:
-            return await self._fix_implementation_issue(task_data)
-        elif "implement_incremental_features" in task_description:
-            return await self._implement_incremental_features(task_data)
-        elif "validate_feature" in task_description:
-            return await self._validate_feature(task_data)
-        elif "rollback_feature" in task_description:
-            return await self._rollback_feature(task_data)
-        elif "create_flutter_project" in task_description:
-            return await self._setup_project_structure(task_data)
-        else:
-            return await self._handle_general_implementation(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand implementation requirements
+            analysis = await self.think(f"Analyze this implementation task: {task_description}", {
+                "task_data": task_data,
+                "project_id": task_data.get("project_id", ""),
+                "current_files": task_data.get("current_files", [])
+            })
+            
+            self.logger.info(f"🛠️ Implementation Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "implement_feature" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_feature(task_data)
+                )
+            elif "generate_models" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._generate_models(task_data)
+                )
+            elif "create_screens" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._create_screens(task_data)
+                )
+            elif "implement_state_management" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_state_management(task_data)
+                )
+            elif "setup_project_structure" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_project_structure(task_data)
+                )
+            elif "fix_implementation_issue" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._fix_implementation_issue(task_data)
+                )
+            elif "implement_incremental_features" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_incremental_features(task_data)
+                )
+            elif "validate_feature" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._validate_feature(task_data)
+                )
+            elif "rollback_feature" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._rollback_feature(task_data)
+                )
+            elif "create_flutter_project" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_project_structure(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_implementation(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing implementation task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

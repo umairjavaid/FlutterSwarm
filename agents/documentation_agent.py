@@ -22,16 +22,59 @@ class DocumentationAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute documentation tasks."""
-        if "generate_readme" in task_description:
-            return await self._generate_readme(task_data)
-        elif "create_api_docs" in task_description:
-            return await self._create_api_documentation(task_data)
-        elif "generate_user_guide" in task_description:
-            return await self._generate_user_guide(task_data)
-        elif "document_architecture" in task_description:
-            return await self._document_architecture(task_data)
-        else:
-            return await self._handle_general_documentation_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand documentation requirements
+            analysis = await self.think(f"Analyze this documentation task: {task_description}", {
+                "task_data": task_data,
+                "doc_types": self.doc_types,
+                "project_id": task_data.get("project_id", "")
+            })
+            
+            self.logger.info(f"📝 Documentation Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "generate_readme" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._generate_readme(task_data)
+                )
+            elif "create_api_docs" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._create_api_documentation(task_data)
+                )
+            elif "generate_user_guide" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._generate_user_guide(task_data)
+                )
+            elif "document_architecture" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._document_architecture(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_documentation_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "doc_types_considered": self.doc_types,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing documentation task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

@@ -28,16 +28,58 @@ class SecurityAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute security tasks."""
-        if "security_audit" in task_description:
-            return await self._perform_security_audit(task_data)
-        elif "implement_authentication" in task_description:
-            return await self._implement_authentication(task_data)
-        elif "secure_storage" in task_description:
-            return await self._implement_secure_storage(task_data)
-        elif "network_security" in task_description:
-            return await self._implement_network_security(task_data)
-        else:
-            return await self._handle_general_security_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand requirements
+            analysis = await self.think(f"Analyze this security task: {task_description}", {
+                "task_data": task_data,
+                "security_domains": self.security_domains,
+                "vulnerability_types": self.vulnerability_types
+            })
+            
+            self.logger.info(f"🔒 Security Agent executing task: {task_description}")
+            
+            # Route task to appropriate handler
+            result = None
+            if "security_audit" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._perform_security_audit(task_data)
+                )
+            elif "implement_authentication" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_authentication(task_data)
+                )
+            elif "secure_storage" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_secure_storage(task_data)
+                )
+            elif "network_security" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._implement_network_security(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_security_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing security task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

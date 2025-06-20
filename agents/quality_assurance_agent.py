@@ -56,16 +56,58 @@ class QualityAssuranceAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute QA tasks."""
-        if "validate_project" in task_description:
-            return await self._validate_entire_project(task_data)
-        elif "review_code_quality" in task_description:
-            return await self._review_code_quality(task_data)
-        elif "check_consistency" in task_description:
-            return await self._check_project_consistency(task_data)
-        elif "fix_issues" in task_description:
-            return await self._coordinate_issue_fixes(task_data)
-        else:
-            return await self._handle_general_qa_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand requirements and quality criteria
+            analysis = await self.think(f"Analyze this quality assurance task: {task_description}", {
+                "task_data": task_data,
+                "code_quality_rules": self.code_quality_rules,
+                "file_patterns": self.file_patterns
+            })
+            
+            self.logger.info(f"🧪 QA Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "validate_project" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._validate_entire_project(task_data)
+                )
+            elif "review_code_quality" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._review_code_quality(task_data)
+                )
+            elif "check_consistency" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._check_project_consistency(task_data)
+                )
+            elif "fix_issues" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._coordinate_issue_fixes(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_qa_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing QA task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

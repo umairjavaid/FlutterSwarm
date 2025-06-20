@@ -62,18 +62,64 @@ class E2ETestingAgent(BaseAgent):
     
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute E2E testing tasks."""
-        if "run_comprehensive_e2e_tests" in task_description:
-            return await self._run_comprehensive_e2e_tests(task_data)
-        elif "test_platform" in task_description:
-            return await self._test_specific_platform(task_data)
-        elif "setup_test_environment" in task_description:
-            return await self._setup_test_environment(task_data)
-        elif "validate_app_store_compliance" in task_description:
-            return await self._validate_app_store_compliance(task_data)
-        elif "generate_test_report" in task_description:
-            return await self._generate_test_report(task_data)
-        else:
-            return await self._handle_general_e2e_task(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand testing requirements
+            analysis = await self.think(f"Analyze this E2E testing task: {task_description}", {
+                "task_data": task_data,
+                "environments": self.environments,
+                "test_categories": self.test_categories,
+                "platform_configs": self.platform_configs
+            })
+            
+            self.logger.info(f"🧪 E2E Testing Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "run_comprehensive_e2e_tests" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._run_comprehensive_e2e_tests(task_data)
+                )
+            elif "test_platform" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._test_specific_platform(task_data)
+                )
+            elif "setup_test_environment" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._setup_test_environment(task_data)
+                )
+            elif "validate_app_store_compliance" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._validate_app_store_compliance(task_data)
+                )
+            elif "generate_test_report" in task_description:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._generate_test_report(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_e2e_task(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "environments_considered": self.environments,
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing E2E testing task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from datetime import datetime
 
 class OrchestratorAgent(BaseAgent):
     """
@@ -27,16 +28,60 @@ class OrchestratorAgent(BaseAgent):
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute orchestration tasks."""
-        if "create_project" in task_description.lower():
-            return await self._create_flutter_project(task_data)
-        elif "initiate_project_workflow" in task_description.lower():
-            return await self._initiate_project_workflow_task(task_data)
-        elif "coordinate_phase" in task_description.lower():
-            return await self._coordinate_phase(task_data)
-        elif "assign_task" in task_description.lower():
-            return await self._assign_task_to_agent(task_data)
-        else:
-            return await self._handle_general_coordination(task_description, task_data)
+        try:
+            # Analyze task using LLM to understand orchestration requirements
+            analysis = await self.think(f"Analyze this orchestration task: {task_description}", {
+                "task_data": task_data,
+                "workflow_phases": self.workflow_phases,
+                "active_tasks": self.active_tasks,
+                "project_timeline": self.project_timeline
+            })
+            
+            self.logger.info(f"🎯 Orchestrator Agent executing task: {task_description}")
+            
+            # Execute appropriate task with retry mechanism
+            result = None
+            if "create_project" in task_description.lower():
+                result = await self.safe_execute_with_retry(
+                    lambda: self._create_flutter_project(task_data)
+                )
+            elif "initiate_project_workflow" in task_description.lower():
+                result = await self.safe_execute_with_retry(
+                    lambda: self._initiate_project_workflow_task(task_data)
+                )
+            elif "coordinate_phase" in task_description.lower():
+                result = await self.safe_execute_with_retry(
+                    lambda: self._coordinate_phase(task_data)
+                )
+            elif "assign_task" in task_description.lower():
+                result = await self.safe_execute_with_retry(
+                    lambda: self._assign_task_to_agent(task_data)
+                )
+            else:
+                result = await self.safe_execute_with_retry(
+                    lambda: self._handle_general_coordination(task_description, task_data)
+                )
+            
+            # Add execution metadata
+            result.update({
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id,
+                "current_phase": shared_state.get_project_state().current_phase if shared_state.get_project_state() else "unknown",
+                "task_analysis": analysis[:200] + "..." if len(analysis) > 200 else analysis
+            })
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error executing orchestration task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "task_type": task_description,
+                "execution_time": datetime.now().isoformat(),
+                "agent": self.agent_id
+            }
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""
