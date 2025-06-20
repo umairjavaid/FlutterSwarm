@@ -197,8 +197,14 @@ class SharedState:
     """
     
     def __init__(self):
-        self._config = get_config()
-        self._lock = threading.RLock()
+        try:
+            self._config = get_config()
+        except Exception as e:
+            print(f"Warning: Failed to load config: {e}")
+            self._config = None
+            
+        self._lock = threading.RLock()  # For synchronous operations
+        self._async_lock = None  # Will be initialized when needed for async operations
         self._agents: Dict[str, AgentState] = {}
         self._projects: Dict[str, ProjectState] = {}
         self._messages: List[AgentMessage] = []
@@ -225,15 +231,39 @@ class SharedState:
         self._activity_event_buffer: List[AgentActivityEvent] = []
         self._broadcast_enabled = True
         
-        # Configure limits from config
-        self._max_messages = self._config.get('communication.messaging.queue_size', 500)
-        self._message_ttl = self._config.get('communication.messaging.message_ttl', 3600)
-        self._max_collaborations = self._config.get('communication.collaboration.max_concurrent_collaborations', 5)
+        # Configure limits from config with robust error handling
+        try:
+            if self._config:
+                self._max_messages = self._config.get('communication.messaging.queue_size', 500)
+                self._message_ttl = self._config.get('communication.messaging.message_ttl', 3600)
+                self._max_collaborations = self._config.get('communication.collaboration.max_concurrent_collaborations', 5)
+            else:
+                raise Exception("Config not available")
+        except Exception:
+            # Use defaults if config access fails
+            self._max_messages = 500
+            self._message_ttl = 3600
+            self._max_collaborations = 5
         self._max_activity_events = 1000  # Maximum activity events to keep in buffer
         
-    def register_agent(self, agent_id: str, capabilities: List[str]) -> None:
+    async def _get_async_lock(self):
+        """Get or create async lock for async operations."""
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        return self._async_lock
+        
+    def register_agent(self, agent_id: str, capabilities: List[str], overwrite: bool = False) -> None:
         """Register a new agent with the shared state."""
+        if not agent_id or not isinstance(agent_id, str):
+            raise ValueError("Agent ID must be a non-empty string")
+        if not isinstance(capabilities, list):
+            raise ValueError("Capabilities must be a list")
+            
         with self._lock:
+            if agent_id in self._agents and not overwrite:
+                print(f"Warning: Agent {agent_id} already registered. Use overwrite=True to replace.")
+                return
+                
             self._agents[agent_id] = AgentState(
                 agent_id=agent_id,
                 status=AgentStatus.IDLE,
@@ -280,37 +310,55 @@ class SharedState:
     
     def create_project(self, name: str, description: str, requirements: List[str]) -> str:
         """Create a new project and return its ID."""
+        if not name or not isinstance(name, str):
+            raise ValueError("Project name must be a non-empty string")
+        if not isinstance(description, str):
+            raise ValueError("Project description must be a string")
+        if not isinstance(requirements, list):
+            raise ValueError("Requirements must be a list")
+            
         with self._lock:
             project_id = str(uuid.uuid4())
-            self._projects[project_id] = ProjectState(
-                project_id=project_id,
-                name=name,
-                description=description,
-                requirements=requirements,
-                current_phase="planning",
-                progress=0.0,
-                files_created={},
-                architecture_decisions=[],
-                test_results={},
-                security_findings=[],
-                performance_metrics={},
-                documentation={},
-                deployment_config={}
-            )
-            self._current_project_id = project_id
-            
-            # Notify all agents about new project
-            self._broadcast_message(
-                from_agent="system",
-                message_type=MessageType.STATE_SYNC,
-                content={
-                    "event": "project_created",
-                    "project_id": project_id,
-                    "project": asdict(self._projects[project_id])
-                }
-            )
-            
-            return project_id
+            try:
+                self._projects[project_id] = ProjectState(
+                    project_id=project_id,
+                    name=name,
+                    description=description,
+                    requirements=requirements,
+                    current_phase="planning",
+                    progress=0.0,
+                    files_created={},
+                    architecture_decisions=[],
+                    test_results={},
+                    security_findings=[],
+                    performance_metrics={},
+                    documentation={},
+                    deployment_config={}
+                )
+                self._current_project_id = project_id
+                
+                # Notify all agents about new project
+                try:
+                    self._broadcast_message(
+                        from_agent="system",
+                        message_type=MessageType.STATE_SYNC,
+                        content={
+                            "event": "project_created",
+                            "project_id": project_id,
+                            "project": asdict(self._projects[project_id])
+                        }
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to broadcast project creation: {e}")
+                
+                return project_id
+            except Exception as e:
+                # Cleanup on failure
+                if project_id in self._projects:
+                    del self._projects[project_id]
+                if self._current_project_id == project_id:
+                    self._current_project_id = None
+                raise RuntimeError(f"Failed to create project: {e}") from e
     
     def create_project_with_id(self, project_id: str, name: str, description: str, requirements: List[str]) -> None:
         """Create a new project with a specific ID."""
@@ -391,6 +439,15 @@ class SharedState:
                     message_type: MessageType, content: Dict[str, Any],
                     priority: int = 1) -> str:
         """Send a message to specific agent or broadcast."""
+        if not from_agent or not isinstance(from_agent, str):
+            raise ValueError("from_agent must be a non-empty string")
+        if not isinstance(message_type, MessageType):
+            raise ValueError("message_type must be a MessageType enum value")
+        if not isinstance(content, dict):
+            raise ValueError("content must be a dictionary")
+        if not isinstance(priority, int) or priority < 1 or priority > 5:
+            raise ValueError("priority must be an integer between 1 and 5")
+            
         message = AgentMessage(
             id=str(uuid.uuid4()),
             from_agent=from_agent,
@@ -402,29 +459,38 @@ class SharedState:
         )
         
         with self._lock:
-            self._messages.append(message)
-            
-            # Clean up old messages if we exceed the limit
-            if len(self._messages) > self._max_messages:
-                self._messages = self._messages[-self._max_messages:]
-            
-            if to_agent:
-                # Direct message
-                if to_agent in self._message_queue:
-                    self._message_queue[to_agent].append(message)
-                    # Clean up agent-specific queue
-                    if len(self._message_queue[to_agent]) > self._max_messages:
-                        self._message_queue[to_agent] = self._message_queue[to_agent][-self._max_messages:]
-            else:
-                # Broadcast to all agents except sender
-                for agent_id in self._message_queue:
-                    if agent_id != from_agent:
-                        self._message_queue[agent_id].append(message)
+            try:
+                self._messages.append(message)
+                
+                # Clean up old messages if we exceed the limit
+                if len(self._messages) > self._max_messages:
+                    self._messages = self._messages[-self._max_messages:]
+                
+                if to_agent:
+                    # Direct message
+                    if to_agent in self._message_queue:
+                        self._message_queue[to_agent].append(message)
                         # Clean up agent-specific queue
-                        if len(self._message_queue[agent_id]) > self._max_messages:
-                            self._message_queue[agent_id] = self._message_queue[agent_id][-self._max_messages:]
-        
-        return message.id
+                        if len(self._message_queue[to_agent]) > self._max_messages:
+                            self._message_queue[to_agent] = self._message_queue[to_agent][-self._max_messages:]
+                    else:
+                        print(f"Warning: Target agent {to_agent} not registered, message not delivered")
+                else:
+                    # Broadcast to all agents except sender
+                    for agent_id in self._message_queue:
+                        if agent_id != from_agent:
+                            try:
+                                self._message_queue[agent_id].append(message)
+                                # Clean up agent-specific queue
+                                if len(self._message_queue[agent_id]) > self._max_messages:
+                                    self._message_queue[agent_id] = self._message_queue[agent_id][-self._max_messages:]
+                            except Exception as e:
+                                print(f"Warning: Failed to deliver message to agent {agent_id}: {e}")
+                
+                return message.id
+            except Exception as e:
+                print(f"Error sending message: {e}")
+                raise RuntimeError(f"Failed to send message: {e}") from e
     
     def get_messages(self, agent_id: str, mark_read: bool = True, limit: int = None) -> List[AgentMessage]:
         """Get messages for a specific agent."""
@@ -790,29 +856,42 @@ class SharedState:
         if not self._broadcast_enabled:
             return
             
-        with self._lock:
-            # Add to activity stream
-            if event.agent_id not in self._awareness_state.agent_activity_streams:
-                self._awareness_state.agent_activity_streams[event.agent_id] = []
+        if not isinstance(event, AgentActivityEvent):
+            print("Warning: Invalid event type passed to broadcast_agent_activity")
+            return
             
-            self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
-            
-            # Keep only recent activity (limit buffer size)
-            max_events_per_agent = 100
-            if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
-                self._awareness_state.agent_activity_streams[event.agent_id] = \
-                    self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
-            
-            # Add to global buffer
-            self._activity_event_buffer.append(event)
-            if len(self._activity_event_buffer) > self._max_activity_events:
-                self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
-            
-            # Broadcast to subscribed agents
-            self._broadcast_real_time_update(event)
-            
-            # Check for proactive collaboration opportunities
-            self._detect_collaboration_opportunities(event)
+        try:
+            with self._lock:
+                # Add to activity stream
+                if event.agent_id not in self._awareness_state.agent_activity_streams:
+                    self._awareness_state.agent_activity_streams[event.agent_id] = []
+                
+                self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
+                
+                # Keep only recent activity (limit buffer size)
+                max_events_per_agent = 100
+                if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
+                    self._awareness_state.agent_activity_streams[event.agent_id] = \
+                        self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
+                
+                # Add to global buffer
+                self._activity_event_buffer.append(event)
+                if len(self._activity_event_buffer) > self._max_activity_events:
+                    self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
+                
+                # Broadcast to subscribed agents
+                try:
+                    self._broadcast_real_time_update(event)
+                except Exception as e:
+                    print(f"Warning: Failed to broadcast real-time update: {e}")
+                
+                # Check for proactive collaboration opportunities
+                try:
+                    self._detect_collaboration_opportunities(event)
+                except Exception as e:
+                    print(f"Warning: Failed to detect collaboration opportunities: {e}")
+        except Exception as e:
+            print(f"Error broadcasting agent activity: {e}")
     
     def _detect_collaboration_opportunities(self, event: AgentActivityEvent) -> None:
         """Detect proactive collaboration opportunities based on activity events."""
@@ -1264,6 +1343,50 @@ class SharedState:
                     "timestamp": datetime.now().isoformat()
                 }
             )
+    
+    def broadcast_project_status(self, project_id: str) -> None:
+        """Broadcast project status to all agents."""
+        try:
+            project = self.get_project_state(project_id)
+            if not project:
+                print(f"Warning: Project {project_id} not found for status broadcast")
+                return
+                
+            self._broadcast_message(
+                from_agent="system",
+                message_type=MessageType.STATE_SYNC,
+                content={
+                    "event": "project_status_broadcast",
+                    "project_id": project_id,
+                    "project": asdict(project),
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+        except Exception as e:
+            print(f"Error broadcasting project status: {e}")
+
+    async def async_send_message(self, from_agent: str, to_agent: Optional[str], 
+                                message_type: MessageType, content: Dict[str, Any],
+                                priority: int = 1) -> str:
+        """Async version of send_message for use in async contexts."""
+        # For async safety, we can use the regular send_message since it's thread-safe
+        # but we provide this method for consistency in async codebases
+        return self.send_message(from_agent, to_agent, message_type, content, priority)
+    
+    async def async_update_agent_status(self, agent_id: str, status: AgentStatus, 
+                                       current_task: Optional[str] = None, 
+                                       progress: float = None,
+                                       metadata: Dict[str, Any] = None) -> None:
+        """Async version of update_agent_status."""
+        self.update_agent_status(agent_id, status, current_task, progress, metadata)
+    
+    async def async_broadcast_agent_activity(self, event: AgentActivityEvent) -> None:
+        """Async version of broadcast_agent_activity."""
+        # Get the async lock for thread safety in async contexts
+        async_lock = await self._get_async_lock()
+        async with async_lock:
+            # Call the synchronous version which has all the logic
+            self.broadcast_agent_activity(event)
 
 # Global shared state instance
 shared_state = SharedState()

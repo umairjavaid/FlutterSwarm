@@ -6,6 +6,7 @@ All specialized agents inherit from this base class.
 import asyncio
 import yaml
 import time
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -45,6 +46,7 @@ class BaseAgent(ABC):
         self.is_running = False
         self.current_task = None
         self._monitoring_task = None
+        self._async_lock = asyncio.Lock()  # Use async lock instead of threading lock
         
         # Register with shared state
         shared_state.register_agent(
@@ -80,37 +82,42 @@ class BaseAgent(ABC):
     
     def _initialize_llm(self) -> ChatAnthropic:
         """Initialize the LangChain LLM with agent-specific configuration."""
-        # Get LLM configuration (primary by default, with agent-specific overrides)
-        llm_config = self._config_manager.get_llm_config()
-        agent_llm_config = self.agent_config.get('llm', {})
-        
-        # Merge configurations
-        final_config = {**llm_config, **agent_llm_config}
-        
-        # Get API key from environment
-        api_key_env = final_config.get('api_key_env', 'ANTHROPIC_API_KEY')
-        api_key = final_config.get('api_key') or os.getenv(api_key_env)
-        
-        if not api_key:
-            # Try fallback configuration
-            fallback_config = self._config_manager.get_llm_config(fallback=True)
-            fallback_api_key_env = fallback_config.get('api_key_env', 'OPENAI_API_KEY')
-            api_key = os.getenv(fallback_api_key_env)
+        try:
+            # Get LLM configuration (primary by default, with agent-specific overrides)
+            llm_config = self._config_manager.get_llm_config()
+            agent_llm_config = self.agent_config.get('llm', {})
+            
+            # Merge configurations
+            final_config = {**llm_config, **agent_llm_config}
+            
+            # Get API key from environment
+            api_key_env = final_config.get('api_key_env', 'ANTHROPIC_API_KEY')
+            api_key = final_config.get('api_key') or os.getenv(api_key_env)
             
             if not api_key:
-                raise ValueError(f"No API key found in environment variables: {api_key_env}, {fallback_api_key_env}")
-        
-        # Get default model from config
-        default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
-        default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
-        default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
-        
-        return ChatAnthropic(
-            model=final_config.get("model", default_model),
-            temperature=final_config.get("temperature", default_temperature),
-            max_tokens=final_config.get("max_tokens", default_max_tokens),
-            anthropic_api_key=api_key
-        )
+                # Try fallback configuration
+                fallback_config = self._config_manager.get_llm_config(fallback=True)
+                fallback_api_key_env = fallback_config.get('api_key_env', 'OPENAI_API_KEY')
+                api_key = os.getenv(fallback_api_key_env)
+                
+                if not api_key:
+                    raise ValueError(f"No API key found in environment variables: {api_key_env}, {fallback_api_key_env}")
+            
+            # Get default model from config
+            default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
+            default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
+            default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
+            
+            return ChatAnthropic(
+                model=final_config.get("model", default_model),
+                temperature=final_config.get("temperature", default_temperature),
+                max_tokens=final_config.get("max_tokens", default_max_tokens),
+                anthropic_api_key=api_key
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to initialize LLM: {e}")
+            # Return a mock LLM or raise a more descriptive error
+            raise ValueError(f"LLM initialization failed: {e}. Please check your API key configuration.")
     
     def _log_status_change(self, new_status: AgentStatus, task: Optional[str] = None):
         """Log status change to monitoring system."""
@@ -124,30 +131,34 @@ class BaseAgent(ABC):
             )
             self._last_status = new_status
         except ImportError:
-            # Monitoring not available, skip
-            pass
+            # Monitoring not available, skip silently
+            self.logger.debug("Monitoring system not available")
         except Exception as e:
             self.logger.warning(f"Failed to log status change: {e}")
     
-    def _update_status(self, status: AgentStatus, task: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+    async def _update_status(self, status: AgentStatus, task: Optional[str] = None, 
+                           metadata: Optional[Dict[str, Any]] = None):
         """Update agent status and log to monitoring."""
-        # Update shared state
-        shared_state.update_agent_status(self.agent_id, status, task, metadata)
-        
-        # Log to monitoring system
-        self._log_status_change(status, task)
-        
-        # Broadcast status change as real-time activity
-        self.broadcast_activity(
-            activity_type="status_change",
-            activity_details={
-                "new_status": status.value,
-                "task": task,
-                "metadata": metadata or {}
-            },
-            impact_level="low" if status == AgentStatus.IDLE else "medium",
-            collaboration_relevance=["all"]  # All agents might be interested in status changes
-        )
+        try:
+            # Update shared state
+            shared_state.update_agent_status(self.agent_id, status, task, metadata=metadata)
+            
+            # Log to monitoring system
+            self._log_status_change(status, task)
+            
+            # Broadcast status change as real-time activity
+            await self.broadcast_activity(
+                activity_type="status_change",
+                activity_details={
+                    "new_status": status.value,
+                    "task": task,
+                    "metadata": metadata or {}
+                },
+                impact_level="low" if status == AgentStatus.IDLE else "medium",
+                collaboration_relevance=["all"]  # All agents might be interested in status changes
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to update status: {e}")
     
     async def start(self) -> None:
         """
@@ -476,24 +487,27 @@ class BaseAgent(ABC):
             self._monitoring_enabled = True
             self.start_continuous_monitoring()
     
-    def broadcast_activity(self, activity_type: str, activity_details: Dict[str, Any], 
+    async def broadcast_activity(self, activity_type: str, activity_details: Dict[str, Any], 
                           impact_level: str = "medium", 
                           collaboration_relevance: List[str] = None) -> None:
         """Broadcast an activity event to other agents."""
-        if collaboration_relevance is None:
-            collaboration_relevance = []
-        
-        event = AgentActivityEvent(
-            agent_id=self.agent_id,
-            activity_type=activity_type,
-            activity_details=activity_details,
-            timestamp=datetime.now(),
-            project_id=shared_state.get_current_project_id(),
-            impact_level=impact_level,
-            collaboration_relevance=collaboration_relevance
-        )
-        
-        shared_state.broadcast_agent_activity(event)
+        try:
+            if collaboration_relevance is None:
+                collaboration_relevance = []
+            
+            event = AgentActivityEvent(
+                agent_id=self.agent_id,
+                activity_type=activity_type,
+                activity_details=activity_details,
+                timestamp=datetime.now(),
+                project_id=shared_state.get_current_project_id(),
+                impact_level=impact_level,
+                collaboration_relevance=collaboration_relevance
+            )
+            
+            shared_state.broadcast_agent_activity(event)
+        except Exception as e:
+            self.logger.error(f"Failed to broadcast activity: {e}")
     
     def handle_real_time_update(self, message: AgentMessage) -> None:
         """Handle real-time status updates from other agents."""

@@ -4,16 +4,27 @@ Testing Agent - Creates unit, widget, and integration tests for Flutter applicat
 
 import asyncio
 import os
+import threading
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 
+# Import Timer safely
+try:
+    from threading import Timer
+except ImportError:
+    Timer = None
+from tools import ToolResult, ToolStatus
+
 class TestingAgent(BaseAgent):
     """
     The Testing Agent specializes in creating comprehensive test suites.
     It generates unit, widget, and integration tests for Flutter applications.
+    
+    Note: This is not a pytest test class - it's an agent class.
     """
+    __test__ = False  # Tell pytest this is not a test class
     
     def __init__(self):
         super().__init__("testing")
@@ -66,7 +77,7 @@ class TestingAgent(BaseAgent):
         file_analyses = []
         for file_path in target_files:
             read_result = await self.read_file(file_path)
-            if read_result.status.value == "success":
+            if read_result.status == ToolStatus.SUCCESS:
                 analysis = await self._analyze_code_for_testing(read_result.output, file_path)
                 file_analyses.append(analysis)
         
@@ -87,7 +98,7 @@ class TestingAgent(BaseAgent):
             # Write test file
             write_result = await self.write_file(test_file_path, test_code)
             
-            if write_result.status.value == "success":
+            if write_result.status == ToolStatus.SUCCESS:
                 test_files_created.append(test_file_path)
                 self.logger.info(f"✅ Created unit test: {test_file_path}")
             else:
@@ -104,7 +115,7 @@ class TestingAgent(BaseAgent):
             "target_files": target_files,
             "test_files_created": test_files_created,
             "test_execution_result": test_result.data if test_result.data else {},
-            "tests_passing": test_result.status.value == "success"
+            "tests_passing": test_result.status == ToolStatus.SUCCESS
         }
     
     async def _create_widget_tests(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,7 +130,7 @@ class TestingAgent(BaseAgent):
         for widget_file in widget_files:
             # Read the widget file
             read_result = await self.read_file(widget_file)
-            if read_result.status.value != "success":
+            if read_result.status != ToolStatus.SUCCESS:
                 continue
             
             # Analyze the widget for testing
@@ -135,7 +146,7 @@ class TestingAgent(BaseAgent):
             
             write_result = await self.write_file(test_file_path, test_code)
             
-            if write_result.status.value == "success":
+            if write_result.status == ToolStatus.SUCCESS:
                 test_files_created.append(test_file_path)
                 self.logger.info(f"✅ Created widget test: {test_file_path}")
         
@@ -147,7 +158,7 @@ class TestingAgent(BaseAgent):
             "widget_files": widget_files,
             "test_files_created": test_files_created,
             "test_execution_result": test_result.data if test_result.data else {},
-            "tests_passing": test_result.status.value == "success"
+            "tests_passing": test_result.status == ToolStatus.SUCCESS
         }
     
     async def _create_integration_tests(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -173,7 +184,7 @@ class TestingAgent(BaseAgent):
             test_file_path = f"{integration_test_dir}/{scenario_name.lower()}_test.dart"
             write_result = await self.write_file(test_file_path, test_code)
             
-            if write_result.status.value == "success":
+            if write_result.status == ToolStatus.SUCCESS:
                 test_files_created.append(test_file_path)
                 self.logger.info(f"✅ Created integration test: {test_file_path}")
         
@@ -303,7 +314,7 @@ targets:
         
         # Check if already in pubspec
         pubspec_result = await self.read_file("pubspec.yaml")
-        if pubspec_result.status.value == "success":
+        if pubspec_result.status == ToolStatus.SUCCESS:
             if "integration_test" not in pubspec_result.output:
                 await self.execute_tool("flutter", operation="pub_add", packages=integration_deps, dev=True)
 

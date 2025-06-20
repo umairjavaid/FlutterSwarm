@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from tools import ToolResult, ToolStatus
 
 class ImplementationAgent(BaseAgent):
     """
@@ -18,12 +19,19 @@ class ImplementationAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("implementation")
-        self.flutter_templates = {
-            "bloc": self._get_bloc_template(),
-            "provider": self._get_provider_template(),
-            "riverpod": self._get_riverpod_template(),
-            "clean_architecture": self._get_clean_architecture_template()
-        }
+        self._flutter_templates = None  # Lazy load templates
+        
+    @property
+    def flutter_templates(self):
+        """Lazy-loaded Flutter templates."""
+        if self._flutter_templates is None:
+            self._flutter_templates = {
+                "bloc": self._get_bloc_template(),
+                "provider": self._get_provider_template(),
+                "riverpod": self._get_riverpod_template(),
+                "clean_architecture": self._get_clean_architecture_template()
+            }
+        return self._flutter_templates
         
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute implementation tasks."""
@@ -161,16 +169,15 @@ class ImplementationAgent(BaseAgent):
             """
             
             model_code = await self.think(model_prompt, {"model": model})
-            
-            # Write the model file
-            file_path = f"lib/features/{feature_name}/data/models/{model_name.lower()}_model.dart"
-            write_result = await self.write_file(file_path, model_code)
-            
-            if write_result.status.value == "success":
-                generated_files.append(file_path)
-                self.logger.info(f"✅ Generated model: {file_path}")
-            else:
-                self.logger.error(f"❌ Failed to generate model: {file_path}")
+                 # Write the model file
+        file_path = f"lib/features/{feature_name}/data/models/{model_name.lower()}_model.dart"
+        write_result = await self.write_file(file_path, model_code)
+        
+        if write_result.status == ToolStatus.SUCCESS:
+            generated_files.append(file_path)
+            self.logger.info(f"✅ Generated model: {file_path}")
+        else:
+            self.logger.error(f"❌ Failed to generate model: {file_path}")
         
         return generated_files
     
@@ -676,101 +683,142 @@ class HomeScreen extends StatelessWidget {{
     
     
     def _get_bloc_template(self) -> str:
-        """Get BLoC implementation template."""
+        """Get BLoC state management template."""
         return """
-        Use flutter_bloc package with the following pattern:
-        
-        1. Define states extending Equatable
-        2. Define events extending Equatable  
-        3. Create Bloc extending Bloc<Event, State>
-        4. Use BlocProvider for dependency injection
-        5. Use BlocBuilder/BlocListener in widgets
-        
-        Example:
-        // States
-        abstract class AuthState extends Equatable {{
-          @override
-          List<Object> get props => [];
-        }}
-        
-        class AuthInitial extends AuthState {{}}
-        class AuthLoading extends AuthState {{}}
-        class AuthAuthenticated extends AuthState {{
-          final User user;
-          AuthAuthenticated(this.user);
-          @override
-          List<Object> get props => [user];
-        }}
-        
-        // Events
-        abstract class AuthEvent extends Equatable {{
-          @override
-          List<Object> get props => [];
-        }}
-        
-        class AuthLoginRequested extends AuthEvent {{
-          final String email;
-          final String password;
-          AuthLoginRequested(this.email, this.password);
-          @override
-          List<Object> get props => [email, password];
-        }}
-        
-        // Bloc
-        class AuthBloc extends Bloc<AuthEvent, AuthState> {{
-          final AuthRepository authRepository;
-          
-          AuthBloc(this.authRepository) : super(AuthInitial()) {{
-            on<AuthLoginRequested>(_onLoginRequested);
-          }}
-          
-          Future<void> _onLoginRequested(
-            AuthLoginRequested event,
-            Emitter<AuthState> emit,
-          ) async {{
-            emit(AuthLoading());
-            try {{
-              final user = await authRepository.login(event.email, event.password);
-              emit(AuthAuthenticated(user));
-            }} catch (e) {{
-              emit(AuthError(e.toString()));
-            }}
-          }}
-        }}
-        """
-    
+import 'package:bloc/bloc.dart';
+import 'package:equatable/equatable.dart';
+
+part '{feature}_event.dart';
+part '{feature}_state.dart';
+
+class {Feature}Bloc extends Bloc<{Feature}Event, {Feature}State> {
+  {Feature}Bloc() : super({Feature}Initial()) {
+    on<{Feature}Event>((event, emit) {
+      // TODO: Implement event handlers
+    });
+  }
+}
+"""
+
     def _get_provider_template(self) -> str:
-        """Get Provider implementation template."""
+        """Get Provider state management template."""
         return """
-        Use provider package with ChangeNotifier pattern:
-        
-        1. Create ChangeNotifier classes for state
-        2. Use ChangeNotifierProvider for dependency injection
-        3. Use Consumer/Selector for listening to changes
-        4. Call notifyListeners() when state changes
-        """
-    
+import 'package:flutter/foundation.dart';
+
+class {Feature}Provider extends ChangeNotifier {
+  bool _isLoading = false;
+  String? _error;
+  
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+  
+  void _setError(String? error) {
+    _error = error;
+    notifyListeners();
+  }
+}
+"""
+
     def _get_riverpod_template(self) -> str:
-        """Get Riverpod implementation template."""
+        """Get Riverpod state management template."""
         return """
-        Use riverpod package with providers:
-        
-        1. Create providers using Provider, StateProvider, etc.
-        2. Use ConsumerWidget for widgets that need providers
-        3. Use ref.watch() to listen to providers
-        4. Use ref.read() for one-time reads
-        """
-    
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+// State class
+class {Feature}State {
+  final bool isLoading;
+  final String? error;
+  final List<dynamic> items;
+  
+  const {Feature}State({
+    this.isLoading = false,
+    this.error,
+    this.items = const [],
+  });
+  
+  {Feature}State copyWith({
+    bool? isLoading,
+    String? error,
+    List<dynamic>? items,
+  }) {
+    return {Feature}State(
+      isLoading: isLoading ?? this.isLoading,
+      error: error ?? this.error,
+      items: items ?? this.items,
+    );
+  }
+}
+
+// Provider
+final {feature}Provider = StateNotifierProvider<{Feature}Notifier, {Feature}State>(
+  (ref) => {Feature}Notifier(),
+);
+
+class {Feature}Notifier extends StateNotifier<{Feature}State> {
+  {Feature}Notifier() : super(const {Feature}State());
+  
+  // Add methods here
+}
+"""
+
     def _get_clean_architecture_template(self) -> str:
-        """Get Clean Architecture template."""
+        """Get Clean Architecture template structure."""
         return """
-        Follow Clean Architecture principles:
-        
-        1. Domain Layer: Entities, Use Cases, Repository Interfaces
-        2. Data Layer: Repository Implementations, Data Sources, Models
-        3. Presentation Layer: Widgets, State Management, Pages
-        4. Core: Constants, Errors, Utils
-        """
+// Domain Layer - Entity
+class {Feature}Entity {
+  final String id;
+  final String name;
+  
+  const {Feature}Entity({
+    required this.id,
+    required this.name,
+  });
+}
+
+// Domain Layer - Repository Interface
+abstract class {Feature}Repository {
+  Future<List<{Feature}Entity>> get{Feature}s();
+  Future<{Feature}Entity> get{Feature}ById(String id);
+}
+
+// Domain Layer - Use Case
+class Get{Feature}sUseCase {
+  final {Feature}Repository repository;
+  
+  Get{Feature}sUseCase(this.repository);
+  
+  Future<List<{Feature}Entity>> call() {
+    return repository.get{Feature}s();
+  }
+}
+
+// Data Layer - Model
+class {Feature}Model extends {Feature}Entity {
+  const {Feature}Model({
+    required super.id,
+    required super.name,
+  });
+  
+  factory {Feature}Model.fromJson(Map<String, dynamic> json) {
+    return {Feature}Model(
+      id: json['id'],
+      name: json['name'],
+    );
+  }
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+    };
+  }
+}
+"""
     
     async def _provide_code_review(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Provide code review feedback."""
@@ -2230,4 +2278,4 @@ class {feature_name.title()}Error extends {feature_name.title()}State {{
         
         return bloc_files
 
-    
+

@@ -358,13 +358,13 @@ class TestRealTimeAwarenessIntegration:
             # Each agent should be subscribed to others
             assert len(subscriptions[agent_id]) >= 2
     
-    def test_proactive_collaboration_triggers(self, setup_agents):
+    async def test_proactive_collaboration_triggers(self, setup_agents):
         """Test that proactive collaboration triggers work."""
         agents = setup_agents
         
         # Simulate architecture decision broadcast
         arch_agent = agents['architecture']
-        arch_agent.broadcast_activity(
+        await arch_agent.broadcast_activity(
             activity_type="architecture_decision_made",
             activity_details={
                 "decision": "Use BLoC pattern",

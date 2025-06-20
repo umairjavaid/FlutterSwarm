@@ -265,6 +265,9 @@ class FlutterSwarmGovernance:
         state['gate_statuses']['project_initiation'] = 'passed' if all_criteria_met else 'failed'
         state['approval_status']['project_initiation'] = 'approved' if all_criteria_met else 'rejected'
         
+        # Update overall progress (project initiation is ~5% of total)
+        state['overall_progress'] = 0.05 if all_criteria_met else 0.02
+        
         print(f"✅ Project initiation gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
@@ -299,6 +302,13 @@ class FlutterSwarmGovernance:
         
         state['gate_statuses']['architecture_approval'] = 'passed' if all_criteria_met else 'failed'
         state['approval_status']['architecture_approval'] = 'approved' if all_criteria_met else 'rejected'
+        
+        # Update overall progress (architecture approval is ~15% of total)
+        if all_criteria_met:
+            state['overall_progress'] = 0.15
+        else:
+            # Don't regress, keep previous progress
+            state['overall_progress'] = max(state.get('overall_progress', 0.0), 0.08)
         
         print(f"🏗️ Architecture approval gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
@@ -370,6 +380,13 @@ class FlutterSwarmGovernance:
         
         state['gate_statuses']['quality_verification'] = 'passed' if all_criteria_met else 'failed'
         state['approval_status']['quality_verification'] = 'approved' if all_criteria_met else 'rejected'
+        
+        # Update overall progress (quality verification is ~60% of total)
+        if all_criteria_met:
+            state['overall_progress'] = 0.60
+        else:
+            # Don't regress, keep previous progress
+            state['overall_progress'] = max(state.get('overall_progress', 0.0), 0.45)
         
         print(f"🔍 Quality verification gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
@@ -558,6 +575,10 @@ class FlutterSwarmGovernance:
         state['coordination_fallback_active'] = True
         state['stuck_processes'] = coordination_needs
         
+        # Ensure overall_progress is maintained (don't let it regress during coordination)
+        if 'overall_progress' not in state:
+            state['overall_progress'] = 0.0
+        
         # Record coordination decision
         state['governance_decisions'].append({
             'gate': 'fallback_coordination',
@@ -652,19 +673,42 @@ class FlutterSwarmGovernance:
     
     def _route_from_fallback_coordination(self, state: ProjectGovernanceState) -> str:
         """Route from fallback coordination node."""
+        # Add fallback attempt tracking to prevent infinite loops
+        if 'fallback_attempts' not in state:
+            state['fallback_attempts'] = {}
+        
+        current_phase = state.get('current_governance_phase', 'unknown')
+        attempts = state['fallback_attempts'].get(current_phase, 0)
+        
+        # If we've attempted fallback for this phase too many times, end the workflow
+        if attempts >= 3:
+            print(f"⚠️ Maximum fallback attempts reached for {current_phase}, ending workflow")
+            return "end"
+        
+        # Increment attempt counter
+        state['fallback_attempts'][current_phase] = attempts + 1
+        
         # Determine where to go based on what was being coordinated
         coordination_needs = state.get('stuck_processes', [])
         
         if 'project_stagnation' in coordination_needs:
-            return "architecture_approval"  # Start fresh with architecture
+            # Only retry architecture if we haven't failed it multiple times
+            if state['fallback_attempts'].get('architecture_approval', 0) < 2:
+                return "architecture_approval"
+            else:
+                return "end"  # Give up after multiple architecture failures
         elif 'quality_gate_failures' in coordination_needs:
-            # Return to the first failed gate
+            # Return to the first failed gate, but with attempt limits
             for phase in self.governance_phases:
                 if state['gate_statuses'].get(phase) == 'failed':
-                    return phase
-            return "implementation_oversight"  # Default to implementation
+                    if state['fallback_attempts'].get(phase, 0) < 2:
+                        return phase
+            return "end"  # All gates have been retried too many times
         elif 'agent_collaboration_breakdown' in coordination_needs:
-            return "implementation_oversight"  # Resume with implementation
+            if state['fallback_attempts'].get('implementation_oversight', 0) < 2:
+                return "implementation_oversight"
+            else:
+                return "end"
         else:
             return "end"  # Unable to coordinate, end workflow
     
@@ -1072,7 +1116,16 @@ class FlutterSwarmGovernance:
                 "governance_status": "failed",
                 "error": str(e),
                 "completed_phases": [],
-                "current_phase": "project_initiation"
+                "current_phase": "project_initiation",
+                "overall_progress": 0.0,  # Add missing overall_progress field
+                "project_health": "critical",
+                "gate_statuses": {phase: "pending" for phase in self.governance_phases},
+                "approval_status": {phase: "pending" for phase in self.governance_phases},
+                "governance_decisions": [],
+                "quality_criteria_met": {},
+                "compliance_status": {},
+                "coordination_fallback_used": False,
+                "stuck_processes": []
             }
 
 

@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from tools import ToolResult, ToolStatus
 
 class SecurityAgent(BaseAgent):
     """
@@ -75,13 +76,13 @@ class SecurityAgent(BaseAgent):
         
         # Check Android manifest for security issues
         android_manifest_result = await self.read_file("android/app/src/main/AndroidManifest.xml")
-        if android_manifest_result.status.value == "success":
+        if android_manifest_result.status == ToolStatus.SUCCESS:
             manifest_findings = await self._analyze_android_manifest(android_manifest_result.output)
             additional_findings.extend(manifest_findings)
         
         # Check iOS Info.plist for security issues
         ios_plist_result = await self.read_file("ios/Runner/Info.plist")
-        if ios_plist_result.status.value == "success":
+        if ios_plist_result.status == ToolStatus.SUCCESS:
             plist_findings = await self._analyze_ios_plist(ios_plist_result.output)
             additional_findings.extend(plist_findings)
         

@@ -96,15 +96,27 @@ class ConfigManager:
         if not config_path.exists():
             raise ConfigurationError(f"Main configuration file not found: {config_path}")
         
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self._config = yaml.safe_load(f) or {}
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self._config = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            raise ConfigurationError(f"Failed to parse YAML configuration file {config_path}: {e}") from e
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load configuration file {config_path}: {e}") from e
     
     def _load_agent_config(self) -> None:
         """Load agent-specific configuration."""
         config_path = self.config_dir / "agent_config.yaml"
         if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                self._agent_configs = yaml.safe_load(f) or {}
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    self._agent_configs = yaml.safe_load(f) or {}
+            except yaml.YAMLError as e:
+                logger.error(f"Failed to parse agent configuration YAML: {e}")
+                self._agent_configs = {}
+            except Exception as e:
+                logger.error(f"Failed to load agent configuration: {e}")
+                self._agent_configs = {}
     
     def _load_user_config(self) -> None:
         """Load user-specific configuration."""
@@ -113,9 +125,14 @@ class ConfigManager:
             
         config_path = Path(self.user_config_file)
         if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                user_config = yaml.safe_load(f) or {}
-                self._merge_configs(self._config, user_config)
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    user_config = yaml.safe_load(f) or {}
+                    self._merge_configs(self._config, user_config)
+            except yaml.YAMLError as e:
+                logger.error(f"Failed to parse user configuration YAML: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load user configuration: {e}")
     
     def _apply_environment_overrides(self) -> None:
         """Apply environment-specific configuration overrides."""

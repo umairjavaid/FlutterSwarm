@@ -9,6 +9,7 @@ import re
 from typing import Dict, List, Any, Optional, Set
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from tools import ToolResult, ToolStatus
 
 class QualityAssuranceAgent(BaseAgent):
     """
@@ -248,7 +249,7 @@ class QualityAssuranceAgent(BaseAgent):
         # List all Dart files in lib
         dart_files_result = await self.execute_tool("file", operation="search", pattern="*.dart", directory="lib")
         
-        if dart_files_result.status.value == "success" and dart_files_result.data:
+        if dart_files_result.status == ToolStatus.SUCCESS and dart_files_result.data:
             dart_files = dart_files_result.data.get("matches", [])
             
             # Check for files in root lib directory (should be minimal)
