@@ -145,10 +145,11 @@ class TestingTool(BaseTool):
         return write_result
     
     async def _create_widget_test(self, **kwargs) -> ToolResult:
-        """Create a widget test file."""
+        """Create a widget test file - content must be provided by LLM agents."""
         widget_name = kwargs.get("widget_name")
         test_scenarios = kwargs.get("test_scenarios", [])
         file_path = kwargs.get("file_path")
+        content = kwargs.get("content")  # REQUIRED: LLM-generated content
         
         if not widget_name:
             return ToolResult(
@@ -157,8 +158,12 @@ class TestingTool(BaseTool):
                 error="Widget name is required for widget test creation"
             )
         
-        # Generate test content
-        test_content = self._generate_widget_test_template(widget_name, test_scenarios)
+        if not content:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Test content must be provided by LLM agents. No hardcoded templates allowed."
+            )
         
         # Determine test file path
         if not file_path:
@@ -168,22 +173,23 @@ class TestingTool(BaseTool):
         test_dir = os.path.dirname(os.path.join(self.project_directory, file_path))
         os.makedirs(test_dir, exist_ok=True)
         
-        # Write test file
+        # Write test file with LLM-generated content
         write_result = await self.file_tool.execute(
             "write",
             file_path=file_path,
-            content=test_content
+            content=content
         )
         
         if write_result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                output=f"Widget test created at {file_path}",
+                output=f"Widget test created at {file_path} using LLM-generated content",
                 data={
                     "test_type": "widget",
                     "widget_name": widget_name,
                     "file_path": file_path,
-                    "scenarios": len(test_scenarios)
+                    "scenarios": len(test_scenarios),
+                    "content_source": "llm_generated"
                 }
             )
         
@@ -430,16 +436,17 @@ class TestingTool(BaseTool):
         except Exception as e:
             return {"error": f"Failed to parse coverage file: {str(e)}"}
     
+    # Remove all hardcoded template generation methods
     def _generate_unit_test_template(self, class_name: str, test_name: Optional[str] = None) -> str:
-        """Generate unit test template - REPLACED WITH LLM GENERATION."""
+        """REMOVED: No hardcoded templates. Use LLM agents only."""
         pass
 
     def _generate_widget_test_template(self, widget_name: str, scenario_tests: str = "") -> str:
-        """Generate widget test template - REPLACED WITH LLM GENERATION."""
+        """REMOVED: No hardcoded templates. Use LLM agents only."""
         pass
 
     def _generate_integration_test_template(self, test_name: str, flow_tests: str = "") -> str:
-        """Generate integration test template - REPLACED WITH LLM GENERATION."""
+        """REMOVED: No hardcoded templates. Use LLM agents only."""
         pass
 
     def _generate_test_helper(self) -> str:

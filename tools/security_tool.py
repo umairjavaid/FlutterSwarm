@@ -200,8 +200,9 @@ class SecurityTool(BaseTool):
         )
     
     async def _implement_secure_storage(self, **kwargs) -> ToolResult:
-        """Implement secure storage for sensitive data."""
+        """Implement secure storage - content must be provided by LLM agents."""
         storage_type = kwargs.get("storage_type", "flutter_secure_storage")
+        content = kwargs.get("content")  # REQUIRED: LLM-generated content
         
         if storage_type == "flutter_secure_storage":
             # Add dependency
@@ -213,23 +214,28 @@ class SecurityTool(BaseTool):
             if add_result.status != ToolStatus.SUCCESS:
                 return add_result
             
-            # Create secure storage service
-            service_content = self._generate_secure_storage_service()
+            if not content:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error="Secure storage implementation content must be provided by LLM agents. No hardcoded templates allowed."
+                )
             
-            # Write service file
+            # Write service file with LLM-generated content
             write_result = await self.file_tool.execute(
                 "write",
                 file_path="lib/services/secure_storage_service.dart",
-                content=service_content
+                content=content
             )
             
             if write_result.status == ToolStatus.SUCCESS:
                 return ToolResult(
                     status=ToolStatus.SUCCESS,
-                    output="Secure storage implementation created",
+                    output="Secure storage implementation created using LLM-generated content",
                     data={
                         "storage_type": storage_type,
-                        "service_file": "lib/services/secure_storage_service.dart"
+                        "service_file": "lib/services/secure_storage_service.dart",
+                        "content_source": "llm_generated"
                     }
                 )
         
@@ -496,22 +502,6 @@ class SecurityTool(BaseTool):
         
         return recommendations
     
-    def _generate_secure_storage_service(self) -> str:
-        """Generate secure storage service using LLM only."""
-        pass
-    
-    def _generate_android_network_security_config(self) -> str:
-        """Generate Android network security config using LLM only."""
-        pass
-    
-    def _generate_security_constants(self) -> str:
-        """Generate security constants using LLM only."""
-        pass
-    
-    def _generate_http_service_with_pinning(self) -> str:
-        """Generate HTTP service with pinning using LLM only."""
-        pass
-    
     async def _implement_certificate_pinning(self) -> ToolResult:
         """Implement certificate pinning."""
         # Add dio dependency for HTTP with pinning
@@ -541,6 +531,16 @@ class SecurityTool(BaseTool):
             status=ToolStatus.SUCCESS,
             output="Secure headers implemented in HTTP service",
             data={"implemented": True}
+        )
+    
+    async def _implement_network_interceptor(self) -> ToolResult:
+        """Implement network security interceptor."""
+        # This would create a network interceptor for monitoring
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            output="Network security interceptor implemented",
+            data={"implemented": True}
+        )
         )
     
     async def _implement_network_interceptor(self) -> ToolResult:
@@ -601,147 +601,4 @@ class SecurityTool(BaseTool):
             gradle_content = gradle_content.replace('}', f'{release_block}\n}}')
         
         return gradle_content
-  static const Map<String, String> securityHeaders = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '1; mode=block',
-    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-  };
   
-  // Certificate Pins (SHA-256)
-  static const List<String> certificatePins = [
-    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-    'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=',
-  ];
-}
-'''
-    
-    async def _implement_certificate_pinning(self) -> ToolResult:
-        """Implement certificate pinning."""
-        # Add dio dependency for HTTP with pinning
-        add_result = await self.terminal.execute(
-            "flutter pub add dio",
-            working_dir=self.project_directory
-        )
-        
-        if add_result.status == ToolStatus.SUCCESS:
-            # Create HTTP service with pinning
-            http_service = self._generate_http_service_with_pinning()
-            
-            write_result = await self.file_tool.execute(
-                "write",
-                file_path="lib/services/http_service.dart",
-                content=http_service
-            )
-            
-            return write_result
-        
-        return add_result
-    
-    async def _implement_secure_headers(self) -> ToolResult:
-        """Implement secure HTTP headers."""
-        # This would be part of the HTTP service
-        return ToolResult(
-            status=ToolStatus.SUCCESS,
-            output="Secure headers implemented in HTTP service",
-            data={"implemented": True}
-        )
-    
-    async def _implement_network_interceptor(self) -> ToolResult:
-        """Implement network security interceptor."""
-        # This would create a network interceptor for monitoring
-        return ToolResult(
-            status=ToolStatus.SUCCESS,
-            output="Network security interceptor implemented",
-            data={"implemented": True}
-        )
-    
-    def _generate_http_service_with_pinning(self) -> str:
-        """Generate HTTP service with certificate pinning."""
-        return '''import 'package:dio/dio.dart';
-import 'dart:convert';
-import 'dart:typed_data';
-import 'package:crypto/crypto.dart';
-
-class HttpService {
-  late Dio _dio;
-  
-  HttpService() {
-    _dio = Dio();
-    _setupInterceptors();
-  }
-  
-  void _setupInterceptors() {
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          // Add security headers
-          options.headers.addAll({
-            'X-Content-Type-Options': 'nosniff',
-            'X-Frame-Options': 'DENY',
-            'X-XSS-Protection': '1; mode=block',
-          });
-          handler.next(options);
-        },
-        onResponse: (response, handler) {
-          // Verify certificate pinning
-          _verifyCertificatePinning(response);
-          handler.next(response);
-        },
-        onError: (error, handler) {
-          // Handle security-related errors
-          handler.next(error);
-        },
-      ),
-    );
-  }
-  
-  void _verifyCertificatePinning(Response response) {
-    // Certificate pinning verification logic
-    // This is a simplified example
-    final certificate = response.requestOptions.extra['certificate'];
-    if (certificate != null) {
-      // Verify against pinned certificates
-      final pins = [
-        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-        'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=',
-      ];
-      
-      // Add actual certificate verification logic here
-    }
-  }
-  
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
-    return await _dio.get(path, queryParameters: queryParameters);
-  }
-  
-  Future<Response> post(String path, {dynamic data}) async {
-    return await _dio.post(path, data: data);
-  }
-}
-'''
-    
-    def _add_obfuscation_to_gradle(self, gradle_content: str) -> str:
-        """Add obfuscation configuration to Android build.gradle."""
-        # This is a simplified version - would need more sophisticated parsing
-        release_block = '''
-    buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }'''
-        
-        # Replace existing buildTypes block or add if not present
-        if 'buildTypes {' in gradle_content:
-            # Replace existing
-            import re
-            pattern = r'buildTypes\s*\{[^}]*\}'
-            gradle_content = re.sub(pattern, release_block.strip(), gradle_content, flags=re.MULTILINE | re.DOTALL)
-        else:
-            # Add before the closing of android block
-            gradle_content = gradle_content.replace('}', f'{release_block}\n}}')
-        
-        return gradle_content

@@ -354,7 +354,7 @@ class TestingAgent(BaseAgent):
         return matches
     
     async def _generate_unit_test_code(self, analysis: Dict[str, Any]) -> str:
-        """Generate unit test code using LLM."""
+        """Generate unit test code using LLM ONLY."""
         test_prompt = f"""
         Generate comprehensive unit tests for the analyzed code:
         
@@ -375,7 +375,7 @@ class TestingAgent(BaseAgent):
         return test_code
 
     async def _generate_widget_test_code(self, analysis: Dict[str, Any]) -> str:
-        """Generate widget test code using LLM."""
+        """Generate widget test code using LLM ONLY."""
         widget_test_prompt = f"""
         Generate comprehensive widget tests for the analyzed widget:
         
@@ -396,7 +396,7 @@ class TestingAgent(BaseAgent):
         return widget_test_code
 
     async def _generate_integration_test_code(self, scenario: Dict[str, Any]) -> str:
-        """Generate integration test code using LLM."""
+        """Generate integration test code using LLM ONLY."""
         integration_test_prompt = f"""
         Generate comprehensive integration tests for the scenario:
         

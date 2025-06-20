@@ -260,7 +260,7 @@ class PackageManagerTool(BaseTool):
         return result
     
     async def _read_pubspec(self) -> ToolResult:
-        """Read and parse pubspec.yaml."""
+        """Read and parse pubspec.yaml - analysis only, no generation."""
         pubspec_path = os.path.join(self.project_directory, "pubspec.yaml")
         
         try:
@@ -276,7 +276,7 @@ class PackageManagerTool(BaseTool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
-                error="pubspec.yaml not found"
+                error="pubspec.yaml not found. Use LLM agents to generate project structure."
             )
         except yaml.YAMLError as e:
             return ToolResult(

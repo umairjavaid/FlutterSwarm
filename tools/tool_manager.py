@@ -129,11 +129,11 @@ class ToolManager:
         return await self.execute_tool("file", "write", file_path=file_path, content=content, **kwargs)
     
     async def flutter_build(self, platform: str = "apk", **kwargs) -> ToolResult:
-        """Build Flutter project."""
+        """Build Flutter project - no code generation, only infrastructure."""
         return await self.execute_tool("flutter", "build", platform=platform, **kwargs)
     
     async def flutter_test(self, **kwargs) -> ToolResult:
-        """Run Flutter tests."""
+        """Run Flutter tests - no test generation, only execution."""
         return await self.execute_tool("flutter", "test", **kwargs)
     
     async def git_commit(self, message: str, **kwargs) -> ToolResult:
@@ -141,11 +141,11 @@ class ToolManager:
         return await self.execute_tool("git", "commit", message=message, **kwargs)
     
     async def analyze_code(self, **kwargs) -> ToolResult:
-        """Analyze code quality."""
+        """Analyze code quality - no code generation."""
         return await self.execute_tool("analysis", "dart_analyze", **kwargs)
     
     async def security_scan(self, **kwargs) -> ToolResult:
-        """Perform security scan."""
+        """Perform security scan - no code generation."""
         return await self.execute_tool("security", "scan", **kwargs)
     
     async def generate_code(self, component_type: str, name: str, **kwargs) -> ToolResult:
@@ -158,13 +158,12 @@ class ToolManager:
         return await self.execute_tool("testing", "run", test_type=test_type, **kwargs)
     
     async def add_package(self, package_name: str, **kwargs) -> ToolResult:
-        """Add package to project."""
-        return await self.execute_tool("package_manager", "add", 
-                                     package_name=package_name, **kwargs)
+        """Add package - infrastructure only, no code generation."""
+        pass
     
     async def check_dependencies(self, **kwargs) -> ToolResult:
-        """Check system dependencies."""
-        return await self.execute_tool("terminal", operation="check_dependencies", **kwargs)
+        """Check dependencies - analysis only, no code generation."""
+        pass
     
     def get_tools_for_agent(self, agent_type: str) -> List[str]:
         """
@@ -311,4 +310,5 @@ class AgentToolbox:
         """Get information about a tool if it's available."""
         if tool_name in self.available_tools:
             return self.tool_manager.get_tool_info(tool_name)
+        return None
         return None

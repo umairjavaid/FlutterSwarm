@@ -136,7 +136,9 @@ def validate_template_methods():
         "tools/flutter_tool.py", 
         "tools/code_generation_tool.py",
         "agents/implementation_agent.py",
-        "agents/testing_agent.py"
+        "agents/testing_agent.py",
+        "agents/devops_agent.py",
+        "agents/security_agent.py"
     ]
     
     # Patterns that indicate hardcoded Flutter code
@@ -184,61 +186,65 @@ def validate_template_methods():
         r'TextStyle',
     ]
     
-    root_dir = Path(__file__).parent
     violations = []
     
-    # Check each file for forbidden patterns
     for file_path in files_to_check:
-        full_path = root_dir / file_path
-        if not full_path.exists():
-            continue
-            
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-            for pattern in forbidden_patterns:
-                matches = re.findall(pattern, content)
-                if matches:
-                    violations.append({
-                        'file': file_path,
-                        'pattern': pattern,
-                        'matches': len(matches)
-                    })
+        full_path = Path(file_path)
+        if full_path.exists():
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                for pattern in forbidden_patterns:
+                    matches = re.finditer(pattern, content, re.MULTILINE)
+                    for match in matches:
+                        line_num = content[:match.start()].count('\n') + 1
+                        violations.append({
+                            'file': file_path,
+                            'line': line_num,
+                            'pattern': pattern,
+                            'match': match.group(),
+                            'context': _get_line_context(content, match.start())
+                        })
+            except Exception as e:
+                print(f"Error reading {file_path}: {e}")
     
-    # Report violations
-    if violations:
-        print("VALIDATION FAILED: Found hardcoded Flutter code patterns:")
-        for v in violations:
-            print(f"File: {v['file']}, Pattern: {v['pattern']}, Matches: {v['matches']}")
-        return False
-    else:
-        print("VALIDATION PASSED: No hardcoded Flutter code patterns found.")
-        return True
+    return violations
 
-def validate_llm_only_generation():
-    """
-    Validate that all code generation goes through LLM agents only.
-    """
-    # Check that all template methods either use LLM or are disabled
-    template_methods = [
-        "_generate_unit_test_template",
-        "_generate_widget_test_template", 
-        "_generate_integration_test_template",
-        "_generate_test_helper",
-        "_get_bloc_template",
-        "_get_provider_template",
-        "_get_riverpod_template",
-        "_get_clean_architecture_template"
-    ]
+def _get_line_context(content: str, match_start: int) -> str:
+    """Get the line context around a match."""
+    lines = content[:match_start].split('\n')
+    if lines:
+        return lines[-1].strip()
+    return ""
+
+def print_validation_results(violations):
+    """Print validation results in a readable format."""
+    if not violations:
+        print("✅ VALIDATION PASSED: No hardcoded Flutter templates found!")
+        print("🎯 All code generation is properly delegated to LLM agents.")
+        return True
     
-    violations = []
+    print("❌ VALIDATION FAILED: Hardcoded Flutter templates detected!")
+    print(f"Found {len(violations)} violations:")
+    print()
     
-    # Scan for methods that should only use LLM
-    for method in template_methods:
-        # These methods should either have 'pass' or call 'self.think()'
-        pass
+    for violation in violations:
+        print(f"📁 File: {violation['file']}")
+        print(f"📍 Line: {violation['line']}")
+        print(f"🔍 Pattern: {violation['pattern']}")
+        print(f"💡 Match: {violation['match']}")
+        print(f"📝 Context: {violation['context']}")
+        print("-" * 50)
     
-    return len(violations) == 0
+    print()
+    print("🛠️  REQUIRED ACTIONS:")
+    print("1. Remove all hardcoded Flutter/Dart code from the above files")
+    print("2. Replace with LLM-based code generation using agent.think()")
+    print("3. Ensure tools only provide infrastructure, not templates")
+    print("4. Re-run validation after fixes")
+    
+    return False
 
 def main():
     """Run all validation checks."""
@@ -278,4 +284,6 @@ def main():
 if __name__ == "__main__":
     # Add the current directory to Python path
     sys.path.insert(0, str(Path(__file__).parent))
-    exit(main())
+    violations = validate_template_methods()
+    is_valid = print_validation_results(violations)
+    exit(0 if is_valid else 1)

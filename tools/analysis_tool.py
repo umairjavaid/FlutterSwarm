@@ -828,9 +828,6 @@ class AnalysisTool(BaseTool):
     
     async def analyze_performance(self, **kwargs):
         return await self.execute("performance_analysis", **kwargs)
-                })
-        
-        return issues
     
     # Public methods for test and agent compatibility
     async def dart_analyze(self, **kwargs):

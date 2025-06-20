@@ -44,7 +44,7 @@ class CodeGenerationTool(BaseTool):
             )
     
     async def _generate_component(self, **kwargs) -> ToolResult:
-        """Writes a component to a file. The content must be provided by LLM agents."""
+        """Writes a component to a file. The content MUST be provided by LLM agents."""
         component_type = kwargs.get("component_type")
         name = kwargs.get("name")
         content = kwargs.get("content")
@@ -54,7 +54,15 @@ class CodeGenerationTool(BaseTool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
-                error="component_type, name, and content are required for generation. Content must be provided by LLM agents, not hardcoded."
+                error="component_type, name, and content are required. Content MUST be provided by LLM agents - ZERO hardcoded templates allowed."
+            )
+        
+        # Validate that content is not empty or a placeholder
+        if not content.strip() or content.strip() in ["", "TODO", "// TODO"]:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Content cannot be empty. Must be actual LLM-generated code, not placeholder text."
             )
         
         # Determine file path
@@ -79,7 +87,8 @@ class CodeGenerationTool(BaseTool):
                     "component_type": component_type,
                     "name": name,
                     "file_path": file_path,
-                    "content_source": "llm_generated"
+                    "content_source": "llm_generated",
+                    "content_length": len(content)
                 }
             )
         

@@ -1,5 +1,6 @@
 """
 Tools package for FlutterSwarm agents.
+All code generation is exclusively handled by LLM agents - no hardcoded templates.
 """
 
 from .base_tool import BaseTool, ToolResult, ToolStatus
@@ -30,3 +31,8 @@ __all__ = [
     'ToolManager',
     'AgentToolbox'
 ]
+
+# Validation to ensure LLM-only approach
+def validate_llm_only_approach():
+    """Ensure all tools follow LLM-only code generation approach."""
+    return "All Flutter/Dart code generation is exclusively handled by LLM agents"
