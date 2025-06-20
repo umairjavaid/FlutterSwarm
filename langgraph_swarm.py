@@ -7,78 +7,13 @@ from typing import Dict, List, Any, Optional, TypedDict, Type
 from datetime import datetime
 import logging
 import asyncio
-import importlib
-import os
-import sys
-from pathlib import Path
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
-from langgraph.errors import GraphRecursionError
 
 # Import shared state for integration with real-time awareness system
-from shared.state import shared_state, AgentStatus
-
-# Add agent imports
-from agents.implementation_agent import ImplementationAgent
-from agents.testing_agent import TestingAgent
-from agents.performance_agent import PerformanceAgent
-from agents.documentation_agent import DocumentationAgent
-from agents.devops_agent import DevOpsAgent
-
-class AgentRegistry:
-    """
-    Registry for managing agent instances in the FlutterSwarm system.
-    Provides a factory pattern for creating and retrieving agents.
-    """
-    
-    def __init__(self):
-        self._agents: Dict[str, Any] = {}
-        self._agent_classes: Dict[str, Type] = {
-            "implementation": ImplementationAgent,
-            "testing": TestingAgent,
-            "performance": PerformanceAgent,
-            "documentation": DocumentationAgent,
-            "devops": DevOpsAgent,
-        }
-        self.logger = logging.getLogger("FlutterSwarm.AgentRegistry")
-    
-    def register_agent_class(self, agent_type: str, agent_class: Type) -> None:
-        """Register an agent class with the registry."""
-        self._agent_classes[agent_type] = agent_class
-        self.logger.info(f"Registered agent class: {agent_type}")
-    
-    def get_agent(self, agent_type: str) -> Any:
-        """Get or create an agent instance of the specified type."""
-        # If agent already exists, return it
-        if agent_type in self._agents and self._agents[agent_type] is not None:
-            return self._agents[agent_type]
-        
-        # Otherwise, create a new agent instance
-        if agent_type in self._agent_classes:
-            try:
-                agent_class = self._agent_classes[agent_type]
-                agent = agent_class()
-                self._agents[agent_type] = agent
-                self.logger.info(f"Created new agent instance: {agent_type}")
-                return agent
-            except Exception as e:
-                self.logger.error(f"Failed to create agent {agent_type}: {e}")
-                return None
-        else:
-            self.logger.error(f"Unknown agent type: {agent_type}")
-            return None
-    
-    def get_all_agents(self) -> Dict[str, Any]:
-        """Get all registered agent instances."""
-        # Initialize any agents that haven't been created yet
-        for agent_type in self._agent_classes:
-            if agent_type not in self._agents or self._agents[agent_type] is None:
-                self.get_agent(agent_type)
-        
-        return self._agents
-
+from shared.state import shared_state, AgentStatus, MessageType
 
 class ProjectGovernanceState(TypedDict):
     """
@@ -130,6 +65,53 @@ class ProjectGovernanceState(TypedDict):
     fallback_attempts: Dict[str, int]
 
 
+class AgentRegistry:
+    """
+    Registry for managing agent instances in the FlutterSwarm system.
+    Provides a factory pattern for creating and retrieving agents.
+    """
+    
+    def __init__(self):
+        self._agents: Dict[str, Any] = {}
+        self._agent_classes: Dict[str, Type] = {}
+        self.logger = logging.getLogger("FlutterSwarm.AgentRegistry")
+    
+    def register_agent_class(self, agent_type: str, agent_class: Type) -> None:
+        """Register an agent class with the registry."""
+        self._agent_classes[agent_type] = agent_class
+        self.logger.info(f"Registered agent class: {agent_type}")
+    
+    def get_agent(self, agent_type: str) -> Any:
+        """Get or create an agent instance of the specified type."""
+        # If agent already exists, return it
+        if agent_type in self._agents and self._agents[agent_type] is not None:
+            return self._agents[agent_type]
+        
+        # Otherwise, create a new agent instance
+        if agent_type in self._agent_classes:
+            try:
+                agent_class = self._agent_classes[agent_type]
+                agent = agent_class()
+                self._agents[agent_type] = agent
+                self.logger.info(f"Created new agent instance: {agent_type}")
+                return agent
+            except Exception as e:
+                self.logger.error(f"Failed to create agent {agent_type}: {e}")
+                return None
+        else:
+            self.logger.error(f"Unknown agent type: {agent_type}")
+            return None
+    
+    def get_all_agents(self) -> Dict[str, Any]:
+        """Get all registered agent instances."""
+        # Initialize any agents that haven't been created yet
+        for agent_type in self._agent_classes:
+            if agent_type not in self._agents or self._agents[agent_type] is None:
+                self.get_agent(agent_type)
+        
+        return self._agents
+
+
 class FlutterSwarmGovernance:
     """
     LangGraph-based project governance system that provides quality gates
@@ -144,6 +126,9 @@ class FlutterSwarmGovernance:
         
         # Initialize agent registry
         self.agent_registry = AgentRegistry()
+        
+        # Register agent classes
+        self._register_agent_classes()
         
         # Note: Monitoring can be enabled if needed in the future
         self.enable_monitoring = enable_monitoring
@@ -199,6 +184,33 @@ class FlutterSwarmGovernance:
         print("📋 Quality gates configured for all phases")
         print("🤝 Integrated with real-time agent collaboration system")
         print("🤖 LLM interactions will be logged for all governance decisions")
+    
+    def _register_agent_classes(self):
+        """Register all agent classes with the registry."""
+        try:
+            from agents.implementation_agent import ImplementationAgent
+            self.agent_registry.register_agent_class("implementation", ImplementationAgent)
+            
+            from agents.testing_agent import TestingAgent
+            self.agent_registry.register_agent_class("testing", TestingAgent)
+            
+            from agents.architecture_agent import ArchitectureAgent
+            self.agent_registry.register_agent_class("architecture", ArchitectureAgent)
+            
+            from agents.security_agent import SecurityAgent
+            self.agent_registry.register_agent_class("security", SecurityAgent)
+            
+            from agents.performance_agent import PerformanceAgent
+            self.agent_registry.register_agent_class("performance", PerformanceAgent)
+            
+            from agents.documentation_agent import DocumentationAgent
+            self.agent_registry.register_agent_class("documentation", DocumentationAgent)
+            
+            from agents.devops_agent import DevOpsAgent
+            self.agent_registry.register_agent_class("devops", DevOpsAgent)
+            
+        except ImportError as e:
+            self.logger.warning(f"Could not register all agent classes: {e}")
     
     def _build_governance_graph(self) -> StateGraph:
         """Build the governance StateGraph focused on quality gates and project oversight."""
@@ -311,8 +323,192 @@ class FlutterSwarmGovernance:
         
         return governance
     
-    # Governance Gate Functions - Focus on quality verification rather than task execution
-    async def _project_initiation_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    # Routing logic
+    def _route_from_project_initiation(self, state: ProjectGovernanceState) -> str:
+        """Route from project initiation gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if project initiation is approved
+        if state["approval_status"].get("project_initiation") == "approved":
+            return "architecture_approval"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # End if project initialization failed completely
+        if state["gate_statuses"].get("project_initiation") == "failed":
+            return "end"
+        
+        # Default to architecture approval
+        return "architecture_approval"
+    
+    def _route_from_architecture_approval(self, state: ProjectGovernanceState) -> str:
+        """Route from architecture approval gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if architecture approval is approved
+        if state["approval_status"].get("architecture_approval") == "approved":
+            return "implementation_oversight"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # End if too many failures
+        if state["gate_statuses"].get("architecture_approval") == "failed":
+            if self.gate_failure_counts.get("architecture_approval", 0) >= self.max_gate_failures:
+                return "end"
+        
+        # Default to fallback
+        return "fallback_coordination"
+    
+    def _route_from_implementation_oversight(self, state: ProjectGovernanceState) -> str:
+        """Route from implementation oversight gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if implementation oversight is approved
+        if state["approval_status"].get("implementation_oversight") == "approved":
+            return "quality_verification"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # Return to architecture if architecture compliance issues
+        if not state["quality_criteria_met"].get("architecture_compliance_verified", False):
+            return "architecture_approval"
+        
+        # Default to quality verification
+        return "quality_verification"
+    
+    def _route_from_quality_verification(self, state: ProjectGovernanceState) -> str:
+        """Route from quality verification gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if quality verification is approved
+        if state["approval_status"].get("quality_verification") == "approved":
+            return "security_compliance"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # Return to implementation if issues
+        if state["gate_statuses"].get("quality_verification") == "failed":
+            return "implementation_oversight"
+        
+        # Default to security compliance
+        return "security_compliance"
+    
+    def _route_from_security_compliance(self, state: ProjectGovernanceState) -> str:
+        """Route from security compliance gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if security compliance is approved
+        if state["approval_status"].get("security_compliance") == "approved":
+            return "performance_validation"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # Return to implementation if security issues
+        if state["gate_statuses"].get("security_compliance") == "failed":
+            return "implementation_oversight"
+        
+        # Default to performance validation
+        return "performance_validation"
+    
+    def _route_from_performance_validation(self, state: ProjectGovernanceState) -> str:
+        """Route from performance validation gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if performance validation is approved
+        if state["approval_status"].get("performance_validation") == "approved":
+            return "documentation_review"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # Return to implementation if performance issues
+        if state["gate_statuses"].get("performance_validation") == "failed":
+            return "implementation_oversight"
+        
+        # Default to documentation review
+        return "documentation_review"
+    
+    def _route_from_documentation_review(self, state: ProjectGovernanceState) -> str:
+        """Route from documentation review gate."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check if documentation review is approved
+        if state["approval_status"].get("documentation_review") == "approved":
+            return "deployment_approval"
+        
+        # Check if coordination fallback is needed
+        if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
+            return "fallback_coordination"
+        
+        # Return to quality verification if documentation issues
+        if state["gate_statuses"].get("documentation_review") == "failed":
+            return "quality_verification"
+        
+        # Default to deployment approval
+        return "deployment_approval"
+    
+    def _route_from_fallback_coordination(self, state: ProjectGovernanceState) -> str:
+        """Route from fallback coordination node."""
+        self.total_routing_steps += 1
+        
+        # Emergency exit if too many routing steps
+        if self.total_routing_steps > self.max_routing_steps:
+            return "end"
+        
+        # Check the stuck processes to determine where to go
+        if "project_stagnation" in state.get("stuck_processes", []):
+            return "architecture_approval"
+        
+        if "quality_gate_failures" in state.get("stuck_processes", []):
+            return "implementation_oversight"
+        
+        if "agent_collaboration_breakdown" in state.get("stuck_processes", []):
+            return "quality_verification"
+        
+        # Default to implementation oversight
+        return "implementation_oversight"
+    
+    # Governance Gate Implementations
+    async def _project_initiation_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Project initiation governance gate - verify project setup and readiness."""
         print(f"🏛️ Project Initiation Gate: {state['name']}")
         
@@ -356,7 +552,7 @@ class FlutterSwarmGovernance:
         print(f"✅ Project initiation gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _architecture_approval_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _architecture_approval_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Architecture approval governance gate - verify architecture quality and completeness."""
         print(f"🏗️ Architecture Approval Gate: {state['name']}")
         
@@ -373,57 +569,136 @@ class FlutterSwarmGovernance:
                 'scalability_verified': True
             }
         else:
-            # Get real-time data from shared consciousness
-            project = shared_state.get_project_state(state['project_id'])
-            architecture_insights = shared_state.get_shared_consciousness(f"architecture_guidance_{state['project_id']}")
+            # Get architecture agent from registry
+            architecture_agent = self.agent_registry.get_agent("architecture")
             
-            # Check architecture approval criteria
-            architecture_criteria = {
-                'architecture_design_complete': project and len(project.architecture_decisions) > 0,
-                'security_review_passed': self._check_security_approval(project),
-                'performance_considerations_addressed': self._check_performance_considerations(project),
-                'scalability_verified': self._check_scalability_verification(project),
-                'real_time_collaboration_active': self._check_agent_collaboration_health()
-            }
+            if not architecture_agent:
+                self.logger.error("❌ Failed to get architecture agent")
+                # Log failure and update state
+                state['execution_errors'].append({
+                    'gate': gate_name,
+                    'error': 'Failed to get architecture agent',
+                    'timestamp': datetime.now().isoformat()
+                })
+                state['gate_statuses'][gate_name] = 'failed'
+                state['approval_status'][gate_name] = 'rejected'
+                return state
             
-            all_criteria_met = all(architecture_criteria.values())
+            # Record execution in history
+            state['agent_execution_history'].append({
+                'gate': gate_name,
+                'agent': 'architecture',
+                'timestamp': datetime.now().isoformat(),
+                'action': 'architecture_design_started'
+            })
             
-            # Track failures for circuit breaker
-            if not all_criteria_met:
+            try:
+                # Prepare task data for the agent
+                project_id = state['project_id']
+                task_data = {
+                    "project_id": project_id,
+                    "name": state['name'],
+                    "description": state['description'],
+                    "requirements": state['requirements']
+                }
+                
+                # Execute the architecture task
+                self.logger.info(f"🚀 Executing architecture task for project {project_id}")
+                result = await architecture_agent.execute_task(
+                    "design_flutter_architecture", 
+                    task_data
+                )
+                
+                # Process the result
+                if result.get("status") == "architecture_completed":
+                    architecture_decisions = result.get("architecture_decisions", [])
+                    
+                    # Update state with architecture decisions
+                    await shared_state.update_project_async(
+                        project_id,
+                        architecture_decisions=architecture_decisions
+                    )
+                    
+                    # Set criteria met based on result
+                    architecture_criteria = {
+                        'architecture_design_complete': True,
+                        'security_review_passed': self._check_security_approval(shared_state.get_project_state(project_id)),
+                        'performance_considerations_addressed': self._check_performance_considerations(shared_state.get_project_state(project_id)),
+                        'scalability_verified': self._check_scalability_verification(shared_state.get_project_state(project_id))
+                    }
+                    
+                    # Record completion in history
+                    state['agent_execution_history'].append({
+                        'gate': gate_name,
+                        'agent': 'architecture',
+                        'timestamp': datetime.now().isoformat(),
+                        'action': 'architecture_design_completed',
+                        'decisions_count': len(architecture_decisions)
+                    })
+                    
+                else:
+                    # Architecture failed
+                    self.logger.error(f"❌ Architecture design failed: {result.get('status')}")
+                    architecture_criteria = {
+                        'architecture_design_complete': False,
+                        'security_review_passed': False,
+                        'performance_considerations_addressed': False,
+                        'scalability_verified': False
+                    }
+                    
+                    # Record failure in history
+                    state['agent_execution_history'].append({
+                        'gate': gate_name,
+                        'agent': 'architecture',
+                        'timestamp': datetime.now().isoformat(),
+                        'action': 'architecture_design_failed',
+                        'error': result.get('error', 'Unknown error')
+                    })
+                    
+                    # Increment failure count for circuit breaker
+                    self._increment_gate_failure(gate_name)
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error executing architecture agent: {str(e)}")
+                architecture_criteria = {
+                    'architecture_design_complete': False,
+                    'security_review_passed': False,
+                    'performance_considerations_addressed': False,
+                    'scalability_verified': False
+                }
+                
+                # Record error in history
+                state['execution_errors'].append({
+                    'gate': gate_name,
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Increment failure count for circuit breaker
                 self._increment_gate_failure(gate_name)
-
-        if not all_criteria_met:
-            self.logger.warning(f"Architecture approval gate FAILED for {state['name']}. Criteria check:")
-            for criterion, passed in architecture_criteria.items():
-                self.logger.warning(f"  - {criterion}: {'PASSED' if passed else 'FAILED'}")
         
-        # Get architecture insights for logging
-        architecture_insights = shared_state.get_shared_consciousness(f"architecture_guidance_{state['project_id']}")
+        all_criteria_met = all(architecture_criteria.values())
         
         # Update governance state
         state['governance_decisions'].append({
-            'gate': 'architecture_approval',
+            'gate': gate_name,
             'timestamp': datetime.now().isoformat(),
             'criteria_met': architecture_criteria,
             'approved': all_criteria_met,
-            'architecture_insights': architecture_insights,
             'notes': 'Architecture approval gate evaluation completed'
         })
         
-        state['gate_statuses']['architecture_approval'] = 'passed' if all_criteria_met else 'failed'
-        state['approval_status']['architecture_approval'] = 'approved' if all_criteria_met else 'rejected'
+        state['gate_statuses'][gate_name] = 'passed' if all_criteria_met else 'failed'
+        state['approval_status'][gate_name] = 'approved' if all_criteria_met else 'rejected'
         
         # Update overall progress (architecture approval is ~15% of total)
         if all_criteria_met:
             state['overall_progress'] = 0.15
-        else:
-            # Don't regress, keep previous progress
-            state['overall_progress'] = max(state.get('overall_progress', 0.0), 0.08)
         
         print(f"🏗️ Architecture approval gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _implementation_oversight_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _implementation_oversight_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Implementation oversight gate - monitor real-time development progress and quality."""
         print(f"💻 Implementation Oversight Gate: {state['name']}")
         
@@ -487,12 +762,15 @@ class FlutterSwarmGovernance:
                     total_features = implementation_results.get("total_features", 0)
                     
                     # Update state with implementation results
-                    await shared_state.update_project_async(
-                        project_id,
-                        implementation_results=implementation_results,
-                        implementation_status=result.get("status"),
-                        files_created=implementation_agent.get_project_state().files_created
-                    )
+                    project_state = shared_state.get_project_state(project_id)
+                    if project_state:
+                        files_created = implementation_agent.get_project_state().files_created
+                        shared_state.update_project(
+                            project_id,
+                            implementation_results=implementation_results,
+                            implementation_status=result.get("status"),
+                            files_created=files_created
+                        )
                     
                     # Determine success based on completion ratio
                     success_ratio = total_completed / total_features if total_features > 0 else 0
@@ -557,19 +835,12 @@ class FlutterSwarmGovernance:
         
         all_criteria_met = all(implementation_criteria.values())
         
-        # Get real-time data from shared consciousness
-        project = shared_state.get_project_state(state['project_id'])
-        implementation_insights = shared_state.get_shared_consciousness(
-            f"implementation_insights_{state['project_id']}"
-        )
-        
         # Update governance state
         state['governance_decisions'].append({
             'gate': gate_name,
             'timestamp': datetime.now().isoformat(),
             'criteria_met': implementation_criteria,
             'approved': all_criteria_met,
-            'implementation_insights': implementation_insights,
             'notes': 'Implementation oversight gate evaluation completed'
         })
         
@@ -579,9 +850,6 @@ class FlutterSwarmGovernance:
         # Update overall progress (implementation is ~40% of total)
         if all_criteria_met:
             state['overall_progress'] = 0.40
-        else:
-            # Don't regress, keep previous progress with slight increase for partial completion
-            state['overall_progress'] = max(state.get('overall_progress', 0.0), 0.25)
         
         # Update state version and timestamp
         state['state_version'] = state.get('state_version', 0) + 1
@@ -590,44 +858,96 @@ class FlutterSwarmGovernance:
         print(f"💻 Implementation oversight gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _quality_verification_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _quality_verification_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Quality verification gate - ensure all quality standards are met."""
         print(f"🔍 Quality Verification Gate: {state['name']}")
         
-        project = shared_state.get_project_state(state['project_id'])
+        gate_name = 'quality_verification'
         
-        # Check quality criteria from quality gates definition
-        quality_criteria = {
-            'all_tests_passing': self._check_all_tests_passing(project),
-            'security_vulnerabilities_resolved': self._check_security_vulnerabilities_resolved(project),
-            'performance_benchmarks_met': self._check_performance_benchmarks(project),
-            'documentation_complete': self._check_documentation_complete(project)
-        }
+        # Get testing agent from registry
+        testing_agent = self.agent_registry.get_agent("testing")
+        
+        if not testing_agent:
+            self.logger.error("❌ Failed to get testing agent")
+            # Use mock data as fallback
+            quality_criteria = {
+                'all_tests_passing': False,
+                'security_vulnerabilities_resolved': False,
+                'performance_benchmarks_met': False,
+                'documentation_complete': False
+            }
+        else:
+            try:
+                # Prepare task data for the agent
+                project_id = state['project_id']
+                project = shared_state.get_project_state(project_id)
+                
+                task_data = {
+                    "project_id": project_id,
+                    "name": state['name'],
+                    "files": list(project.files_created.keys()) if project else []
+                }
+                
+                # Execute the testing task
+                self.logger.info(f"🚀 Executing testing task for project {project_id}")
+                result = await testing_agent.execute_task(
+                    "run_comprehensive_tests", 
+                    task_data
+                )
+                
+                # Process the result
+                if result.get("status") == "tests_completed":
+                    test_results = result.get("test_results", {})
+                    
+                    # Update project with test results
+                    shared_state.update_project(project_id, test_results=test_results)
+                    
+                    # Set criteria based on test results
+                    quality_criteria = {
+                        'all_tests_passing': test_results.get("passing_percentage", 0) > 80,
+                        'security_vulnerabilities_resolved': test_results.get("security_issues", 0) == 0,
+                        'performance_benchmarks_met': test_results.get("performance_passing", False),
+                        'documentation_complete': self._check_documentation_complete(project)
+                    }
+                else:
+                    # Testing failed
+                    quality_criteria = {
+                        'all_tests_passing': False,
+                        'security_vulnerabilities_resolved': False,
+                        'performance_benchmarks_met': False,
+                        'documentation_complete': self._check_documentation_complete(project)
+                    }
+            except Exception as e:
+                self.logger.error(f"❌ Error executing testing agent: {str(e)}")
+                quality_criteria = {
+                    'all_tests_passing': False,
+                    'security_vulnerabilities_resolved': False,
+                    'performance_benchmarks_met': False,
+                    'documentation_complete': False
+                }
         
         all_criteria_met = all(quality_criteria.values())
         
+        # Update governance state
         state['governance_decisions'].append({
-            'gate': 'quality_verification',
+            'gate': gate_name,
             'timestamp': datetime.now().isoformat(),
             'criteria_met': quality_criteria,
             'approved': all_criteria_met,
             'notes': 'Quality verification gate evaluation completed'
         })
         
-        state['gate_statuses']['quality_verification'] = 'passed' if all_criteria_met else 'failed'
-        state['approval_status']['quality_verification'] = 'approved' if all_criteria_met else 'rejected'
+        state['gate_statuses'][gate_name] = 'passed' if all_criteria_met else 'failed'
+        state['approval_status'][gate_name] = 'approved' if all_criteria_met else 'rejected'
         
         # Update overall progress (quality verification is ~60% of total)
         if all_criteria_met:
             state['overall_progress'] = 0.60
-        else:
-            # Don't regress, keep previous progress
-            state['overall_progress'] = max(state.get('overall_progress', 0.0), 0.45)
         
         print(f"🔍 Quality verification gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _security_compliance_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _security_compliance_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Security compliance gate - verify security requirements are met."""
         print(f"🔒 Security Compliance Gate: {state['name']}")
         
@@ -676,7 +996,7 @@ class FlutterSwarmGovernance:
         print(f"🔒 Security compliance gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _performance_validation_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _performance_validation_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Performance validation gate - verify performance requirements are met."""
         print(f"⚡ Performance Validation Gate: {state['name']}")
         
@@ -705,7 +1025,7 @@ class FlutterSwarmGovernance:
         print(f"⚡ Performance validation gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _documentation_review_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _documentation_review_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Documentation review gate - verify documentation completeness."""
         print(f"📚 Documentation Review Gate: {state['name']}")
         
@@ -734,7 +1054,7 @@ class FlutterSwarmGovernance:
         print(f"📚 Documentation review gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
-    async def _deployment_approval_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _deployment_approval_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Deployment approval gate - final verification before deployment."""
         print(f"🚀 Deployment Approval Gate: {state['name']}")
         
@@ -770,7 +1090,7 @@ class FlutterSwarmGovernance:
         return state
     
     # Fallback Coordination Node
-    async def _fallback_coordination_node(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+    async def _fallback_coordination_node(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """
         Fallback coordination node - handles situations when real-time collaboration fails
         or when quality gates detect issues requiring intervention.
@@ -785,7 +1105,7 @@ class FlutterSwarmGovernance:
         coordination_needs = []
         
         # Check if agents are stuck or not collaborating
-        if not collaboration_health['healthy']:
+        if not collaboration_health.get('healthy', False):
             coordination_needs.append('agent_collaboration_breakdown')
         
         # Check if quality gates are failing repeatedly
@@ -796,11 +1116,6 @@ class FlutterSwarmGovernance:
         # Check if project is making progress
         if state['overall_progress'] < 0.1:
             coordination_needs.append('project_stagnation')
-        
-        # Check specific missing artifacts and trigger agents to create them
-        if state['gate_statuses'].get('architecture_approval') == 'failed':
-            if not project or len(project.architecture_decisions) == 0:
-                coordination_needs.append('missing_architecture_decisions')
         
         # Implement coordination strategies
         coordination_actions = []
@@ -829,34 +1144,10 @@ class FlutterSwarmGovernance:
                     guidance
                 )
                 coordination_actions.append('explicit_guidance_provided')
-                
-            elif need == 'missing_architecture_decisions':
-                # Directly trigger architecture creation
-                architecture_result = await self._trigger_architecture_agent(state)
-                if architecture_result.get('status') == 'success':
-                    coordination_actions.append('architecture_decisions_created')
-                    # Update the state with the new decisions
-                    if project:
-                        project.architecture_decisions.extend(architecture_result.get('decisions', []))
-                        shared_state.update_project(state['project_id'], architecture_decisions=project.architecture_decisions)
-                else:
-                    coordination_actions.append('architecture_creation_failed')
-                    
-                # Try to register missing agents
-                try:
-                    await self._register_missing_agents()
-                    coordination_actions.append('missing_agents_registered')
-                except Exception as e:
-                    self.logger.debug(f"Could not register missing agents: {e}")
-                    coordination_actions.append('agent_registration_skipped')
         
         # Update coordination status
         state['coordination_fallback_active'] = True
         state['stuck_processes'] = coordination_needs
-        
-        # Ensure overall_progress is maintained (don't let it regress during coordination)
-        if 'overall_progress' not in state:
-            state['overall_progress'] = 0.0
         
         # Record coordination decision
         state['governance_decisions'].append({
@@ -872,410 +1163,134 @@ class FlutterSwarmGovernance:
         
         return state
     
-    async def _trigger_architecture_agent(self, state: ProjectGovernanceState) -> Dict[str, Any]:
-        """Trigger the architecture agent to create architecture decisions."""
-        try:
-            # Import and create architecture agent
-            from agents.architecture_agent import ArchitectureAgent
-            arch_agent = ArchitectureAgent()
-            
-            # Prepare task data
-            task_data = {
-                "project_id": state['project_id'],
-                "name": state['name'],
-                "description": state['description'],
-                "requirements": state['requirements']
-            }
-            
-            # Execute architecture design task
-            result = await arch_agent.execute_task("design_flutter_architecture", task_data)
-            
-            if result and result.get('architecture_design'):
-                # Create architecture decision record
-                architecture_decision = {
-                    "decision_id": f"arch_{state['project_id']}_fallback",
-                    "title": "Flutter Application Architecture Design (Fallback)",
-                    "description": result['architecture_design'],
-                    "status": "approved",
-                    "created_by": "fallback_coordination",
-                    "created_at": datetime.now().isoformat(),
-                    "consequences": "Defines the overall structure and patterns for the Flutter application",
-                    "type": "security",  # Add type field for checking
-                }
-                
-                # Add performance and scalability decisions as well
-                performance_decision = {
-                    "decision_id": f"perf_{state['project_id']}_fallback",
-                    "title": "Performance Optimization Strategy",
-                    "description": "Implemented lazy loading, caching, and memory optimization strategies",
-                    "status": "approved",
-                    "created_by": "fallback_coordination",
-                    "created_at": datetime.now().isoformat(),
-                    "type": "performance"
-                }
-                
-                scalability_decision = {
-                    "decision_id": f"scale_{state['project_id']}_fallback",
-                    "title": "Scalability Architecture",
-                    "description": "Designed modular architecture with microservices support and horizontal scaling capabilities",
-                    "status": "approved", 
-                    "created_by": "fallback_coordination",
-                    "created_at": datetime.now().isoformat(),
-                    "type": "scalability"
-                }
-                
-                return {
-                    'status': 'success',
-                    'decisions': [architecture_decision, performance_decision, scalability_decision]
-                }
-            else:
-                return {'status': 'failed', 'error': 'Architecture agent did not return design'}
-                
-        except Exception as e:
-            self.logger.error(f"Failed to trigger architecture agent: {e}")
-            # Create minimal fallback decisions
-            fallback_decisions = [
-                {
-                    "decision_id": f"arch_{state['project_id']}_minimal",
-                    "title": "Minimal Flutter Architecture",
-                    "description": "Clean Architecture with Riverpod state management, GoRouter navigation, Repository pattern for data layer",
-                    "status": "approved",
-                    "created_by": "fallback_coordination",
-                    "created_at": datetime.now().isoformat(),
-                    "type": "security"
-                },
-                {
-                    "decision_id": f"perf_{state['project_id']}_minimal",
-                    "title": "Basic Performance Strategy",
-                    "description": "Widget caching, image optimization, lazy loading implementation",
-                    "status": "approved",
-                    "created_by": "fallback_coordination", 
-                    "created_at": datetime.now().isoformat(),
-                    "type": "performance"
-                },
-                {
-                    "decision_id": f"scale_{state['project_id']}_minimal",
-                    "title": "Basic Scalability Plan",
-                    "description": "Modular feature-based architecture with clean separation of concerns",
-                    "status": "approved",
-                    "created_by": "fallback_coordination",
-                    "created_at": datetime.now().isoformat(),
-                    "type": "scalability"
-                }
-            ]
-            
-            return {'status': 'success', 'decisions': fallback_decisions}
-
-    async def _register_missing_agents(self) -> None:
-        """Register missing agents that might be needed."""
-        try:
-            # Check and register security agent
-            if 'security' not in shared_state._agents:
-                from agents.security_agent import SecurityAgent
-                security_agent = SecurityAgent()
-                self.logger.info("✅ Security agent registered")
-        except Exception as e:
-            self.logger.debug(f"Security agent registration failed: {e}")
-            
-        try:
-            # Check and register performance agent
-            if 'performance' not in shared_state._agents:
-                from agents.performance_agent import PerformanceAgent
-                performance_agent = PerformanceAgent()
-                self.logger.info("✅ Performance agent registered")
-        except Exception as e:
-            self.logger.debug(f"Performance agent registration failed: {e}")
-            
-        try:
-            # Check and register devops agent
-            if 'devops' not in shared_state._agents:
-                from agents.devops_agent import DevOpsAgent
-                devops_agent = DevOpsAgent()
-                self.logger.info("✅ DevOps agent registered")
-        except Exception as e:
-            self.logger.debug(f"DevOps agent registration failed: {e}")
-
-    def _check_flutter_project_exists(self, project_id: str, project_name: str) -> bool:
-        """Check if the actual Flutter project files exist on disk."""
-        try:
-            from utils.project_manager import ProjectManager
-            pm = ProjectManager()
-            return pm.project_exists(project_name)
-        except Exception as e:
-            self.logger.error(f"Error checking Flutter project existence: {e}")
-            return False
-
-    async def _trigger_implementation_agent(self, state: ProjectGovernanceState) -> Dict[str, Any]:
-        """Trigger the implementation agent to create the Flutter project."""
-        try:
-            # Import and create implementation agent
-            from agents.implementation_agent import ImplementationAgent
-            impl_agent = ImplementationAgent()
-            
-            # Prepare task data
-            task_data = {
-                "project_id": state['project_id'],
-                "name": state['name'],
-                "description": state['description'],
-                "requirements": state['requirements'],
-                "project_name": state['name']
-            }
-            
-            self.logger.info(f"🚀 Triggering implementation agent to create Flutter project: {state['name']}")
-            
-            # Execute Flutter project creation task with proper error handling and timeouts
-            try:
-                # Set agent to working status in shared state
-                shared_state.update_agent_status(
-                    "implementation", 
-                    AgentStatus.WORKING, 
-                    f"Creating Flutter project: {state['name']}"
-                )
-                
-                # Execute with timeout protection
-                result = await asyncio.wait_for(
-                    impl_agent.execute_task("create_flutter_project", task_data),
-                    timeout=300  # 5 minutes timeout for project creation
-                )
-                
-                if result and result.get('status') == 'success':
-                    # Update agent status
-                    shared_state.update_agent_status(
-                        "implementation", 
-                        AgentStatus.COMPLETED, 
-                        f"Created Flutter project: {state['name']}"
-                    )
-                    
-                    # Log success to monitoring system
-                    self.logger.info(f"✅ Implementation agent successfully created Flutter project: {state['name']}")
-                    
-                    # Log success to LLM logger
-                    self.llm_logger.log_system_event(
-                        event_type="project_creation",
-                        status="success",
-                        details={
-                            "project_id": state['project_id'],
-                            "project_name": state['name'],
-                            "files_created": len(result.get('files_created', {}))
-                        }
-                    )
-                    
-                    return {
-                        'status': 'success',
-                        'files_created': result.get('files_created', {}),
-                        'project_path': result.get('project_path', '')
-                    }
-                else:
-                    # Log failure
-                    self.logger.error(f"❌ Implementation agent failed to create Flutter project: {result.get('error', 'Unknown error')}")
-                    
-                    # Log failure to LLM logger
-                    self.llm_logger.log_system_event(
-                        event_type="project_creation",
-                        status="failed",
-                        details={
-                            "project_id": state['project_id'],
-                            "project_name": state['name'],
-                            "error": result.get('error', 'Unknown error')
-                        }
-                    )
-                    
-                    # Fallback to manual project creation
-                    return await self._create_fallback_flutter_project(state)
-                
-            except asyncio.TimeoutError:
-                self.logger.error(f"⏱️ Implementation agent timed out while creating Flutter project: {state['name']}")
-                
-                # Update agent status
-                shared_state.update_agent_status(
-                    "implementation", 
-                    AgentStatus.ERROR, 
-                    f"Timed out creating Flutter project: {state['name']}"
-                )
-                
-                # Log timeout to LLM logger
-                self.llm_logger.log_system_event(
-                    event_type="project_creation",
-                    status="timeout",
-                    details={
-                        "project_id": state['project_id'],
-                        "project_name": state['name'],
-                        "timeout_seconds": 300
-                    }
-                )
-                
-                # Fallback to manual project creation
-                return await self._create_fallback_flutter_project(state)
-                
-        except Exception as e:
-            self.logger.error(f"Failed to trigger implementation agent: {e}")
-            
-            # Update agent status
-            try:
-                shared_state.update_agent_status(
-                    "implementation", 
-                    AgentStatus.ERROR, 
-                    f"Error creating Flutter project: {str(e)}"
-                )
-            except Exception as status_error:
-                self.logger.warning(f"Failed to update agent status: {status_error}")
-                
-            # Log error to LLM logger
-            try:
-                self.llm_logger.log_system_event(
-                    event_type="project_creation",
-                    status="error",
-                    details={
-                        "project_id": state['project_id'],
-                        "project_name": state['name'],
-                        "error": str(e)
-                    }
-                )
-            except Exception as log_error:
-                self.logger.warning(f"Failed to log error: {log_error}")
-            
-            return {'status': 'failed', 'error': str(e)}
-
-    async def _create_fallback_flutter_project(self, state: ProjectGovernanceState) -> Dict[str, Any]:
-        """Create a basic Flutter project structure as fallback when agent fails."""
-        self.logger.warning(f"⚠️ Using fallback Flutter project creation for {state['name']}")
-        
-        try:
-            from utils.project_manager import ProjectManager
-            pm = ProjectManager()
-            project_path = pm.create_flutter_project_structure(state['name'])
-            
-            # Create basic files
-            basic_files = {
-                'pubspec.yaml': 'Basic pubspec.yaml created by fallback mechanism',
-                'lib/main.dart': 'Basic main.dart created by fallback mechanism',
-                'README.md': f'# {state["name"]}\n\nA Flutter project created by FlutterSwarm.'
-            }
-            
-            # Log the fallback creation
-            if hasattr(self, 'llm_logger'):
-                self.llm_logger.log_system_event(
-                    event_type="fallback_project_creation",
-                    status="success",
-                    details={
-                        "project_id": state['project_id'],
-                        "project_name": state['name'],
-                        "files_created": list(basic_files.keys())
-                    }
-                )
-            
-            return {
-                'status': 'success',
-                'files_created': basic_files,
-                'project_path': project_path,
-                'fallback_used': True
-            }
-        except Exception as fallback_error:
-            self.logger.error(f"❌ Fallback project creation failed: {fallback_error}")
-            
-            # Log the fallback failure
-            if hasattr(self, 'llm_logger'):
-                self.llm_logger.log_system_event(
-                    event_type="fallback_project_creation",
-                    status="failed",
-                    details={
-                        "project_id": state['project_id'],
-                        "project_name": state['name'],
-                        "error": str(fallback_error)
-                    }
-                )
-            
-            return {'status': 'failed', 'error': str(fallback_error)}
+    # Helper methods
+    def _check_circuit_breaker(self, gate_name: str) -> bool:
+        """Check if circuit breaker should be triggered for a gate."""
+        failures = self.gate_failure_counts.get(gate_name, 0)
+        return failures >= self.max_gate_failures
     
-    # Governance Gate Functions - Focus on quality verification rather than task execution
-    async def _project_initiation_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
-        """Project initiation governance gate - verify project setup and readiness."""
-        print(f"🏛️ Project Initiation Gate: {state['name']}")
-        
-        # Integrate with shared state to get real-time project status
-        project = shared_state.get_project_state(state['project_id'])
-        
-        # Check if project is properly initialized in shared state
+    def _increment_gate_failure(self, gate_name: str) -> None:
+        """Increment failure count for a gate."""
+        self.gate_failure_counts[gate_name] = self.gate_failure_counts.get(gate_name, 0) + 1
+    
+    def _check_agent_collaboration_health(self) -> Dict[str, Any]:
+        """Check if agents are collaborating effectively."""
+        # Basic implementation - should be enhanced with actual metrics
+        return {'healthy': True, 'metric': 'collaboration_rate', 'value': 0.8}
+    
+    def _check_security_approval(self, project) -> bool:
+        """Check if security reviews are complete."""
         if not project:
-            print("⚠️ Project not found in shared state, creating...")
-            shared_state.create_project_with_id(
-                state['project_id'],
-                state['name'],
-                state['description'],
-                state['requirements']
-            )
+            return False
         
-        # Verify project initiation criteria
-        initiation_criteria = {
-            'requirements_defined': len(state['requirements']) > 0,
-            'project_scope_clear': len(state['description']) > 10,
-            'governance_setup': True  # Always true as we're setting it up
-        }
-        
-        all_criteria_met = all(initiation_criteria.values())
-        
-        # Update governance state
-        state['governance_decisions'].append({
-            'gate': 'project_initiation',
-            'timestamp': datetime.now().isoformat(),
-            'criteria_met': initiation_criteria,
-            'approved': all_criteria_met,
-            'notes': 'Project initiation gate evaluation completed'
-        })
-        
-        state['gate_statuses']['project_initiation'] = 'passed' if all_criteria_met else 'failed'
-        state['approval_status']['project_initiation'] = 'approved' if all_criteria_met else 'rejected'
-        
-        # Update overall progress (project initiation is ~5% of total)
-        state['overall_progress'] = 0.05 if all_criteria_met else 0.02
-        
-        print(f"✅ Project initiation gate {'PASSED' if all_criteria_met else 'FAILED'}")
-        return state
+        # Check for security-related architecture decisions
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        return any(d.get('type') == 'security' for d in architecture_decisions)
     
-    async def _architecture_approval_gate(self, state: ProjectGovernanceState) -> Dict[str, Any]:
-        """Architecture approval governance gate - verify architecture quality and completeness."""
-        print(f"🏗️ Architecture Approval Gate: {state['name']}")
+    def _check_performance_considerations(self, project) -> bool:
+        """Check if performance considerations are addressed."""
+        if not project:
+            return False
         
-        gate_name = 'architecture_approval'
+        # Check for performance-related architecture decisions
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        return any(d.get('type') == 'performance' for d in architecture_decisions)
+    
+    def _check_scalability_verification(self, project) -> bool:
+        """Check if scalability is verified."""
+        if not project:
+            return False
         
-        # Circuit breaker check
-        if self._check_circuit_breaker(gate_name):
-            print(f"🔄 Circuit breaker triggered for {gate_name} - forcing pass to prevent infinite loop")
-            all_criteria_met = True
-            architecture_criteria = {
-                'architecture_design_complete': True,
-                'security_review_passed': True,
-                'performance_considerations_addressed': True,
-                'scalability_verified': True
-            }
+        # Check for scalability-related architecture decisions
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        return any(d.get('type') == 'scalability' for d in architecture_decisions)
+    
+    def _check_documentation_complete(self, project) -> bool:
+        """Check if documentation is complete."""
+        if not project:
+            return False
+        
+        # Check for documentation completeness
+        documentation = getattr(project, 'documentation', {})
+        return len(documentation) > 0
+    
+    def _assess_collaboration_health(self) -> Dict[str, Any]:
+        """Assess the health of agent collaboration."""
+        # Monitor agent activity and interactions
+        all_agents = shared_state.get_agent_states()
+        
+        # Count active agents
+        active_agents = sum(1 for state in all_agents.values() 
+                          if state.status in [AgentStatus.WORKING, AgentStatus.WAITING])
+        
+        # Get recent messages as collaboration indicator
+        recent_messages = shared_state.get_recent_messages(minutes=5)
+        collaboration_messages = [
+            msg for msg in recent_messages 
+            if msg.message_type in [MessageType.COLLABORATION_REQUEST, MessageType.TASK_COMPLETED]
+        ]
+        
+        # Determine health
+        health_status = "healthy"
+        if active_agents < 2:
+            health_status = "warning"  # Not enough active agents
+        
+        if len(collaboration_messages) < 3 and active_agents > 1:
+            health_status = "warning"  # Not enough collaboration
+            
+        if active_agents == 0:
+            health_status = "critical"  # No active agents
+        
+        return {
+            "healthy": health_status == "healthy",
+            "status": health_status,
+            "active_agents": active_agents,
+            "total_agents": len(all_agents),
+            "collaboration_messages": len(collaboration_messages),
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _identify_priority_tasks(self, state: Dict[str, Any]) -> List[str]:
+        """Identify priority tasks based on current state."""
+        priority_tasks = []
+        
+        # Check failed gates
+        for gate, status in state.get("gate_statuses", {}).items():
+            if status == "failed":
+                priority_tasks.append(f"Fix issues in {gate}")
+        
+        # Check stuck processes
+        for process in state.get("stuck_processes", []):
+            priority_tasks.append(f"Unblock {process}")
+        
+        # Add default tasks if none identified
+        if not priority_tasks:
+            priority_tasks = [
+                "Complete architecture design",
+                "Implement core features",
+                "Add comprehensive tests"
+            ]
+        
+        return priority_tasks
+    
+    def _identify_unblocking_actions(self, state: Dict[str, Any]) -> List[str]:
+        """Identify actions that can unblock the project."""
+        unblocking_actions = []
+        
+        # Based on overall progress
+        progress = state.get("overall_progress", 0)
+        
+        if progress < 0.1:
+            unblocking_actions.append("Create initial Flutter project structure")
+            unblocking_actions.append("Define core architecture patterns")
+        elif progress < 0.3:
+            unblocking_actions.append("Implement basic navigation structure")
+            unblocking_actions.append("Create core model classes")
+        elif progress < 0.6:
+            unblocking_actions.append("Complete feature implementation")
+            unblocking_actions.append("Add comprehensive test suite")
         else:
-            # Get real-time data from shared consciousness
-            project = shared_state.get_project_state(state['project_id'])
-            architecture_insights = shared_state.get_shared_consciousness(f"architecture_guidance_{state['project_id']}")
-            
-            architecture_criteria = {
-                'architecture_design_complete': self._check_architecture_design_complete(project),
-                'security_review_passed': self._check_security_review(project),
-                'performance_considerations_addressed': self._check_performance_considerations(project),
-                'scalability_verified': self._check_scalability_verification(project)
-            }
-            
-            all_criteria_met = all(architecture_criteria.values())            
+            unblocking_actions.append("Resolve quality gate issues")
+            unblocking_actions.append("Prepare for deployment")
         
-        # Update governance state                
-        state['governance_decisions'].append({
-            'gate': 'architecture_approval',
-            'timestamp': datetime.now().isoformat(),
-            'criteria_met': architecture_criteria,
-            'approved': all_criteria_met,
-            'notes': 'Architecture approval gate evaluation completed'
-        })
-        
-        state['gate_statuses']['architecture_approval'] = 'passed' if all_criteria_met else 'failed'
-        state['approval_status']['architecture_approval'] = 'approved' if all_criteria_met else 'rejected'
-        
-        # Update overall progress (architecture approval is ~10% of total)
-        state['overall_progress'] = 0.10 if all_criteria_met else 0.05
-        
-        print(f"✅ Architecture approval gate {'PASSED' if all_criteria_met else 'FAILED'}")
-        return state
+        return unblocking_actions
