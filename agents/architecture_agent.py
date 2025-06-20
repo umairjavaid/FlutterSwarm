@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
-
+import time
 class ArchitectureAgent(BaseAgent):
     """
     The Architecture Agent specializes in system design and architectural decisions.

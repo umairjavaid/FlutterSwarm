@@ -25,14 +25,613 @@ class ImplementationAgent(BaseAgent):
     def flutter_templates(self):
         """Lazy-loaded Flutter templates."""
         if self._flutter_templates is None:
-            self._flutter_templates = {
+            self._flutter_templates =:
                 "bloc": self._get_bloc_template(),
                 "provider": self._get_provider_template(),
                 "riverpod": self._get_riverpod_template(),
                 "clean_architecture": self._get_clean_architecture_template()
-            }
+
         return self._flutter_templates
         
+    async def execute_task(self, task_type: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a task and return results."""
+        try:
+            self.logger.info(f"🔨 Executing task: {task_type}")
+            
+            if task_type == "create_flutter_project":
+                result = await self._create_flutter_project(task_data)
+            elif task_type == "implement_feature":
+                result = await self._implement_feature(task_data)
+            elif task_type == "refactor_code":
+                result = await self._refactor_code(task_data)
+            else:
+                result =:
+                    'status': 'error',
+                    'message': f'Unknown task type: {task_type}',
+                    'files_created': {},
+                    'code_generated': False
+
+            # Always validate the result
+            if result.get('status') == 'success':
+                validation_result = self._validate_implementation_result(result, task_data)
+                if not validation_result['valid']:
+                    self.logger.error(f"❌ Implementation validation failed::validation_result['error']}")
+                    result['status'] = 'failed'
+                    result['validation_error'] = validation_result['error']
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Task execution failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'error',
+                'message': str(e),
+                'files_created': {},
+                'code_generated': False
+
+    async def _create_flutter_project(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a complete Flutter project with proper file system operations."""
+        try:
+            project_name = task_data.get('project_name', task_data.get('name', 'flutter_app'))
+            project_id = task_data.get('project_id', 'unknown')
+            requirements = task_data.get('requirements', [])
+            architecture_decisions = task_data.get('architecture_decisions', [])
+            
+            self.logger.info(f"🏗️ Creating Flutter project: {project_name}")
+            
+            # Use project manager for actual file creation
+            from utils.project_manager import ProjectManager
+            pm = ProjectManager()
+            
+            # Create the project structure
+            project_path = pm.create_flutter_project_structure(project_name)
+            self.logger.info(f"📁 Project structure created at::project_path}")
+            
+            # Generate and write actual Flutter code
+            files_created = {}
+            
+            # 1. Create pubspec.yaml
+            pubspec_content = self._generate_pubspec_yaml(project_name, requirements)
+            pubspec_path = project_path / "pubspec.yaml"
+            pubspec_path.write_text(pubspec_content)
+            files_created['pubspec.yaml'] = "Flutter project configuration"
+            self.logger.info("✅ Created pubspec.yaml")
+            
+            # 2. Create main.dart
+            main_dart_content = await self._generate_main_dart(task_data, architecture_decisions)
+            lib_dir = project_path / "lib"
+            lib_dir.mkdir(exist_ok=True)
+            main_dart_path = lib_dir / "main.dart"
+            main_dart_path.write_text(main_dart_content)
+            files_created['lib/main.dart'] = "Main application entry point"
+            self.logger.info("✅ Created lib/main.dart")
+            
+            # 3. Create additional core files based on architecture
+            core_files = await self._generate_core_architecture_files(task_data, architecture_decisions, project_path)
+            files_created.update(core_files)
+            
+            # 4. Create test files
+            test_files = await self._generate_test_files(task_data, project_path)
+            files_created.update(test_files)
+            
+            # 5. Create README.md
+            readme_content = self._generate_readme(project_name, task_data.get('description', ''))
+            readme_path = project_path / "README.md"
+            readme_path.write_text(readme_content)
+            files_created['README.md'] = "Project documentation"
+            self.logger.info("✅ Created README.md")
+            
+            # Validate that files were actually created
+            actual_file_count = self._count_files_in_directory(project_path)
+            expected_minimum = len(files_created)
+            
+            if actual_file_count < expected_minimum:
+                self.logger.error(f"❌ File creation validation failed: expected:expected_minimum}, found {actual_file_count}")
+                return {
+                    'status': 'failed',
+                    'error': f'File creation validation failed: expected {expected_minimum}, found {actual_file_count}',
+                    'files_created': files_created,
+                    'actual_file_count': actual_file_count
+
+            self.logger.info(f"✅ Flutter project created successfully with {actual_file_count} files")
+            
+            return {
+                'status': 'success',
+                'message': f'Flutter project {project_name} created successfully',
+                'project_path': str(project_path),
+                'files_created': files_created,
+                'actual_file_count': actual_file_count,
+                'code_generated': True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create Flutter project: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'failed',
+                'error': str(e),
+                'files_created': {},
+                'code_generated': False
+
+    def _generate_pubspec_yaml(self, project_name: str, requirements: List[str]) -> str:
+        """Generate a comprehensive pubspec.yaml file."""
+        # Basic dependencies based on requirements
+        dependencies = ['flutter']
+        dev_dependencies = ['flutter_test', 'flutter_lints']
+        
+        # Add dependencies based on requirements
+        for req in requirements:
+            req_lower = req.lower()
+            if 'auth' in req_lower:
+                dependencies.extend(['firebase_auth', 'google_sign_in'])
+            if 'database' in req_lower or 'storage' in req_lower:
+                dependencies.extend(['sqflite', 'shared_preferences'])
+            if 'http' in req_lower or 'api' in req_lower:
+                dependencies.append('http')
+            if 'state' in req_lower:
+                dependencies.append('provider')
+            if 'navigation' in req_lower:
+                dependencies.append('go_router')
+        
+        # Remove duplicates
+        dependencies = list(set(dependencies))
+        dev_dependencies = list(set(dev_dependencies))
+        
+        pubspec_content = f"""name::project_name.lower().replace(' ', '_')}
+description: A Flutter application
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+"""
+        
+        for dep in dependencies:
+            if dep == 'flutter':
+                pubspec_content += "  flutter:\n    sdk: flutter\n"
+            else:
+                pubspec_content += f" :dep}: ^1.0.0\n"
+        
+        pubspec_content += "\ndev_dependencies:\n"
+        for dep in dev_dependencies:
+            if dep == 'flutter_test':
+                pubspec_content += "  flutter_test:\n    sdk: flutter\n"
+            else:
+                pubspec_content += f" :dep}: ^1.0.0\n"
+        
+        pubspec_content += """
+flutter:
+  uses-material-design: true
+"""
+        
+        return pubspec_content
+
+    async def _generate_main_dart(self, task_data: Dict[str, Any], architecture_decisions: List[Dict]) -> str:
+        """Generate comprehensive main.dart file with proper Flutter code."""
+        project_name = task_data.get('name', 'FlutterApp')
+        requirements = task_data.get('requirements', [])
+        
+        # Determine app type and features from requirements
+        has_auth = any('auth' in req.lower() for req in requirements)
+        has_navigation = any('nav' in req.lower() for req in requirements)
+        
+        # Use LLM to generate better main.dart if available
+        try:
+            prompt = f"""Generate a complete main.dart file for a Flutter application with these requirements:
+- Project name::project_name}
+- Requirements::', '.join(requirements)}
+- Include Material Design
+- Include proper error handling
+- Add comments explaining the code
+- Make it production-ready
+
+Architecture decisions to consider:
+{', '.join([dec.get('title', '') for dec in architecture_decisions])}
+
+Generate only the Dart code, no explanations."""
+
+            llm_response = await self._call_llm(prompt)
+            if llm_response and 'main(' in llm_response:
+                self.logger.info("✅ Generated main.dart using LLM")
+                return llm_response
+        except Exception as e:
+            self.logger.warning(f"⚠️ LLM generation failed, using template::e}")
+        
+        # Fallback to template
+        main_dart_content = f"""import 'package:flutter/material.dart'
+
+void main():{
+  runApp(const {project_name.replace(' ', '')}App())
+}}
+
+class {project_name.replace(' ', '')}App extends StatelessWidget {{
+  const {project_name.replace(' ', '')}App({{super.key}})
+
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp(
+      title: '{project_name}',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const HomePage(title: '{project_name}'),
+    )
+  }}
+}}
+
+class HomePage extends StatefulWidget {{
+  const HomePage({{super.key, required self.title}})
+
+  final String title
+
+  @override
+  State<HomePage> createState() => _HomePageState()
+}}
+
+class _HomePageState extends State<HomePage> {{
+  int _counter = 0
+
+  void _incrementCounter() {{
+    setState(() {{
+      _counter++
+    }})
+  }}
+
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text(widget.title),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Text(
+              'Welcome to {project_name}!',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Counter: $_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 20),
+            const Text('Features to implement:'),
+            ...{[f"Text('• {req}')" for req in requirements]},
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ),
+    )
+  }}
+}}
+"""
+        return main_dart_content
+
+    async def _generate_core_architecture_files(self, task_data: Dict[str, Any], 
+                                              architecture_decisions: List[Dict], 
+                                              project_path) -> Dict[str, str]:
+        """Generate core architecture files based on decisions."""
+        files_created =:}
+        
+        try:
+            # Create lib subdirectories
+            (project_path / "lib" / "models").mkdir(parents=True, exist_ok=True)
+            (project_path / "lib" / "services").mkdir(parents=True, exist_ok=True)
+            (project_path / "lib" / "widgets").mkdir(parents=True, exist_ok=True)
+            (project_path / "lib" / "screens").mkdir(parents=True, exist_ok=True)
+            
+            # Create a basic model
+            user_model = """class User {
+  final String id
+  final String name
+  final String email
+
+  const User({
+    required self.id,
+    required self.name,
+    required self.email,
+  })
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'],
+      name: json['name'],
+      email: json['email'],
+    )
+
+
+"""
+            user_model_path = project_path / "lib" / "models" / "user.dart"
+            user_model_path.write_text(user_model)
+            files_created['lib/models/user.dart'] = "User data model"
+            
+            # Create a basic service
+            api_service = """import 'dart:convert'
+import 'package:http/http.dart' as http
+
+class ApiService {
+  static const String baseUrl = 'https://api.example.com'
+
+  Future<Map<String, dynamic>> get(String endpoint) async {
+    try:
+      final response = await http.get(
+        Uri.parse('$baseUrl/$endpoint'),
+        headers: {'Content-Type': 'application/json'},
+      )
+      
+      if (response.statusCode == 200):
+        return json.decode(response.body)
+      } else:
+        throw Exception('Failed to load data')
+
+    } catch (e) {
+      throw Exception('Network error: $e')
+
+  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> data) async {
+    try:
+      final response = await http.post(
+        Uri.parse('$baseUrl/$endpoint'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(data),
+      )
+      
+      if (response.statusCode == 200 || response.statusCode == 201):
+        return json.decode(response.body)
+      } else:
+        throw Exception('Failed to send data')
+
+    } catch (e) {
+      throw Exception('Network error: $e')
+
+
+"""
+            api_service_path = project_path / "lib" / "services" / "api_service.dart"
+            api_service_path.write_text(api_service)
+            files_created['lib/services/api_service.dart'] = "API service layer"
+            
+            # Create a basic widget
+            custom_button = """import 'package:flutter/material.dart'
+
+class CustomButton extends StatelessWidget {
+  final String text
+  final VoidCallback? onPressed
+  final Color? backgroundColor
+  final Color? textColor
+
+  const CustomButton({
+    super.key,
+    required self.text,
+    self.onPressed,
+    self.backgroundColor,
+    self.textColor,
+  })
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor ?? Theme.of(context).primaryColor,
+        foregroundColor: textColor ?? Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+    )
+
+
+"""
+            custom_button_path = project_path / "lib" / "widgets" / "custom_button.dart"
+            custom_button_path.write_text(custom_button)
+            files_created['lib/widgets/custom_button.dart'] = "Custom button widget"
+            
+            self.logger.info(f"✅ Created {len(files_created)} core architecture files")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create core architecture files: {e}")
+        
+        return files_created
+
+    async def _generate_test_files(self, task_data: Dict[str, Any], project_path) -> Dict[str, str]:
+        """Generate test files for the Flutter project."""
+        files_created =:}
+        
+        try:
+            # Create test directory
+            test_dir = project_path / "test"
+            test_dir.mkdir(exist_ok=True)
+            
+            # Create widget test
+            widget_test = f"""import 'package:flutter/material.dart'
+import 'package:flutter_test/flutter_test.dart'
+
+import 'package:{task_data.get('project_name', 'flutter_app').lower().replace(' ', '_')}/main.dart'
+
+void main() {{
+  testWidgets('Counter increments smoke test', (WidgetTester tester) async {{
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const {task_data.get('name', 'FlutterApp').replace(' ', '')}App())
+
+    // Verify that our counter starts at 0.
+    expect(find.text('Counter: 0'), findsOneWidget)
+    expect(find.text('Counter: 1'), findsNothing)
+
+    // Tap the '+' icon and trigger a frame.
+    await tester.tap(find.byIcon(Icons.add))
+    await tester.pump()
+
+    // Verify that our counter has incremented.
+    expect(find.text('Counter: 0'), findsNothing)
+    expect(find.text('Counter: 1'), findsOneWidget)
+  }})
+}}
+"""
+            widget_test_path = test_dir / "widget_test.dart"
+            widget_test_path.write_text(widget_test)
+            files_created['test/widget_test.dart'] = "Widget tests"
+            
+            # Create unit test
+            unit_test = """import 'package:flutter_test/flutter_test.dart'
+
+void main() {
+  group('Unit Tests', () {
+    test('String manipulation test', () {
+      const input = 'hello world'
+      final result = input.toUpperCase()
+      expect(result, 'HELLO WORLD')
+    })
+
+    test('List operations test', () {
+      final list = [1, 2, 3]
+      list.add(4)
+      expect(list.length, 4)
+      expect(list.last, 4)
+    })
+
+    test('Map operations test', () {
+      final map = <String, int>{'a': 1, 'b': 2}
+      map['c'] = 3
+      expect(map.length, 3)
+      expect(map['c'], 3)
+    })
+  })
+
+"""
+            unit_test_path = test_dir / "unit_test.dart"
+            unit_test_path.write_text(unit_test)
+            files_created['test/unit_test.dart'] = "Unit tests"
+            
+            self.logger.info(f"✅ Created {len(files_created)} test files")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create test files: {e}")
+        
+        return files_created
+
+    def _generate_readme(self, project_name: str, description: str) -> str:
+        """Generate a comprehensive README.md file."""
+        return f"""# {project_name}
+
+{description or 'A Flutter application'}
+
+## Getting Started
+
+This Flutter project was generated by FlutterSwarm - an AI-powered Flutter development system.
+
+### Prerequisites
+
+- Flutter SDK (3.0.0 or higher)
+- Dart SDK
+- Android Studio / VS Code
+- Android SDK / Xcode (for mobile development)
+
+### Installation
+
+1. Clone this repository
+2. Navigate to the project directory
+3. Run `flutter pub get` to install dependencies
+4. Run `flutter run` to start the application
+
+### Project Structure
+
+```
+lib/
+├── main.dart           # Application entry point
+├── models/             # Data models
+├── services/           # Business logic and API calls
+├── widgets/            # Custom widgets
+└── screens/            # Application screens
+
+test/
+├── widget_test.dart    # Widget tests
+└── unit_test.dart      # Unit tests
+```
+
+### Features
+
+- Modern Flutter architecture
+- Comprehensive testing setup
+- Clean code structure
+- Material Design 3
+
+### Development
+
+To run tests:
+```bash
+flutter test
+```
+
+To build for production:
+```bash
+flutter build apk  # For Android
+flutter build ios  # For iOS
+```
+
+### Generated by FlutterSwarm
+
+This project was automatically generated using AI-powered development tools.
+Architecture decisions and code structure follow Flutter best practices.
+"""
+
+    def _count_files_in_directory(self, directory_path) -> int:
+        """Count all files in a directory recursively."""
+        import os
+        
+        file_count = 0
+        try:
+            for root, dirs, files in os.walk(directory_path):
+                file_count += len(files)
+        except Exception as e:
+            self.logger.error(f"Error counting files in:directory_path}: {e}")
+            return 0
+        
+        return file_count
+
+    def _validate_implementation_result(self, result: Dict[str, Any], task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate that the implementation actually created files."""
+        if result.get('status') != 'success':
+            return:'valid': False, 'error': 'Implementation status is not success'}
+        
+        project_name = task_data.get('project_name', task_data.get('name', 'flutter_app'))
+        actual_file_count = result.get('actual_file_count', 0)
+        
+        if actual_file_count < 5:
+            return:
+                'valid': False, 
+                'error': f'Insufficient files created: {actual_file_count} (minimum 5 required)'
+
+        files_created = result.get('files_created', {})
+        if len(files_created) < 3:
+            return:
+                'valid': False,
+                'error': f'Insufficient file records: {len(files_created)} (minimum 3 required)'
+
+        return {'valid': True, 'error': None}
+
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute implementation tasks."""
         if "implement_feature" in task_description:
@@ -65,7 +664,7 @@ class ImplementationAgent(BaseAgent):
         elif collaboration_type == "refactor_request":
             return await self._handle_refactor_request(data)
         else:
-            return {"status": "unknown_collaboration_type", "type": collaboration_type}
+            return:"status": "unknown_collaboration_type", "type": collaboration_type}
     
     async def on_state_change(self, change_data: Dict[str, Any]) -> None:
         """React to state changes."""
@@ -82,7 +681,7 @@ class ImplementationAgent(BaseAgent):
     async def _implement_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement a specific feature using tools."""
         feature_name = task_data.get("feature_name", "unknown")
-        feature_spec = task_data.get("feature_spec", {})
+        feature_spec = task_data.get("feature_spec",:})
         project_id = task_data.get("project_id")
         
         self.logger.info(f"🔨 Implementing feature: {feature_name}")
@@ -118,13 +717,13 @@ class ImplementationAgent(BaseAgent):
         # Analyze the code for issues
         analysis_result = await self.execute_tool("analysis", operation="dart_analyze")
         
-        return {
+        return:
             "feature_name": feature_name,
             "generated_files": generated_files,
             "status": "completed",
-            "analysis_result": analysis_result.data if analysis_result.data else {},
+            "analysis_result": analysis_result.data if analysis_result.data else:},
             "issues_found": analysis_result.data.get("total_issues", 0) if analysis_result.data else 0
-        }
+
     
     async def _create_feature_structure(self, feature_name: str) -> None:
         """Create directory structure for a feature using file tools."""
@@ -155,7 +754,7 @@ class ImplementationAgent(BaseAgent):
             
             # Generate model code
             model_prompt = f"""
-            Generate a Dart model class for {model_name} with the following fields:
+            Generate a Dart model class for:model_name} with the following fields:
             {model_fields}
             
             Include:
@@ -175,7 +774,7 @@ class ImplementationAgent(BaseAgent):
         
         if write_result.status == ToolStatus.SUCCESS:
             generated_files.append(file_path)
-            self.logger.info(f"✅ Generated model: {file_path}")
+            self.logger.info(f"✅ Generated model::file_path}")
         else:
             self.logger.error(f"❌ Failed to generate model: {file_path}")
         
@@ -191,7 +790,7 @@ class ImplementationAgent(BaseAgent):
             
             # Generate screen code using tools
             screen_prompt = f"""
-            Generate a Flutter {screen_type} widget for {screen_name} screen.
+            Generate a Flutter:screen_type} widget for {screen_name} screen.
             
             Include:
             - Proper widget structure
@@ -212,7 +811,7 @@ class ImplementationAgent(BaseAgent):
             
             if write_result.status.value == "success":
                 generated_files.append(file_path)
-                self.logger.info(f"✅ Generated screen: {file_path}")
+                self.logger.info(f"✅ Generated screen::file_path}")
             else:
                 self.logger.error(f"❌ Failed to generate screen: {file_path}")
         
@@ -250,7 +849,7 @@ class ImplementationAgent(BaseAgent):
     
     async def _add_dependencies(self, dependencies: List[str]) -> None:
         """Add dependencies to pubspec.yaml using Flutter tool."""
-        self.logger.info(f"📦 Adding dependencies: {dependencies}")
+        self.logger.info(f"📦 Adding dependencies::dependencies}")
         
         # Use Flutter tool to add packages
         add_result = await self.execute_tool("flutter", operation="pub_add", packages=dependencies)
@@ -261,7 +860,7 @@ class ImplementationAgent(BaseAgent):
             # Run pub get to install dependencies
             await self.execute_tool("flutter", operation="pub_get")
         else:
-            self.logger.error(f"❌ Failed to add dependencies: {add_result.error}")
+            self.logger.error(f"❌ Failed to add dependencies::add_result.error}")
 
     async def _generate_models(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate data models and DTOs."""
@@ -270,7 +869,7 @@ class ImplementationAgent(BaseAgent):
         
         models_prompt = f"""
         Generate Flutter/Dart models for the following entities:
-        {entities}
+       :entities}
         
         For each model, create:
         
@@ -289,32 +888,32 @@ class ImplementationAgent(BaseAgent):
         - Equatable for value equality (if using equatable package)
         
         Example structure:
-        class User extends Equatable {{
+        class User extends Equatable:{
           const User({{
-            required this.id,
-            required this.name,
-            required this.email,
-            this.avatar,
-          }});
+            required self.id,
+            required self.name,
+            required self.email,
+            self.avatar,
+          }})
           
-          final String id;
-          final String name;
-          final String email;
-          final String? avatar;
+          final String id
+          final String name
+          final String email
+          final String? avatar
           
           factory User.fromJson(Map<String, dynamic> json) => User(
             id: json['id'] as String,
             name: json['name'] as String,
             email: json['email'] as String,
             avatar: json['avatar'] as String?,
-          );
+          )
           
           Map<String, dynamic> toJson() => {{
             'id': id,
             'name': name,
             'email': email,
             if (avatar != null) 'avatar': avatar,
-          }};
+          }}
           
           User copyWith({{
             String? id,
@@ -323,15 +922,15 @@ class ImplementationAgent(BaseAgent):
             String? avatar,
           }}) {{
             return User(
-              id: id ?? this.id,
-              name: name ?? this.name,
-              email: email ?? this.email,
-              avatar: avatar ?? this.avatar,
-            );
+              id: id ?? self.id,
+              name: name ?? self.name,
+              email: email ?? self.email,
+              avatar: avatar ?? self.avatar,
+            )
           }}
           
           @override
-          List<Object?> get props => [id, name, email, avatar];
+          List<Object?> get props => [id, name, email, avatar]
         }}
         
         Generate complete, production-ready model files.
@@ -348,7 +947,7 @@ class ImplementationAgent(BaseAgent):
             "models_generated": entities,
             "files_created": files_created,
             "code": models_code
-        }
+
     
     async def _create_screens(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create UI screens and widgets."""
@@ -379,11 +978,11 @@ class ImplementationAgent(BaseAgent):
         - Follow Flutter widget composition patterns
         
         Example screen structure:
-        class HomeScreen extends StatefulWidget {{
-          const HomeScreen({{super.key}});
+        class HomeScreen extends StatefulWidget:{
+          const HomeScreen({{super.key}})
           
           @override
-          State<HomeScreen> createState() => _HomeScreenState();
+          State<HomeScreen> createState() => _HomeScreenState()
         }}
         
         class _HomeScreenState extends State<HomeScreen> {{
@@ -404,7 +1003,7 @@ class ImplementationAgent(BaseAgent):
                   ),
                 ),
               ),
-            );
+            )
           }}
         }}
         
@@ -423,7 +1022,7 @@ class ImplementationAgent(BaseAgent):
             "screens_created": screens,
             "files_created": files_created,
             "code": screens_code
-        }
+
     
     async def _implement_state_management(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement the chosen state management solution."""
@@ -433,7 +1032,7 @@ class ImplementationAgent(BaseAgent):
         
         state_management_prompt = f"""
         Implement {solution} state management for these features:
-        Features: {features}
+        Features::features}
         
         Create a complete state management implementation including:
         
@@ -444,7 +1043,7 @@ class ImplementationAgent(BaseAgent):
         5. **Provider Setup**: Configure providers/injectors
         6. **Widget Integration**: Connect UI to state management
         
-        {self.flutter_templates.get(solution, "Use best practices for the chosen solution")}
+       :self.flutter_templates.get(solution, "Use best practices for the chosen solution")}
         
         Ensure the implementation follows:
         - Separation of concerns
@@ -456,7 +1055,7 @@ class ImplementationAgent(BaseAgent):
         Generate complete, production-ready state management code.
         """
         
-        state_code = await self.think(state_management_prompt, {
+        state_code = await self.think(state_management_prompt,:
             "solution": solution,
             "features": features,
             "project": shared_state.get_project_state(project_id)
@@ -469,7 +1068,7 @@ class ImplementationAgent(BaseAgent):
             "features": features,
             "files_created": files_created,
             "code": state_code
-        }
+
     
     async def _setup_project_structure(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Set up the initial project structure."""
@@ -478,7 +1077,7 @@ class ImplementationAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         if not project:
-            return {"error": "Project not found"}
+            return:"error": "Project not found"}
         
         # Import project manager and create the Flutter project immediately
         from utils.project_manager import ProjectManager
@@ -490,7 +1089,7 @@ class ImplementationAgent(BaseAgent):
             # Create the actual Flutter project structure first
             if not pm.project_exists(project.name):
                 project_path = pm.create_flutter_project_structure(project.name)
-                print(f"✅ Flutter project created at: {project_path}")
+                print(f"✅ Flutter project created at::project_path}")
             else:
                 project_path = pm.get_project_path(project.name)
                 print(f"✅ Using existing Flutter project at: {project_path}")
@@ -500,24 +1099,22 @@ class ImplementationAgent(BaseAgent):
             
             # Update shared state
             for file_path in files_created:
-                shared_state.add_file_to_project(project_id, file_path, f"// Generated by FlutterSwarm for {file_path}")
+                shared_state.add_file_to_project(project_id, file_path, f"// Generated by FlutterSwarm for:file_path}")
             
             print(f"📱 Created {len(files_created)} files for Flutter app structure")
             
-            return {
+            return:
                 "architecture_style": architecture_style,
                 "files_created": files_created,
                 "project_path": project_path,
                 "status": "project_structure_created"
-            }
-            
+
         except Exception as e:
             print(f"❌ Failed to create project structure: {e}")
             return {
                 "error": str(e),
                 "status": "failed"
-            }
-    
+
     async def _parse_and_create_files(self, project_id: str, code_content: str) -> List[str]:
         """Parse generated code and create actual files in the Flutter project."""
         from utils.project_manager import ProjectManager
@@ -526,7 +1123,7 @@ class ImplementationAgent(BaseAgent):
         project = shared_state.get_project_state(project_id)
         
         if not project:
-            print(f"❌ Project {project_id} not found")
+            print(f"❌ Project:project_id} not found")
             return files_created
         
         # Get project manager and ensure project structure exists
@@ -535,7 +1132,7 @@ class ImplementationAgent(BaseAgent):
         
         # Create Flutter project structure if it doesn't exist
         if not pm.project_exists(project.name):
-            print(f"🏗️  Creating Flutter project structure for {project.name}")
+            print(f"🏗️  Creating Flutter project structure for:project.name}")
             try:
                 project_path = pm.create_flutter_project_structure(project.name)
                 print(f"✅ Flutter project created at: {project_path}")
@@ -602,7 +1199,7 @@ class ImplementationAgent(BaseAgent):
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-            print(f"📄 Created file: {file_path}")
+            print(f"📄 Created file::file_path}")
             return True
             
         except Exception as e:
@@ -617,14 +1214,14 @@ class ImplementationAgent(BaseAgent):
         # Clean project name for class names
         clean_name = ''.join(word.capitalize() for word in project_name.replace(' ', '_').replace('-', '_').split('_'))
         
-        main_dart_content = f'''import 'package:flutter/material.dart';
+        main_dart_content = f'''import 'package:flutter/material.dart'
 
-void main() {{
-  runApp(const {clean_name}App());
+void main():{
+  runApp(const {clean_name}App())
 }}
 
 class {clean_name}App extends StatelessWidget {{
-  const {clean_name}App({{super.key}});
+  const {clean_name}App({{super.key}})
 
   @override
   Widget build(BuildContext context) {{
@@ -635,12 +1232,12 @@ class {clean_name}App extends StatelessWidget {{
         useMaterial3: true,
       ),
       home: const HomeScreen(),
-    );
+    )
   }}
 }}
 
 class HomeScreen extends StatelessWidget {{
-  const HomeScreen({{super.key}});
+  const HomeScreen({{super.key}})
 
   @override
   Widget build(BuildContext context) {{
@@ -671,10 +1268,10 @@ class HomeScreen extends StatelessWidget {{
           ],
         ),
       ),
-    );
+    )
   }}
 }}
-''';
+'''
         
         if await self._create_actual_file(project_path, 'lib/main.dart', main_dart_content):
             files_created.append('lib/main.dart')
@@ -685,61 +1282,60 @@ class HomeScreen extends StatelessWidget {{
     def _get_bloc_template(self) -> str:
         """Get BLoC state management template."""
         return """
-import 'package:bloc/bloc.dart';
-import 'package:equatable/equatable.dart';
+import 'package:bloc/bloc.dart'
+import 'package:equatable/equatable.dart'
 
-part '{feature}_event.dart';
-part '{feature}_state.dart';
+part '{feature}_event.dart'
+part '{feature}_state.dart'
 
 class {Feature}Bloc extends Bloc<{Feature}Event, {Feature}State> {
   {Feature}Bloc() : super({Feature}Initial()) {
     on<{Feature}Event>((event, emit) {
       // TODO: Implement event handlers
-    });
-  }
-}
+    })
+
+
 """
 
     def _get_provider_template(self) -> str:
         """Get Provider state management template."""
         return """
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
 
 class {Feature}Provider extends ChangeNotifier {
-  bool _isLoading = false;
-  String? _error;
+  bool _isLoading = false
+  String? _error
   
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  bool get isLoading => _isLoading
+  String? get error => _error
   
   void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
-  }
-  
+    _isLoading = loading
+    notifyListeners()
+
   void _setError(String? error) {
-    _error = error;
-    notifyListeners();
-  }
-}
+    _error = error
+    notifyListeners()
+
+
 """
 
     def _get_riverpod_template(self) -> str:
         """Get Riverpod state management template."""
         return """
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 // State class
 class {Feature}State {
-  final bool isLoading;
-  final String? error;
-  final List<dynamic> items;
+  final bool isLoading
+  final String? error
+  final List<dynamic> items
   
   const {Feature}State({
-    this.isLoading = false,
-    this.error,
-    this.items = const [],
-  });
+    self.isLoading = false,
+    self.error,
+    self.items = const [],
+  })
   
   {Feature}State copyWith({
     bool? isLoading,
@@ -747,23 +1343,22 @@ class {Feature}State {
     List<dynamic>? items,
   }) {
     return {Feature}State(
-      isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
-      items: items ?? this.items,
-    );
-  }
-}
+      isLoading: isLoading ?? self.isLoading,
+      error: error ?? self.error,
+      items: items ?? self.items,
+    )
+
 
 // Provider
 final {feature}Provider = StateNotifierProvider<{Feature}Notifier, {Feature}State>(
   (ref) => {Feature}Notifier(),
-);
+)
 
 class {Feature}Notifier extends StateNotifier<{Feature}State> {
-  {Feature}Notifier() : super(const {Feature}State());
+  {Feature}Notifier() : super(const {Feature}State())
   
   // Add methods here
-}
+
 """
 
     def _get_clean_architecture_template(self) -> str:
@@ -771,53 +1366,48 @@ class {Feature}Notifier extends StateNotifier<{Feature}State> {
         return """
 // Domain Layer - Entity
 class {Feature}Entity {
-  final String id;
-  final String name;
+  final String id
+  final String name
   
   const {Feature}Entity({
-    required this.id,
-    required this.name,
-  });
-}
+    required self.id,
+    required self.name,
+  })
 
 // Domain Layer - Repository Interface
 abstract class {Feature}Repository {
-  Future<List<{Feature}Entity>> get{Feature}s();
-  Future<{Feature}Entity> get{Feature}ById(String id);
-}
+  Future<List<{Feature}Entity>> get{Feature}s()
+  Future<{Feature}Entity> get{Feature}ById(String id)
 
 // Domain Layer - Use Case
 class Get{Feature}sUseCase {
-  final {Feature}Repository repository;
+  final {Feature}Repository repository
   
-  Get{Feature}sUseCase(this.repository);
+  Get{Feature}sUseCase(self.repository)
   
   Future<List<{Feature}Entity>> call() {
-    return repository.get{Feature}s();
-  }
-}
+    return repository.get{Feature}s()
+
 
 // Data Layer - Model
 class {Feature}Model extends {Feature}Entity {
   const {Feature}Model({
     required super.id,
     required super.name,
-  });
+  })
   
   factory {Feature}Model.fromJson(Map<String, dynamic> json) {
     return {Feature}Model(
       id: json['id'],
       name: json['name'],
-    );
-  }
-  
+    )
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
-    };
-  }
-}
+
+
 """
     
     async def _provide_code_review(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -847,7 +1437,7 @@ class {Feature}Model extends {Feature}Entity {
             "review": review,
             "focus": focus,
             "reviewer": self.agent_id
-        }
+
     
     async def _fix_implementation_issue(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fix implementation issues reported by QA."""
@@ -900,7 +1490,7 @@ class {Feature}Model extends {Feature}Entity {
             "status": "issue_fixed",
             "fixed_files": fixed_files,
             "issue_id": issue.get("issue_id", "")
-        }
+
     
     async def _apply_implementation_fixes(self, project_id: str, fix_response: str) -> List[str]:
         """Apply implementation fixes to actual files."""
@@ -916,7 +1506,7 @@ class {Feature}Model extends {Feature}Entity {
         # In a real implementation, this would parse the LLM response more thoroughly
         if "lib/" in fix_response and ".dart" in fix_response:
             # This is a simplified example - would need better parsing
-            print(f"🔧 Implementation Agent: Applying fixes to project {project.name}")
+            print(f"🔧 Implementation Agent: Applying fixes to project:project.name}")
             fixed_files.append("example_fixed_file.dart")
         
         return fixed_files
@@ -926,7 +1516,7 @@ class {Feature}Model extends {Feature}Entity {
         guidance_prompt = f"""
         Provide implementation guidance for:
         
-        Context: {data.get('context', '')}
+        Context::data.get('context', '')}
         Question: {data.get('question', '')}
         Technology: Flutter/Dart
         
@@ -943,7 +1533,7 @@ class {Feature}Model extends {Feature}Entity {
             "guidance": guidance,
             "agent": self.agent_id,
             "status": "guidance_provided"
-        }
+
     
     async def _handle_refactor_request(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle refactoring requests from other agents."""
@@ -975,11 +1565,11 @@ class {Feature}Model extends {Feature}Entity {
         else:
             refactored_files = []
         
-        return {
+        return:
             "refactored_files": refactored_files,
             "goal": refactor_goal,
             "status": "refactoring_completed"
-        }
+
     
     async def _start_implementation(self, project_id: str) -> None:
         """Start implementation after architecture is completed."""
@@ -987,7 +1577,7 @@ class {Feature}Model extends {Feature}Entity {
         if not project:
             return
         
-        print(f"🔨 Starting implementation for project: {project.name}")
+        print(f"🔨 Starting implementation for project::project.name}")
         
         # Send message to orchestrator that implementation is ready to begin
         self.send_message_to_agent(
@@ -997,7 +1587,7 @@ class {Feature}Model extends {Feature}Entity {
                 "status": "implementation_ready",
                 "project_id": project_id,
                 "message": "Implementation agent ready to begin coding"
-            }
+
         )
     
     async def _analyze_new_file(self, change_data: Dict[str, Any]) -> None:
@@ -1008,7 +1598,7 @@ class {Feature}Model extends {Feature}Entity {
         if not file_path.endswith('.dart'):
             return  # Only analyze Dart files
         
-        print(f"🔍 Analyzing new file: {file_path}")
+        print(f"🔍 Analyzing new file::file_path}")
         
         # Get file content from shared state if available
         project = shared_state.get_project_state(project_id)
@@ -1029,11 +1619,11 @@ class {Feature}Model extends {Feature}Entity {
                 
                 # Basic syntax checks
                 if not content.strip():
-                    print(f"⚠️ Empty file detected: {file_path}")
+                    print(f"⚠️ Empty file detected::file_path}")
                 elif 'class ' not in content and 'void main(' not in content and 'import ' not in content:
-                    print(f"⚠️ Possibly invalid Dart file: {file_path}")
+                    print(f"⚠️ Possibly invalid Dart file::file_path}")
                 else:
-                    print(f"✅ File looks valid: {file_path}")
+                    print(f"✅ File looks valid::file_path}")
         
         except Exception as e:
             print(f"❌ Error analyzing file {file_path}: {e}")
@@ -1052,7 +1642,7 @@ class {Feature}Model extends {Feature}Entity {
         ]
         
         if any(impl_issue in issue_type.lower() for impl_issue in implementation_issues):
-            print(f"🔧 Implementation Agent: Handling QA issue - {issue_type}")
+            print(f"🔧 Implementation Agent: Handling QA issue -:issue_type}")
             
             # Send a fix implementation task to ourselves
             self.send_message_to_agent(
@@ -1064,7 +1654,7 @@ class {Feature}Model extends {Feature}Entity {
                         "project_id": project_id,
                         "issue": issue,
                         "affected_files": issue.get("affected_files", [])
-                    }
+
                 },
                 priority=4
             )
@@ -1104,20 +1694,18 @@ class {Feature}Model extends {Feature}Entity {
             else:
                 files_created = []
             
-            return {
+            return:
                 "status": "completed",
                 "task_description": task_description,
                 "files_created": files_created,
                 "implementation": implementation_code
-            }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in general implementation: {e}")
             return {
                 "status": "error",
                 "error": str(e),
                 "task_description": task_description
-            }
 
     def _determine_project_type(self, project) -> str:
         """Determine the type of project based on requirements and name."""
@@ -1157,9 +1745,9 @@ class {Feature}Model extends {Feature}Entity {
         project_type = self._determine_project_type(project)
         
         structure_prompt = f"""
-        Generate a complete Flutter app structure for a {project_type}:
+        Generate a complete Flutter app structure for a:project_type}:
         
-        Project: {project.name}
+        Project::project.name}
         Type: {project_type}
         Requirements: {project.requirements}
         
@@ -1188,7 +1776,7 @@ class {Feature}Model extends {Feature}Entity {
         """
         
         try:
-            structure_code = await self.think(structure_prompt, {
+            structure_code = await self.think(structure_prompt,:
                 "project": project,
                 "project_type": project_type,
                 "project_path": project_path
@@ -1209,7 +1797,7 @@ class {Feature}Model extends {Feature}Entity {
         requirements = task_data.get("requirements", [])
         features = task_data.get("features", [])
         
-        self.logger.info(f"🔄 Starting incremental feature implementation for project {project_id}")
+        self.logger.info(f"🔄 Starting incremental feature implementation for project:project_id}")
         
         # Register with supervision
         await self._register_incremental_process(project_id)
@@ -1231,13 +1819,12 @@ class {Feature}Model extends {Feature}Entity {
                 "failed_features": [],
                 "feature_results": {},
                 "overall_status": "in_progress"
-            }
-            
+
             # Implement features one by one
             for feature in sorted_features:
                 feature_id = feature["id"]
                 
-                self.logger.info(f"🔄 Implementing feature: {feature_id}")
+                self.logger.info(f"🔄 Implementing feature::feature_id}")
                 shared_state.start_feature_implementation(project_id, feature)
                 
                 # Send heartbeat to supervision
@@ -1261,7 +1848,7 @@ class {Feature}Model extends {Feature}Entity {
                         )
                         implementation_results["completed_features"].append(feature_id)
                         
-                        self.logger.info(f"✅ Feature {feature_id} implemented and validated successfully")
+                        self.logger.info(f"✅ Feature:feature_id} implemented and validated successfully")
                     else:
                         # Validation failed - attempt retry or rollback
                         retry_result = await self._handle_feature_validation_failure(
@@ -1278,7 +1865,7 @@ class {Feature}Model extends {Feature}Entity {
                     implementation_results["failed_features"].append(feature_id)
                     shared_state.complete_feature_implementation(project_id, feature_id, False)
                     
-                    self.logger.error(f"❌ Feature {feature_id} implementation failed")
+                    self.logger.error(f"❌ Feature:feature_id} implementation failed")
                 
                 # Check if we should continue or halt
                 if len(implementation_results["failed_features"]) > 3:
@@ -1296,20 +1883,18 @@ class {Feature}Model extends {Feature}Entity {
             else:
                 implementation_results["overall_status"] = "failed"
             
-            self.logger.info(f"🔄 Incremental implementation completed: {total_completed}/{total_features} features")
+            self.logger.info(f"🔄 Incremental implementation completed::total_completed}/{total_features} features")
             
             return {
                 "status": "incremental_implementation_completed",
                 "results": implementation_results
-            }
-        
+
         except Exception as e:
             self.logger.error(f"❌ Incremental implementation failed: {e}")
             return {
                 "status": "incremental_implementation_failed",
                 "error": str(e)
-            }
-    
+
     async def _parse_requirements_into_features(self, requirements: List[str], features: List[str]) -> List[Dict[str, Any]]:
         """Parse project requirements into discrete, implementable features."""
         feature_queue = []
@@ -1319,7 +1904,7 @@ class {Feature}Model extends {Feature}Entity {
         
         for i, feature_name in enumerate(all_features):
             # Create feature object with metadata
-            feature = {
+            feature =:
                 "id": f"feature_{i+1}_{feature_name.lower().replace(' ', '_')}",
                 "name": feature_name,
                 "description": f"Implementation of {feature_name}",
@@ -1328,7 +1913,7 @@ class {Feature}Model extends {Feature}Entity {
                 "estimated_complexity": self._estimate_feature_complexity(feature_name),
                 "validation_criteria": self._define_validation_criteria(feature_name),
                 "implementation_plan": await self._create_feature_implementation_plan(feature_name)
-            }
+
             feature_queue.append(feature)
         
         return feature_queue
@@ -1396,9 +1981,9 @@ class {Feature}Model extends {Feature}Entity {
     
     async def _create_feature_implementation_plan(self, feature_name: str) -> Dict[str, Any]:
         """Create implementation plan for a feature."""
-        return {
+        return:
             "steps": [
-                f"Design {feature_name} architecture",
+                f"Design:feature_name} architecture",
                 f"Implement {feature_name} models",
                 f"Create {feature_name} UI components",
                 f"Add {feature_name} business logic",
@@ -1411,7 +1996,7 @@ class {Feature}Model extends {Feature}Entity {
                 f"lib/features/{feature_name.lower()}/widgets/",
                 f"lib/features/{feature_name.lower()}/services/"
             ]
-        }
+
     
     async def _sort_features_by_dependencies(self, feature_queue: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort features by dependencies using topological sort."""
@@ -1456,22 +2041,21 @@ class {Feature}Model extends {Feature}Entity {
             # Register feature implementation process
             process_id = await self._register_feature_process(project_id, feature_id)
             
-            implementation_result = {
+            implementation_result =:
                 "feature_id": feature_id,
                 "status": "in_progress",
                 "files_created": [],
                 "errors": [],
                 "implementation_time": 0
-            }
-            
+
             start_time = datetime.now()
             
             # Execute implementation plan
-            plan = feature.get("implementation_plan", {})
+            plan = feature.get("implementation_plan",:})
             steps = plan.get("steps", [])
             
             for step in steps:
-                self.logger.info(f"🔄 Executing step: {step}")
+                self.logger.info(f"🔄 Executing step::step}")
                 
                 # Send heartbeat
                 await self._send_implementation_heartbeat(project_id, feature_id)
@@ -1498,13 +2082,12 @@ class {Feature}Model extends {Feature}Entity {
             return implementation_result
         
         except Exception as e:
-            self.logger.error(f"❌ Feature {feature_id} implementation error: {e}")
+            self.logger.error(f"❌ Feature:feature_id} implementation error::e}")
             return {
                 "feature_id": feature_id,
                 "status": "error",
                 "error": str(e)
-            }
-    
+
     async def _execute_implementation_step(self, project_id: str, feature: Dict[str, Any], step: str) -> Dict[str, Any]:
         """Execute a single implementation step."""
         step_result = {
@@ -1512,7 +2095,7 @@ class {Feature}Model extends {Feature}Entity {
             "status": "completed",
             "files_created": [],
             "errors": []
-        }
+
         
         # Simplified step execution
         try:
@@ -1551,28 +2134,28 @@ class {Feature}Model extends {Feature}Entity {
         # Clean class name
         clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
         
-        model_content = f'''// {feature["name"]} Model
+        model_content = f'''//:feature["name"]} Model
 class {clean_name}Model {{
   const {clean_name}Model({{
-    required this.id,
-    required this.name,
-  }});
+    required self.id,
+    required self.name,
+  }})
 
-  final String id;
-  final String name;
+  final String id
+  final String name
 
   factory {clean_name}Model.fromJson(Map<String, dynamic> json) {{
     return {clean_name}Model(
       id: json['id'] as String,
       name: json['name'] as String,
-    );
+    )
   }}
 
   Map<String, dynamic> toJson() {{
     return {{
       'id': id,
       'name': name,
-    }};
+    }}
   }}
 
   {clean_name}Model copyWith({{
@@ -1580,9 +2163,9 @@ class {clean_name}Model {{
     String? name,
   }}) {{
     return {clean_name}Model(
-      id: id ?? this.id,
-      name: name ?? this.name,
-    );
+      id: id ?? self.id,
+      name: name ?? self.name,
+    )
   }}
 }}
 '''
@@ -1599,11 +2182,11 @@ class {clean_name}Model {{
         # Clean class name
         clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
         
-        ui_content = f'''// {feature["name"]} Widget
-import 'package:flutter/material.dart';
+        ui_content = f'''//:feature["name"]} Widget
+import 'package:flutter/material.dart'
 
 class {clean_name}Widget extends StatelessWidget {{
-  const {clean_name}Widget({{super.key}});
+  const {clean_name}Widget({{super.key}})
 
   @override
   Widget build(BuildContext context) {{
@@ -1621,14 +2204,14 @@ class {clean_name}Widget extends StatelessWidget {{
               ),
               const SizedBox(height: 8),
               const Text(
-                'This is a generated widget for the {feature["name"]} feature.',
+                'This is a generated widget for the:feature["name"]} feature.',
                 style: TextStyle(fontSize: 16),
               ),
             ],
           ),
         ),
       ),
-    );
+    )
   }}
 }}
 '''
@@ -1645,9 +2228,9 @@ class {clean_name}Widget extends StatelessWidget {{
         # Clean class name
         clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
         
-        logic_content = f'''// {feature["name"]} Service
+        logic_content = f'''//:feature["name"]} Service
 class {clean_name}Service {{
-  const {clean_name}Service();
+  const {clean_name}Service()
 
   /// Initialize the {feature["name"]} service
   Future<void> initialize() async {{
@@ -1657,13 +2240,13 @@ class {clean_name}Service {{
   /// Get {feature["name"]} data
   Future<List<String>> getData() async {{
     // TODO: Implement data retrieval for {feature["name"]}
-    return ['Sample data for {feature["name"]}'];
+    return ['Sample data for {feature["name"]}']
   }}
 
   /// Update {feature["name"]} data
   Future<bool> updateData(String data) async {{
     // TODO: Implement data update for {feature["name"]}
-    return true;
+    return true
   }}
 
   /// Clean up resources
@@ -1685,26 +2268,26 @@ class {clean_name}Service {{
         # Clean class name for imports
         clean_name = ''.join(word.capitalize() for word in feature["name"].replace(' ', '_').split('_'))
         
-        test_content = f'''// {feature["name"]} Tests
-import 'package:flutter_test/flutter_test.dart';
+        test_content = f'''//:feature["name"]} Tests
+import 'package:flutter_test/flutter_test.dart'
 
 void main() {{
   group('{feature["name"]} Tests', () {{
     test('should initialize correctly', () {{
       // TODO: Add proper initialization tests for {feature["name"]}
-      expect(true, isTrue);
-    }});
+      expect(true, isTrue)
+    }})
 
     test('should handle data operations', () {{
       // TODO: Add data operation tests for {feature["name"]}
-      expect(1 + 1, equals(2));
-    }});
+      expect(1 + 1, equals(2))
+    }})
 
     test('should handle errors gracefully', () {{
       // TODO: Add error handling tests for {feature["name"]}
-      expect(() => throw Exception('Test error'), throwsException);
-    }});
-  }});
+      expect(() => throw Exception('Test error'), throwsException)
+    }})
+  }})
 }}
 '''
         
@@ -1718,7 +2301,7 @@ void main() {{
             "feature_id": feature["id"],
             "criteria_results": {},
             "validation_time": 0
-        }
+
         
         start_time = datetime.now()
         
@@ -1737,8 +2320,10 @@ void main() {{
         except Exception as e:
             validation_result["valid"] = False
             validation_result["error"] = str(e)
+
         
         return validation_result
+
     
     async def _validate_single_criterion(self, project_id: str, feature: Dict[str, Any], criterion: str) -> Dict[str, Any]:
         """Validate a single criterion for a feature."""
@@ -1750,7 +2335,7 @@ void main() {{
             return await self._validate_basic_functionality(project_id, feature)
         else:
             # Default validation
-            return {"passed": True, "details": "Basic validation passed"}
+            return:"passed": True, "details": "Basic validation passed"}
     
     async def _validate_compilation(self, project_id: str) -> Dict[str, Any]:
         """Validate that the project compiles successfully."""
@@ -1762,24 +2347,23 @@ void main() {{
                 timeout=30
             )
             
-            return {
+            return:
                 "passed": analysis_result.status.value == "success",
                 "details": "Flutter analyze completed",
                 "output": analysis_result.data if analysis_result.data else ""
-            }
+
         except Exception as e:
-            return {
+            return:
                 "passed": False,
                 "details": f"Compilation validation failed: {str(e)}"
-            }
-    
+
     async def _validate_runtime(self, project_id: str) -> Dict[str, Any]:
         """Validate runtime behavior."""
         # Simplified runtime validation
         return {
             "passed": True,
             "details": "Runtime validation passed (simplified)"
-        }
+
     
     async def _validate_basic_functionality(self, project_id: str, feature: Dict[str, Any]) -> Dict[str, Any]:
         """Validate basic functionality of the feature."""
@@ -1787,7 +2371,7 @@ void main() {{
         return {
             "passed": True,
             "details": f"Basic functionality validation for {feature['name']} passed"
-        }
+
     
     async def _create_rollback_point(self, project_id: str, feature_id: str) -> str:
         """Create a Git rollback point for the feature."""
@@ -1796,7 +2380,7 @@ void main() {{
             commit_result = await self.execute_tool(
                 "git",
                 operation="commit",
-                message=f"Implement feature: {feature_id}",
+                message=f"Implement feature::feature_id}",
                 add_all=True
             )
             
@@ -1812,8 +2396,9 @@ void main() {{
                 return "commit_failed"
         
         except Exception as e:
-            self.logger.error(f"❌ Failed to create rollback point: {e}")
+            self.logger.error(f"❌ Failed to create rollback point::e}")
             return "rollback_point_failed"
+
     
     async def _handle_feature_validation_failure(self, project_id: str, feature: Dict[str, Any], 
                                                 validation_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1822,7 +2407,7 @@ void main() {{
         max_retries = 3
         
         for attempt in range(max_retries):
-            self.logger.warning(f"⚠️ Feature {feature_id} validation failed, attempt {attempt + 1}")
+            self.logger.warning(f"⚠️ Feature:feature_id} validation failed, attempt {attempt + 1}")
             
             # Try to fix validation issues
             fix_result = await self._attempt_feature_fix(project_id, feature, validation_result)
@@ -1832,7 +2417,7 @@ void main() {{
                 new_validation = await self._validate_implemented_feature(project_id, feature)
                 
                 if new_validation["valid"]:
-                    return {"success": True, "attempts": attempt + 1}
+                    return:"success": True, "attempts": attempt + 1}
             
             # If fix failed or validation still fails, wait before retry
             await asyncio.sleep(2)
@@ -1844,7 +2429,8 @@ void main() {{
             "success": False,
             "attempts": max_retries,
             "rollback_performed": rollback_result["success"]
-        }
+
+
     
     async def _attempt_feature_fix(self, project_id: str, feature: Dict[str, Any], 
                                   validation_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1863,11 +2449,14 @@ void main() {{
                 elif criterion == "no_runtime_errors":
                     # Try to fix runtime errors
                     await self._fix_runtime_errors(project_id)
-            
-            return {"success": True}
+
+
+            return:"success": True}
         
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return:"success": False, "error": str(e)}
+
+
     
     async def _fix_compilation_errors(self, project_id: str):
         """Attempt to fix compilation errors."""
@@ -1895,14 +2484,17 @@ void main() {{
                 )
                 
                 if rollback_result.status.value == "success":
-                    self.logger.info(f"🔄 Rolled back feature {feature_id} to {rollback_hash}")
+                    self.logger.info(f"🔄 Rolled back feature:feature_id} to {rollback_hash}")
                     return {"success": True, "rollback_hash": rollback_hash}
-            
+
+
             return {"success": False, "reason": "No rollback point found"}
         
         except Exception as e:
             self.logger.error(f"❌ Rollback failed: {e}")
             return {"success": False, "error": str(e)}
+
+
     
     async def _validate_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate a specific feature implementation."""
@@ -1913,7 +2505,7 @@ void main() {{
         incremental_state = shared_state.get_incremental_state(project_id)
         
         if not incremental_state:
-            return {"status": "no_incremental_state"}
+            return:"status": "no_incremental_state"}
         
         # Find the feature
         feature = None
@@ -1923,16 +2515,16 @@ void main() {{
                 break
         
         if not feature:
-            return {"status": "feature_not_found"}
+            return:"status": "feature_not_found"}
         
         # Perform validation
         validation_result = await self._validate_implemented_feature(project_id, feature)
         
-        return {
+        return:
             "status": "validation_completed",
             "feature_id": feature_id,
             "validation_result": validation_result
-        }
+
     
     async def _rollback_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Rollback a specific feature."""
@@ -1945,7 +2537,7 @@ void main() {{
             "status": "rollback_completed",
             "feature_id": feature_id,
             "rollback_result": rollback_result
-        }
+
     
     # Supervision integration methods
     async def _register_incremental_process(self, project_id: str):
@@ -1956,15 +2548,18 @@ void main() {{
                 await self.collaborate_with_agent(
                     "supervision",
                     "register_process",
-                    {
+                   :
                         "agent_id": self.agent_id,
                         "task_type": "incremental_implementation",
                         "timeout_threshold": 1800,  # 30 minutes
                         "project_id": project_id
-                    }
+
                 )
+
         except Exception as e:
             self.logger.debug(f"Could not register with supervision: {e}")
+
+
     
     async def _register_feature_process(self, project_id: str, feature_id: str) -> str:
         """Register individual feature implementation with supervision."""
@@ -1979,8 +2574,10 @@ void main() {{
             )
         except Exception as e:
             self.logger.debug(f"Could not register feature process: {e}")
+
         
         return process_id
+
     
     async def _send_implementation_heartbeat(self, project_id: str, feature_id: str):
         """Send heartbeat during feature implementation."""
@@ -1993,10 +2590,12 @@ void main() {{
                     "feature_id": feature_id,
                     "agent_id": self.agent_id,
                     "timestamp": datetime.now().isoformat()
-                }
+
             )
         except Exception as e:
             self.logger.debug(f"Could not send heartbeat: {e}")
+
+
 
     # Real-time awareness and proactive collaboration overrides
     def _react_to_peer_activity(self, peer_agent: str, activity_type: str, 
@@ -2051,8 +2650,9 @@ void main() {{
                 "implementation_strategy": "ready",
                 "estimated_complexity": self._estimate_implementation_complexity(architecture_details),
                 "ready_for_features": True
-            }
+
         )
+
     
     def _assist_with_test_insights(self, test_details: Dict[str, Any]) -> None:
         """Proactively assist testing with implementation insights."""
@@ -2063,13 +2663,12 @@ void main() {{
         if current_project_id:
             project_state = shared_state.get_project_state(current_project_id)
             
-            implementation_insights = {
+            implementation_insights =:
                 "files_created": len(project_state.files_created) if project_state else 0,
                 "features_implemented": self._get_implemented_features(),
                 "testing_recommendations": self._generate_testing_recommendations(),
                 "known_edge_cases": self._identify_implementation_edge_cases()
-            }
-            
+
             # Broadcast insights to testing agent
             self.broadcast_activity(
                 activity_type="implementation_insights_shared",
@@ -2081,6 +2680,8 @@ void main() {{
                 impact_level="medium",
                 collaboration_relevance=["testing"]
             )
+
+
     
     def _address_security_in_implementation(self, security_details: Dict[str, Any]) -> None:
         """Proactively address security issues in implementation."""
@@ -2094,15 +2695,17 @@ void main() {{
             "immediate_actions": [],
             "preventive_measures": [],
             "code_changes_needed": []
-        }
+
         
         if "authentication" in security_issue_type.lower():
             security_actions["immediate_actions"].append("review_auth_implementation")
             security_actions["code_changes_needed"].append("strengthen_auth_validation")
+
         
         if "data_validation" in security_issue_type.lower():
             security_actions["immediate_actions"].append("add_input_sanitization")
             security_actions["code_changes_needed"].append("implement_data_validation")
+
         
         # Broadcast security response
         self.broadcast_activity(
@@ -2116,19 +2719,20 @@ void main() {{
             impact_level="high",
             collaboration_relevance=["security", "testing"]
         )
+
     
     def _optimize_implementation_performance(self, performance_details: Dict[str, Any]) -> None:
         """Proactively optimize implementation for performance."""
         self.logger.info(f"⚡ Optimizing implementation for performance...")
         
         performance_issue = performance_details.get("issue_type", "")
-        metrics = performance_details.get("metrics", {})
+        metrics = performance_details.get("metrics",:})
         
         optimization_plan = {
             "code_optimizations": [],
             "architecture_improvements": [],
             "implementation_changes": []
-        }
+
         
         if "memory" in performance_issue.lower():
             optimization_plan["code_optimizations"].extend([
@@ -2136,6 +2740,7 @@ void main() {{
                 "implement_object_pooling",
                 "reduce_memory_allocations"
             ])
+
         
         if "startup_time" in performance_issue.lower():
             optimization_plan["code_optimizations"].extend([
@@ -2143,6 +2748,7 @@ void main() {{
                 "reduce_initialization_overhead",
                 "optimize_critical_path"
             ])
+
         
         # Broadcast optimization activity
         self.broadcast_activity(
@@ -2156,6 +2762,7 @@ void main() {{
             impact_level="medium",
             collaboration_relevance=["performance", "testing"]
         )
+
     
     def _estimate_implementation_complexity(self, architecture_details: Dict[str, Any]) -> str:
         """Estimate implementation complexity based on architecture."""
@@ -2168,8 +2775,10 @@ void main() {{
             return "low"
         elif complexity_score <= 6:
             return "medium"
-        else:
+        } else:
             return "high"
+
+
     
     def _get_implemented_features(self) -> List[str]:
         """Get list of currently implemented features."""
@@ -2179,7 +2788,9 @@ void main() {{
             incremental_state = shared_state.get_incremental_state(current_project_id)
             if incremental_state:
                 return incremental_state.completed_features
+
         return []
+
     
     def _generate_testing_recommendations(self) -> List[str]:
         """Generate testing recommendations based on implementation."""
@@ -2189,6 +2800,7 @@ void main() {{
             "validate_data_flow_integrity",
             "test_ui_component_interactions"
         ]
+
     
     def _identify_implementation_edge_cases(self) -> List[str]:
         """Identify edge cases in current implementation."""
@@ -2198,6 +2810,7 @@ void main() {{
             "state_synchronization_issues",
             "navigation_edge_cases"
         ]
+
     
     def _suggest_test_focus_areas(self) -> List[str]:
         """Suggest areas for testing to focus on."""
@@ -2207,16 +2820,18 @@ void main() {{
             "integration_points",
             "error_recovery_scenarios"
         ]
+
     
     def _estimate_performance_improvements(self, issue_type: str) -> Dict[str, str]:
         """Estimate expected performance improvements."""
-        improvements = {
+        improvements =:
             "memory": "10-30% reduction in memory usage",
             "startup_time": "20-50% faster startup",
             "render_performance": "improved frame rate"
-        }
+
         
-        return improvements.get(issue_type.lower(), {"general": "5-15% performance improvement"})
+        return improvements.get(issue_type.lower(),:"general": "5-15% performance improvement"})
+
 
     async def _generate_repository_code(self, feature_name: str, repo_spec: Dict[str, Any]) -> str:
         """Generate repository implementation code."""
@@ -2232,6 +2847,7 @@ class {feature_name.title()}RepositoryImpl implements {feature_name.title()}Repo
 """
         return repo_code
 
+
     async def _generate_use_case_code(self, feature_name: str, use_case: Dict[str, Any]) -> str:
         """Generate use case implementation code."""
         use_case_name = use_case.get("name", "default")
@@ -2243,18 +2859,19 @@ class {use_case_name.title()}UseCase {{
 """
         return use_case_code
 
+
     async def _generate_bloc_files(self, feature_name: str, logic_spec: Dict[str, Any]) -> List[str]:
         """Generate BLoC files for a feature."""
         bloc_files = []
         
         # Generate BLoC state file
         state_code = f"""
-// {feature_name.title()} State
-import 'package:equatable/equatable.dart';
+//:feature_name.title()} State
+import 'package:equatable/equatable.dart'
 
 abstract class {feature_name.title()}State extends Equatable {{
   @override
-  List<Object> get props => [];
+  List<Object> get props => []
 }}
 
 class {feature_name.title()}Initial extends {feature_name.title()}State {{}}
@@ -2264,11 +2881,11 @@ class {feature_name.title()}Loading extends {feature_name.title()}State {{}}
 class {feature_name.title()}Loaded extends {feature_name.title()}State {{}}
 
 class {feature_name.title()}Error extends {feature_name.title()}State {{
-  final String message;
-  {feature_name.title()}Error(this.message);
+  final String message
+  {feature_name.title()}Error(self.message)
   
   @override
-  List<Object> get props => [message];
+  List<Object> get props => [message]
 }}
 """
         
