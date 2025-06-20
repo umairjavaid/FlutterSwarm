@@ -101,10 +101,11 @@ class TestingTool(BaseTool):
         )
     
     async def _create_unit_test(self, **kwargs) -> ToolResult:
-        """Create a unit test file."""
+        """Create a unit test file using LLM-generated content only."""
         class_name = kwargs.get("class_name")
         test_name = kwargs.get("test_name")
         file_path = kwargs.get("file_path")
+        content = kwargs.get("content")  # REQUIRED: LLM-generated content
         
         if not class_name:
             return ToolResult(
@@ -112,9 +113,13 @@ class TestingTool(BaseTool):
                 output="",
                 error="Class name is required for unit test creation"
             )
-        
-        # Generate test content
-        test_content = self._generate_unit_test_template(class_name, test_name)
+            
+        if not content:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Test content must be provided by LLM agents. No hardcoded templates allowed."
+            )
         
         # Determine test file path
         if not file_path:
@@ -124,21 +129,22 @@ class TestingTool(BaseTool):
         test_dir = os.path.dirname(os.path.join(self.project_directory, file_path))
         os.makedirs(test_dir, exist_ok=True)
         
-        # Write test file
+        # Write test file with LLM-generated content
         write_result = await self.file_tool.execute(
             "write",
             file_path=file_path,
-            content=test_content
+            content=content
         )
         
         if write_result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                output=f"Unit test created at {file_path}",
+                output=f"Unit test created at {file_path} using LLM-generated content",
                 data={
                     "test_type": "unit",
                     "class_name": class_name,
-                    "file_path": file_path
+                    "file_path": file_path,
+                    "content_source": "llm_generated"
                 }
             )
         
@@ -196,10 +202,11 @@ class TestingTool(BaseTool):
         return write_result
     
     async def _create_integration_test(self, **kwargs) -> ToolResult:
-        """Create an integration test file."""
+        """Create an integration test file using LLM-generated content only."""
         test_name = kwargs.get("test_name")
         test_flows = kwargs.get("test_flows", [])
         file_path = kwargs.get("file_path")
+        content = kwargs.get("content")  # REQUIRED: LLM-generated content
         
         if not test_name:
             return ToolResult(
@@ -208,8 +215,12 @@ class TestingTool(BaseTool):
                 error="Test name is required for integration test creation"
             )
         
-        # Generate test content
-        test_content = self._generate_integration_test_template(test_name, test_flows)
+        if not content:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Test content must be provided by LLM agents. No hardcoded templates allowed."
+            )
         
         # Determine test file path
         if not file_path:
@@ -219,22 +230,23 @@ class TestingTool(BaseTool):
         test_dir = os.path.dirname(os.path.join(self.project_directory, file_path))
         os.makedirs(test_dir, exist_ok=True)
         
-        # Write test file
+        # Write test file with LLM-generated content
         write_result = await self.file_tool.execute(
             "write",
             file_path=file_path,
-            content=test_content
+            content=content
         )
         
         if write_result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                output=f"Integration test created at {file_path}",
+                output=f"Integration test created at {file_path} using LLM-generated content",
                 data={
                     "test_type": "integration",
                     "test_name": test_name,
                     "file_path": file_path,
-                    "flows": len(test_flows)
+                    "flows": len(test_flows),
+                    "content_source": "llm_generated"
                 }
             )
         
@@ -243,7 +255,7 @@ class TestingTool(BaseTool):
     async def _run_coverage(self, **kwargs) -> ToolResult:
         """Run tests with coverage analysis."""
         result = await self.terminal.execute(
-            "flutter test --coverage",
+            "flutter_command test --coverage".replace("flutter_command", "flutter"),
             working_dir=self.project_directory
         )
         

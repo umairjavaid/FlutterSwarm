@@ -95,20 +95,11 @@ class CodeGenerationTool(BaseTool):
         return write_result
     
     def _get_component_file_path(self, component_type: str, name: str, options: Dict) -> str:
-        """Get the file path for a component."""
-        feature_name = options.get("feature_name", name)
+        """Get the file path for a component - using LLM-guided structure."""
+        # Use LLM-guided structure from options if provided, else default
+        custom_path = options.get("custom_path")
+        if custom_path:
+            return custom_path
         
-        path_map = {
-            "bloc": f"lib/features/{feature_name.lower()}/presentation/bloc/{name.lower()}_bloc.dart",
-            "cubit": f"lib/features/{feature_name.lower()}/presentation/cubit/{name.lower()}_cubit.dart",
-            "provider": f"lib/providers/{name.lower()}_provider.dart",
-            "riverpod": f"lib/providers/{name.lower()}_provider.dart",
-            "widget": f"lib/widgets/{name.lower()}_widget.dart",
-            "model": f"lib/models/{name.lower()}.dart",
-            "service": f"lib/services/{name.lower()}_service.dart",
-            "repository": f"lib/repositories/{name.lower()}_repository.dart",
-            "screen": f"lib/screens/{name.lower()}_screen.dart",
-            "api_client": f"lib/services/api/{name.lower()}_api_client.dart"
-        }
-        
-        return path_map.get(component_type, f"lib/{component_type}/{name.lower()}.dart")
+        # Basic path if no custom path provided
+        return f"lib/{component_type}/{name.lower()}.dart"

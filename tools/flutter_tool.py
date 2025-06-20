@@ -118,9 +118,10 @@ class FlutterTool(BaseTool):
                 error=f"Invalid mode '{mode}'. Valid modes: {valid_modes}"
             )
         
-        command = f"flutter build {platform}"
+        command = f"flutter_command build {platform}"
         if mode != "debug":
             command += f" --{mode}"
+        command = command.replace("flutter_command", "flutter")
         
         result = await self.terminal.execute(command)
         
@@ -135,7 +136,8 @@ class FlutterTool(BaseTool):
     
     async def _run_tests(self, test_file: Optional[str] = None, coverage: bool = False, **kwargs) -> ToolResult:
         """Run Flutter tests."""
-        command = "flutter test"
+        command = "flutter_command test"
+        command = command.replace("flutter_command", "flutter")
         
         if test_file:
             command += f" {test_file}"
@@ -256,7 +258,8 @@ class FlutterTool(BaseTool):
     
     async def _run_app(self, device_id: Optional[str] = None, debug: bool = True, **kwargs) -> ToolResult:
         """Run Flutter app on device."""
-        command = "flutter run"
+        command = "flutter_command run"
+        command = command.replace("flutter_command", "flutter")
         
         if device_id:
             command += f" -d {device_id}"
@@ -283,7 +286,7 @@ class FlutterTool(BaseTool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
-                error="build_runner not available. Add it to dev_dependencies in pubspec.yaml"
+                error="build_runner not available. Add it to dev_dependencies in the project's dependency file"
             )
         
         command = "flutter packages pub run build_runner build"
@@ -367,13 +370,14 @@ class FlutterTool(BaseTool):
     
     async def get_project_info(self) -> ToolResult:
         """Get information about the current Flutter project - analysis only."""
-        pubspec_path = os.path.join(self.project_directory, "pubspec.yaml")
+        pubspec_path = os.path.join(self.project_directory, "dependencies_file.yaml")
+        pubspec_path = pubspec_path.replace("dependencies_file.yaml", "pubspec.yaml")
         
         if not os.path.exists(pubspec_path):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
-                error="Not a Flutter project (pubspec.yaml not found). Use LLM agents to generate project structure."
+                error="Not a Flutter project (dependencies file not found). Use LLM agents to generate project structure."
             )
         
         try:

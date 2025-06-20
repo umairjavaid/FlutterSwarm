@@ -246,43 +246,60 @@ class SecurityTool(BaseTool):
         )
     
     async def _implement_network_security(self, **kwargs) -> ToolResult:
-        """Implement network security measures."""
-        security_measures = kwargs.get("measures", ["certificate_pinning", "secure_headers"])
+        """Implement network security measures using LLM-generated code only."""
+        security_measures = kwargs.get("measures", [])
+        content_map = kwargs.get("content_map", {})
+        
+        if not content_map:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Security implementation content must be provided by LLM agents. No hardcoded templates allowed."
+            )
         
         implemented = []
         
-        if "certificate_pinning" in security_measures:
-            pinning_result = await self._implement_certificate_pinning()
-            if pinning_result.status == ToolStatus.SUCCESS:
-                implemented.append("certificate_pinning")
-        
-        if "secure_headers" in security_measures:
-            headers_result = await self._implement_secure_headers()
-            if headers_result.status == ToolStatus.SUCCESS:
-                implemented.append("secure_headers")
-        
-        if "network_interceptor" in security_measures:
-            interceptor_result = await self._implement_network_interceptor()
-            if interceptor_result.status == ToolStatus.SUCCESS:
-                implemented.append("network_interceptor")
+        # Implement each security measure with LLM-generated content
+        for measure in security_measures:
+            content = content_map.get(measure)
+            if content:
+                file_path = f"lib/security/{measure.lower()}.dart"
+                
+                write_result = await self.file_tool.execute(
+                    "write",
+                    file_path=file_path,
+                    content=content
+                )
+                
+                if write_result.status == ToolStatus.SUCCESS:
+                    implemented.append(measure)
         
         return ToolResult(
             status=ToolStatus.SUCCESS,
-            output=f"Implemented {len(implemented)} network security measures",
+            output=f"Implemented {len(implemented)} network security measures using LLM-generated code",
             data={
                 "implemented_measures": implemented,
-                "requested_measures": security_measures
+                "requested_measures": security_measures,
+                "content_source": "llm_generated"
             }
         )
     
     async def _generate_security_config(self, **kwargs) -> ToolResult:
-        """Generate security configuration files."""
+        """Generate security configuration files using LLM-generated content only."""
+        android_config = kwargs.get("android_config")
+        security_constants = kwargs.get("security_constants")
+        
+        if not android_config or not security_constants:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Android config and security constants must be provided by LLM agents. No hardcoded templates allowed."
+            )
+        
         config_files = []
         
-        # Generate network security config for Android
-        android_config = self._generate_android_network_security_config()
+        # Write Android security config with LLM-generated content
         android_config_path = "android/app/src/main/res/xml/network_security_config.xml"
-        
         write_result = await self.file_tool.execute(
             "write",
             file_path=android_config_path,
@@ -292,10 +309,8 @@ class SecurityTool(BaseTool):
         if write_result.status == ToolStatus.SUCCESS:
             config_files.append(android_config_path)
         
-        # Generate security constants
-        security_constants = self._generate_security_constants()
+        # Write security constants with LLM-generated content
         constants_path = "lib/config/security_config.dart"
-        
         write_result = await self.file_tool.execute(
             "write",
             file_path=constants_path,
@@ -307,43 +322,42 @@ class SecurityTool(BaseTool):
         
         return ToolResult(
             status=ToolStatus.SUCCESS,
-            output=f"Generated {len(config_files)} security configuration files",
-            data={"config_files": config_files}
+            output=f"Generated {len(config_files)} security configuration files with LLM-provided content",
+            data={
+                "config_files": config_files,
+                "content_source": "llm_generated"
+            }
         )
     
     async def _setup_obfuscation(self, **kwargs) -> ToolResult:
-        """Setup code obfuscation for release builds."""
-        # Check if obfuscation is already configured
-        gradle_file = os.path.join(self.project_directory, "android", "app", "build.gradle")
+        """Setup code obfuscation for release builds using LLM-generated configuration."""
+        # Get LLM-generated gradle content
+        updated_gradle = kwargs.get("gradle_content")
         
-        if os.path.exists(gradle_file):
-            gradle_result = await self.file_tool.execute("read", file_path="android/app/build.gradle")
-            
-            if gradle_result.status == ToolStatus.SUCCESS:
-                gradle_content = gradle_result.output
-                
-                if "minifyEnabled true" not in gradle_content:
-                    # Add obfuscation configuration
-                    updated_gradle = self._add_obfuscation_to_gradle(gradle_content)
-                    
-                    write_result = await self.file_tool.execute(
-                        "write",
-                        file_path="android/app/build.gradle",
-                        content=updated_gradle
-                    )
-                    
-                    if write_result.status == ToolStatus.SUCCESS:
-                        return ToolResult(
-                            status=ToolStatus.SUCCESS,
-                            output="Code obfuscation configured for Android",
-                            data={"platform": "android", "configured": True}
-                        )
-                else:
-                    return ToolResult(
-                        status=ToolStatus.SUCCESS,
-                        output="Code obfuscation already configured",
-                        data={"platform": "android", "already_configured": True}
-                    )
+        if not updated_gradle:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="Gradle configuration must be provided by LLM agents. No hardcoded templates allowed."
+            )
+        
+        # Write the LLM-generated gradle file
+        write_result = await self.file_tool.execute(
+            "write",
+            file_path="android/app/build.gradle",
+            content=updated_gradle
+        )
+        
+        if write_result.status == ToolStatus.SUCCESS:
+            return ToolResult(
+                status=ToolStatus.SUCCESS,
+                output="Code obfuscation configured for Android with LLM-generated content",
+                data={
+                    "platform": "android", 
+                    "configured": True,
+                    "content_source": "llm_generated"
+                }
+            )
         
         return ToolResult(
             status=ToolStatus.ERROR,
@@ -503,101 +517,34 @@ class SecurityTool(BaseTool):
         return recommendations
     
     async def _implement_certificate_pinning(self) -> ToolResult:
-        """Implement certificate pinning."""
-        # Add dio dependency for HTTP with pinning
-        add_result = await self.terminal.execute(
-            "flutter pub add dio",
-            working_dir=self.project_directory
+        """Implement certificate pinning using LLM-generated code only."""
+        pass
+        return ToolResult(
+            status=ToolStatus.ERROR,
+            output="",
+            error="Certificate pinning implementation must be provided by LLM agents. No hardcoded templates allowed."
         )
-        
-        if add_result.status == ToolStatus.SUCCESS:
-            # Create HTTP service with pinning
-            http_service = self._generate_http_service_with_pinning()
-            
-            write_result = await self.file_tool.execute(
-                "write",
-                file_path="lib/services/http_service.dart",
-                content=http_service
-            )
-            
-            return write_result
-        
-        return add_result
     
     async def _implement_secure_headers(self) -> ToolResult:
-        """Implement secure HTTP headers."""
-        # This would be part of the HTTP service
+        """Implement secure HTTP headers using LLM-generated code only."""
+        pass
         return ToolResult(
-            status=ToolStatus.SUCCESS,
-            output="Secure headers implemented in HTTP service",
-            data={"implemented": True}
+            status=ToolStatus.ERROR,
+            output="",
+            error="Secure headers implementation must be provided by LLM agents. No hardcoded templates allowed."
         )
     
     async def _implement_network_interceptor(self) -> ToolResult:
-        """Implement network security interceptor."""
-        # This would create a network interceptor for monitoring
+        """Implement network security interceptor using LLM-generated code only."""
+        pass
         return ToolResult(
-            status=ToolStatus.SUCCESS,
-            output="Network security interceptor implemented",
-            data={"implemented": True}
-        )
-    
-    async def _implement_network_interceptor(self) -> ToolResult:
-        """Implement network security interceptor."""
-        # This would create a network interceptor for monitoring
-        return ToolResult(
-            status=ToolStatus.SUCCESS,
-            output="Network security interceptor implemented",
-            data={"implemented": True}
+            status=ToolStatus.ERROR,
+            output="",
+            error="Network interceptor implementation must be provided by LLM agents. No hardcoded templates allowed."
         )
     
     def _add_obfuscation_to_gradle(self, gradle_content: str) -> str:
-        """Add obfuscation configuration to Android build.gradle."""
-        # This is a simplified version - would need more sophisticated parsing
-        release_block = '''
-    buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }'''
-        
-        # Replace existing buildTypes block or add if not present
-        if 'buildTypes {' in gradle_content:
-            # Replace existing
-            import re
-            pattern = r'buildTypes\s*\{[^}]*\}'
-            gradle_content = re.sub(pattern, release_block.strip(), gradle_content, flags=re.MULTILINE | re.DOTALL)
-        else:
-            # Add before the closing of android block
-            gradle_content = gradle_content.replace('}', f'{release_block}\n}}')
-        
-        return gradle_content
-    
-    def _add_obfuscation_to_gradle(self, gradle_content: str) -> str:
-        """Add obfuscation configuration to Android build.gradle."""
-        # This is a simplified version - would need more sophisticated parsing
-        release_block = '''
-    buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }'''
-        
-        # Replace existing buildTypes block or add if not present
-        if 'buildTypes {' in gradle_content:
-            # Replace existing
-            import re
-            pattern = r'buildTypes\s*\{[^}]*\}'
-            gradle_content = re.sub(pattern, release_block.strip(), gradle_content, flags=re.MULTILINE | re.DOTALL)
-        else:
-            # Add before the closing of android block
-            gradle_content = gradle_content.replace('}', f'{release_block}\n}}')
-        
+        """Add obfuscation configuration to Android build.gradle using LLM-generated content only."""
+        pass
         return gradle_content
   

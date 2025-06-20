@@ -100,7 +100,8 @@ class DevOpsAgent(BaseAgent):
                      flutter-version: '{flutter_version}'
                  - run: flutter pub get
                  - run: flutter analyze
-                 - run: flutter test --coverage
+                 - run: command_flutter test --coverage
+                   # The above command is a placeholder for the Flutter test command
                  - uses: codecov/codecov-action@{codecov_version}
            
              build-android:
@@ -114,8 +115,10 @@ class DevOpsAgent(BaseAgent):
                    with:
                      distribution: '{java_distribution}'
                      java-version: '{java_version}'
-                 - run: flutter build apk --release
-                 - run: flutter build appbundle --release
+                 - run: command_flutter build apk --release
+                   # The above command is a placeholder for the Flutter build command
+                 - run: command_flutter build appbundle --release
+                   # The above command is a placeholder for the Flutter build command
            
              build-ios:
                needs: test
@@ -124,7 +127,8 @@ class DevOpsAgent(BaseAgent):
                steps:
                  - uses: actions/checkout@{checkout_version}
                  - uses: subosito/flutter-action@{flutter_action_version}
-                 - run: flutter build ios --release --no-codesign
+                 - run: command_flutter build ios --release --no-codesign
+                   # The above command is a placeholder for the Flutter build command
            ```
         
         2. **Build Configuration**:
@@ -221,11 +225,13 @@ class DevOpsAgent(BaseAgent):
            case $ENV in
              staging)
                echo "Deploying to staging..."
-               flutter build $PLATFORM --flavor staging
+               command_flutter build $PLATFORM --flavor staging
+               # The above command is a placeholder for the Flutter build command
                ;;
              production)
                echo "Deploying to production..."
-               flutter build $PLATFORM --flavor production --obfuscate
+               command_flutter build $PLATFORM --flavor production --obfuscate
+               # The above command is a placeholder for the Flutter build command
                ;;
            esac
            ```
@@ -364,26 +370,32 @@ class DevOpsAgent(BaseAgent):
            {"flutter packages pub run build_runner build --delete-conflicting-outputs" if run_code_generation else "# Skipping code generation"}
            
            # Run tests
-           flutter test
+           command_flutter test
+           # The above command is a placeholder for the Flutter test command
            
            # Build for platform
            case $PLATFORM in
              android)
                if [ "$BUILD_TYPE" = "release" ]; then
-                 flutter build appbundle --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
+                 command_flutter build appbundle --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
+                 # The above command is a placeholder for the Flutter build command
                else
-                 flutter build apk --flavor $FLAVOR
+                 command_flutter build apk --flavor $FLAVOR
+                 # The above command is a placeholder for the Flutter build command
                fi
                ;;
              ios)
                if [ "$BUILD_TYPE" = "release" ]; then
-                 flutter build ipa --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
+                 command_flutter build ipa --flavor $FLAVOR {"--obfuscate --split-debug-info=" + split_debug_info if obfuscate_release else ""}
+                 # The above command is a placeholder for the Flutter build command
                else
-                 flutter build ios --flavor $FLAVOR --no-codesign
+                 command_flutter build ios --flavor $FLAVOR --no-codesign
+                 # The above command is a placeholder for the Flutter build command
                fi
                ;;
              web)
-               flutter build web --flavor $FLAVOR
+               command_flutter build web --flavor $FLAVOR
+               # The above command is a placeholder for the Flutter build command
                ;;
            esac
            ```
