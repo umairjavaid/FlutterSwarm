@@ -268,6 +268,14 @@ incremental:
       max_products_per_page: 20
       cart_expiry_hours: 24
       session_timeout: 3600  # seconds
+    
+    music_app:
+      streaming_quality: ["FLAC", "320kbps MP3", "256kbps AAC"]
+      max_playlist_size: 1000
+      offline_storage_limit: "10GB"
+      supported_formats: ["mp3", "flac", "aac", "ogg"]
+      cache_duration_hours: 72
+      max_concurrent_downloads: 3
 
 # Agent Configuration
 # ------------------

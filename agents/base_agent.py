@@ -790,7 +790,7 @@ class BaseAgent(ABC):
         
         elif action == "prepare_architecture_analysis":
             # Broadcast readiness for architecture work
-            self.broadcast_activity(
+            await self.broadcast_activity(
                 activity_type="predictive_preparation",
                 activity_details={
                     "preparation_type": "architecture_analysis",
@@ -803,7 +803,7 @@ class BaseAgent(ABC):
         
         elif action == "prepare_implementation_structure":
             # Broadcast readiness for implementation work
-            self.broadcast_activity(
+            await self.broadcast_activity(
                 activity_type="predictive_preparation", 
                 activity_details={
                     "preparation_type": "implementation_structure",
@@ -816,7 +816,7 @@ class BaseAgent(ABC):
         
         elif action == "prepare_test_infrastructure":
             # Broadcast readiness for testing work
-            self.broadcast_activity(
+            await self.broadcast_activity(
                 activity_type="predictive_preparation",
                 activity_details={
                     "preparation_type": "test_infrastructure",
