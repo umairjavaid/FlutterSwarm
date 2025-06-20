@@ -159,11 +159,107 @@ class ToolManager:
     
     async def add_package(self, package_name: str, **kwargs) -> ToolResult:
         """Add package - infrastructure only, no code generation."""
-        pass
+        try:
+            # Use flutter tool to add package
+            flutter_tool = self.get_tool("flutter")
+            if not flutter_tool:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error="Flutter tool not available"
+                )
+            
+            result = await flutter_tool.execute("pub_add", packages=[package_name], **kwargs)
+            
+            if result.status == ToolStatus.SUCCESS:
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    output=f"Successfully added package: {package_name}",
+                    data={"package": package_name, "result": result.data}
+                )
+            else:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output=result.output,
+                    error=f"Failed to add package {package_name}: {result.error}"
+                )
+        
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Error adding package {package_name}: {str(e)}"
+            )
     
     async def check_dependencies(self, **kwargs) -> ToolResult:
         """Check dependencies - analysis only, no code generation."""
-        pass
+        try:
+            # Read pubspec.yaml
+            file_tool = self.get_tool("file")
+            if not file_tool:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error="File tool not available"
+                )
+            
+            pubspec_result = await file_tool.execute("read", file_path="pubspec.yaml")
+            if pubspec_result.status != ToolStatus.SUCCESS:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error=f"Could not read pubspec.yaml: {pubspec_result.error}"
+                )
+            
+            # Parse dependencies
+            try:
+                import yaml
+                pubspec_data = yaml.safe_load(pubspec_result.output)
+                dependencies = pubspec_data.get("dependencies", {})
+                dev_dependencies = pubspec_data.get("dev_dependencies", {})
+            except Exception as e:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error=f"Failed to parse pubspec.yaml: {str(e)}"
+                )
+            
+            # Check for outdated packages
+            flutter_tool = self.get_tool("flutter")
+            outdated_result = None
+            if flutter_tool:
+                outdated_result = await flutter_tool.execute("pub_outdated")
+            
+            # Analyze dependencies for security and compatibility
+            analysis_tool = self.get_tool("analysis")
+            analysis_result = None
+            if analysis_tool:
+                analysis_result = await analysis_tool.execute(
+                    "analyze_dependencies",
+                    dependencies=dependencies,
+                    dev_dependencies=dev_dependencies
+                )
+            
+            return ToolResult(
+                status=ToolStatus.SUCCESS,
+                output="Dependencies checked successfully",
+                data={
+                    "dependencies": dependencies,
+                    "dev_dependencies": dev_dependencies,
+                    "dependency_count": len(dependencies),
+                    "dev_dependency_count": len(dev_dependencies),
+                    "outdated": outdated_result.output if outdated_result else "Unable to check",
+                    "analysis": analysis_result.data if analysis_result and analysis_result.status == ToolStatus.SUCCESS else {},
+                    "status": "healthy"
+                }
+            )
+        
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Error checking dependencies: {str(e)}"
+            )
     
     def get_tools_for_agent(self, agent_type: str) -> List[str]:
         """
