@@ -1294,3 +1294,174 @@ class FlutterSwarmGovernance:
             unblocking_actions.append("Prepare for deployment")
         
         return unblocking_actions
+    
+    # Add new methods for project creation and building
+    def create_project(self, name: str, description: str, requirements: List[str], features: List[str] = None) -> str:
+        """Create a new Flutter project with the given details."""
+        import uuid
+        
+        # Generate a unique project ID
+        project_id = str(uuid.uuid4())
+        
+        # Create initial project state
+        project_state = {
+            "project_id": project_id,
+            "name": name,
+            "description": description,
+            "requirements": requirements,
+            "features": features or [],
+            "current_phase": "initiation",
+            "progress": 0.0,
+            "files_created": 0
+        }
+        
+        # Initialize project in shared state
+        shared_state.create_project_with_id(
+            project_id,
+            name,
+            description,
+            requirements
+        )
+        
+        self.logger.info(f"Created new project: {name} (ID: {project_id})")
+        return project_id
+    
+    async def build_project(self, project_id: str, name: str, description: str, 
+                           requirements: List[str], features: List[str] = None,
+                           platforms: List[str] = None, ci_system: str = None) -> Dict[str, Any]:
+        """Build the Flutter project using the governance system."""
+        self.logger.info(f"Starting build for project: {name} (ID: {project_id})")
+        
+        # Initialize project governance state
+        governance_state = ProjectGovernanceState(
+            project_id=project_id,
+            name=name,
+            description=description,
+            requirements=requirements,
+            
+            # Governance phases
+            current_governance_phase="project_initiation",
+            completed_governance_phases=[],
+            governance_phases=self.governance_phases,
+            
+            # Quality gates and criteria
+            quality_gates=self.quality_gates,
+            gate_statuses={phase: "pending" for phase in self.governance_phases},
+            
+            # Project health metrics
+            overall_progress=0.0,
+            project_health="healthy",
+            collaboration_effectiveness=1.0,
+            
+            # Governance decisions and approvals
+            governance_decisions=[],
+            approval_status={phase: "pending" for phase in self.governance_phases},
+            
+            # Integration with real-time system
+            real_time_metrics={},
+            shared_consciousness_summary={},
+            
+            # Quality assurance
+            quality_criteria_met={},
+            compliance_status={},
+            
+            # Fallback coordination
+            coordination_fallback_active=False,
+            stuck_processes=[],
+            
+            # State tracking
+            state_version=1,
+            last_updated=datetime.now().isoformat(),
+            agent_execution_history=[],
+            execution_errors=[],
+            fallback_attempts={}
+        )
+        
+        # Update shared state with platforms and CI system
+        if platforms:
+            shared_state.update_project(project_id, platforms=platforms)
+        if ci_system:
+            shared_state.update_project(project_id, ci_system=ci_system)
+        
+        # Run the governance workflow
+        config = RunnableConfig(recursion_limit=25)  # Prevent infinite loops
+        try:
+            result = await self.app.ainvoke(governance_state, config)
+            self.logger.info(f"Build completed for project: {name}")
+            
+            # Extract project results from shared state
+            project = shared_state.get_project_state(project_id)
+            if project:
+                return {
+                    "status": "completed" if result["overall_progress"] >= 0.9 else "partial",
+                    "project_id": project_id,
+                    "files_created": len(getattr(project, "files_created", {})),
+                    "architecture_decisions": len(getattr(project, "architecture_decisions", [])),
+                    "test_results": getattr(project, "test_results", {}),
+                    "security_findings": getattr(project, "security_findings", []),
+                    "documentation": getattr(project, "documentation", []),
+                    "performance_metrics": getattr(project, "performance_metrics", {}),
+                    "quality_assessment": {
+                        "score": result["overall_progress"] * 100,
+                        "issues": result["execution_errors"]
+                    },
+                    "deployment_config": {
+                        "platforms": platforms or ["android", "ios"],
+                        "ci_system": ci_system
+                    } if ci_system else None
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": "Project state not found",
+                    "project_id": project_id
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error during build: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "project_id": project_id
+            }
+
+async def run_flutter_swarm_governance(project_name: str, project_description: str, 
+                                      requirements: List[str], features: List[str] = None,
+                                      platforms: List[str] = None, ci_system: str = None) -> Dict[str, Any]:
+    """
+    Run the FlutterSwarm governance system to build a Flutter project.
+    
+    Args:
+        project_name: Name of the project
+        project_description: Description of the project
+        requirements: List of project requirements
+        features: List of features to implement
+        platforms: Target platforms (android, ios, web, desktop)
+        ci_system: CI/CD system to configure
+        
+    Returns:
+        Dict containing build results
+    """
+    # Create governance system
+    governance = FlutterSwarmGovernance()
+    
+    # Create project
+    project_id = governance.create_project(
+        name=project_name,
+        description=project_description,
+        requirements=requirements,
+        features=features or []
+    )
+    
+    # Build project
+    result = await governance.build_project(
+        project_id=project_id,
+        name=project_name,
+        description=project_description,
+        requirements=requirements,
+        features=features,
+        platforms=platforms or ["android", "ios"],
+        ci_system=ci_system
+    )
+    
+    return result
