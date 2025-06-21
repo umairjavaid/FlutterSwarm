@@ -6,6 +6,7 @@ Provides centralized configuration loading and access with environment-specific 
 import os
 import yaml
 import json
+import threading
 from typing import Dict, Any, Optional, List, Union
 from pathlib import Path
 from dataclasses import dataclass
@@ -99,7 +100,7 @@ class ConfigManager:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config = yaml.safe_load(f) or {}
-        except yaml.YAMLError as e:
+        except (yaml.YAMLError, ValueError, TypeError) as e:
             raise ConfigurationError(f"Failed to parse YAML configuration file {config_path}: {e}") from e
         except Exception as e:
             raise ConfigurationError(f"Failed to load configuration file {config_path}: {e}") from e
@@ -111,7 +112,7 @@ class ConfigManager:
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     self._agent_configs = yaml.safe_load(f) or {}
-            except yaml.YAMLError as e:
+            except (yaml.YAMLError, ValueError, TypeError) as e:
                 logger.error(f"Failed to parse agent configuration YAML: {e}")
                 self._agent_configs = {}
             except Exception as e:
@@ -129,7 +130,7 @@ class ConfigManager:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     user_config = yaml.safe_load(f) or {}
                     self._merge_configs(self._config, user_config)
-            except yaml.YAMLError as e:
+            except (yaml.YAMLError, ValueError, TypeError) as e:
                 logger.error(f"Failed to parse user configuration YAML: {e}")
             except Exception as e:
                 logger.error(f"Failed to load user configuration: {e}")
@@ -598,25 +599,41 @@ class ConfigManager:
         return f"ConfigManager(environment={self.environment}, loaded={self._loaded})"
 
 
-# Global configuration instance
-config_manager = None
+# Global configuration instance with thread-safe singleton pattern
+_config_instance = None
+_config_lock = threading.Lock()
 
 
 def get_config() -> ConfigManager:
-    """Get the global configuration manager instance."""
-    global config_manager
-    if config_manager is None:
-        config_manager = ConfigManager()
-    return config_manager
+    """Get the global configuration manager instance - thread-safe singleton."""
+    global _config_instance
+    if _config_instance is None:
+        with _config_lock:
+            if _config_instance is None:  # Double-check pattern
+                _config_instance = ConfigManager()
+                try:
+                    _config_instance.reload()
+                except Exception as e:
+                    logger.warning(f"Failed to load config during initialization: {e}")
+                    # Continue with default config
+    return _config_instance
 
 
 def reload_config() -> None:
-    """Reload the global configuration."""
-    global config_manager
-    if config_manager:
-        config_manager.reload()
-    else:
-        config_manager = ConfigManager()
+    """Reload the global configuration - thread-safe."""
+    global _config_instance
+    with _config_lock:
+        if _config_instance:
+            try:
+                _config_instance.reload()
+            except Exception as e:
+                logger.error(f"Failed to reload config: {e}")
+        else:
+            _config_instance = ConfigManager()
+            try:
+                _config_instance.reload()
+            except Exception as e:
+                logger.warning(f"Failed to load config during reload: {e}")
 
 
 # Convenience functions

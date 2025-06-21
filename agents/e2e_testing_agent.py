@@ -806,7 +806,7 @@ class E2ETestingAgent(BaseAgent):
             # Generate report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"e2e_test_report_{timestamp}.json"
-            report_path = f"{report_dir}/{report_filename}"
+            report_path = os.path.join(report_dir, report_filename)
             
             # Write comprehensive report
             await self.write_file(report_path, json.dumps(results, indent=2))

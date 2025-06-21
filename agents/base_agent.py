@@ -16,6 +16,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from shared.state import shared_state, AgentStatus, MessageType, AgentActivityEvent, AgentMessage
 from config.config_manager import get_config
 from tools import ToolManager, ToolResult, ToolStatus
+from utils.path_utils import safe_join, ensure_absolute_path, get_absolute_project_path
+from utils.exception_handler import with_exception_handling, log_and_suppress_exception, ensure_exception_handler_set
 import os
 from dotenv import load_dotenv
 import logging
@@ -52,6 +54,9 @@ class BaseAgent(ABC):
         self.current_task = None
         self._monitoring_task = None
         self._async_lock = asyncio.Lock()  # Use async lock instead of threading lock
+        
+        # Ensure exception handlers are set
+        ensure_exception_handler_set()
         
         # Register with shared state
         shared_state.register_agent(
@@ -916,7 +921,8 @@ Please contact the system administrator if this problem continues.
             
     async def _ensure_directory_exists(self, file_path: str) -> None:
         """Ensure the directory for a file exists."""
-        import os
+        # Use path utilities for safe directory handling
+        file_path = ensure_absolute_path(file_path)
         directory = os.path.dirname(file_path)
         
         if directory:
@@ -928,7 +934,7 @@ Please contact the system administrator if this problem continues.
                     directory_path=directory
                 )
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to create directory {directory}: {str(e)}")
+                log_and_suppress_exception(f"create_directory_{directory}", e)
                 # Continue anyway, the write operation will fail if necessary
     
     async def safe_execute_with_retry(self, operation_func, max_retries=3):
@@ -1106,9 +1112,22 @@ Please contact the system administrator if this problem continues.
         import asyncio
         
         if self._monitoring_task is None or self._monitoring_task.done():
-            loop = asyncio.get_event_loop()
-            self._monitoring_task = loop.create_task(self._continuous_monitoring_loop())
-            self.logger.debug(f"🔄 Started continuous monitoring for {self.agent_id}")
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # No running event loop, create one if needed
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                except Exception:
+                    self.logger.warning(f"Could not create event loop for {self.agent_id} monitoring")
+                    return
+            
+            try:
+                self._monitoring_task = loop.create_task(self._continuous_monitoring_loop())
+                self.logger.debug(f"🔄 Started continuous monitoring for {self.agent_id}")
+            except Exception as e:
+                self.logger.error(f"Failed to start monitoring task for {self.agent_id}: {e}")
 
     async def _continuous_monitoring_loop(self) -> None:
         """Main continuous monitoring loop."""
@@ -1374,6 +1393,30 @@ Please contact the system administrator if this problem continues.
         if self._monitoring_task and not self._monitoring_task.done():
             self._monitoring_task.cancel()
             self.logger.debug(f"🛑 Stopped continuous monitoring for {self.agent_id}")
+    
+    async def cleanup(self) -> None:
+        """Properly cleanup agent resources including async tasks."""
+        try:
+            # Stop monitoring
+            self._monitoring_enabled = False
+            
+            # Cancel and await monitoring task
+            if self._monitoring_task and not self._monitoring_task.done():
+                self._monitoring_task.cancel()
+                try:
+                    await self._monitoring_task
+                except asyncio.CancelledError:
+                    pass  # Expected when cancelling
+                except Exception as e:
+                    self.logger.warning(f"Error cleaning up monitoring task: {e}")
+            
+            # Update status to indicate cleanup
+            await self._update_status(AgentStatus.IDLE, None)
+            
+            self.logger.info(f"🧹 Agent {self.agent_id} cleaned up successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error during agent cleanup: {e}")
 
 class AgentToolbox:
     """Extension of the tool management for agents."""
@@ -1385,19 +1428,6 @@ class AgentToolbox:
     async def execute(self, tool_name, **kwargs):
         """Execute a tool with the given parameters."""
         return await self.tool_manager.execute_tool(tool_name, **kwargs)
-        
-    def list_available_tools(self):
-        """List tools available to this agent."""
-        # First try agent-specific method if available
-        if hasattr(self.tool_manager, 'get_tools_for_agent'):
-            return self.tool_manager.get_tools_for_agent(self.agent_id)
-        # Fallback to general list
-        return self.tool_manager.list_tools()
-        
-    def has_tool(self, tool_name):
-        """Check if a specific tool is available to this agent."""
-        available_tools = self.list_available_tools()
-        return tool_name in available_tools
         
     def list_available_tools(self):
         """List tools available to this agent."""

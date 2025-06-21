@@ -6,6 +6,7 @@ Identifies issues in generated code and coordinates fixes with other agents.
 import asyncio
 import os
 import re
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Set
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -544,7 +545,7 @@ class QualityAssuranceAgent(BaseAgent):
             "severity": "medium",
             "description": f"Issues found in {file_path}",
             "analysis": analysis,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": datetime.now().timestamp()
         }
         
         self.monitored_issues.add(issue["id"])

@@ -204,8 +204,8 @@ class SharedState:
             print(f"Warning: Failed to load config: {e}")
             self._config = None
             
+        # Use consistent threading approach for sync operations
         self._lock = threading.RLock()  # For synchronous operations
-        self._async_lock = None  # Will be initialized when needed for async operations
         self._agents: Dict[str, AgentState] = {}
         self._projects: Dict[str, ProjectState] = {}
         self._messages: List[AgentMessage] = []
@@ -247,16 +247,20 @@ class SharedState:
             self._max_collaborations = 5
         self._max_activity_events = 1000  # Maximum activity events to keep in buffer
         
-        # Async locks and state versioning
-        self._locks: Dict[str, asyncio.Lock] = {}
+        # Async locks with proper initialization and thread safety
+        self._async_locks: Dict[str, asyncio.Lock] = {}
+        self._async_lock_creation_lock = threading.Lock()  # Protect async lock creation
+        self._loop = None  # Store event loop reference
         self._state_versions: Dict[str, List[Dict[str, Any]]] = {}
         self._version_counter = 0
     
     async def _get_async_lock(self, lock_name: str = "default") -> asyncio.Lock:
-        """Get or create an async lock with the given name."""
-        if lock_name not in self._locks:
-            self._locks[lock_name] = asyncio.Lock()
-        return self._locks[lock_name]
+        """Get or create an async lock with the given name - thread-safe."""
+        if lock_name not in self._async_locks:
+            with self._async_lock_creation_lock:  # Protect creation with threading lock
+                if lock_name not in self._async_locks:  # Double-check pattern
+                    self._async_locks[lock_name] = asyncio.Lock()
+        return self._async_locks[lock_name]
         
     def register_agent(self, agent_id: str, capabilities: List[str], overwrite: bool = False) -> None:
         """Register a new agent with the shared state."""
@@ -480,7 +484,12 @@ class SharedState:
                         if len(self._message_queue[to_agent]) > self._max_messages:
                             self._message_queue[to_agent] = self._message_queue[to_agent][-self._max_messages:]
                     else:
-                        print(f"Warning: Target agent {to_agent} not registered, message not delivered")
+                        # Less noisy logging for missing agents, especially supervision
+                        if to_agent == "supervision":
+                            # Silently drop supervision messages if agent not registered
+                            pass
+                        else:
+                            print(f"Warning: Target agent {to_agent} not registered, message not delivered")
                 else:
                     # Broadcast to all agents except sender
                     for agent_id in self._message_queue:

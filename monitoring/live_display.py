@@ -63,6 +63,7 @@ class LiveDisplay:
         self.is_running = False
         self.display_thread = None
         self._lock = threading.Lock()
+        self._terminal_lock = threading.Lock()  # Synchronize terminal access
         
         # Display state
         self.last_update = datetime.now()
@@ -75,14 +76,15 @@ class LiveDisplay:
         
     def _setup_terminal(self):
         """Setup terminal for live display."""
-        if os.name == 'nt':  # Windows
-            os.system('cls')
-        else:  # Unix/Linux/macOS
-            os.system('clear')
-        
-        # Hide cursor
-        sys.stdout.write('\033[?25l')
-        sys.stdout.flush()
+        with self._terminal_lock:
+            if os.name == 'nt':  # Windows
+                os.system('cls')
+            else:  # Unix/Linux/macOS
+                os.system('clear')
+            
+            # Hide cursor
+            sys.stdout.write('\033[?25l')
+            sys.stdout.flush()
     
     def start(self):
         """Start the live display."""
@@ -93,7 +95,8 @@ class LiveDisplay:
         self.display_thread = threading.Thread(target=self._display_loop, daemon=True)
         self.display_thread.start()
         
-        print(f"{Fore.GREEN}🚀 Live monitoring started{Style.RESET_ALL}")
+        with self._terminal_lock:
+            print(f"{Fore.GREEN}🚀 Live monitoring started{Style.RESET_ALL}")
     
     def stop(self):
         """Stop the live display."""
@@ -101,11 +104,12 @@ class LiveDisplay:
         if self.display_thread and self.display_thread.is_alive():
             self.display_thread.join(timeout=1.0)
         
-        # Show cursor
-        sys.stdout.write('\033[?25h')
-        sys.stdout.flush()
-        
-        print(f"\n{Fore.YELLOW}📊 Live monitoring stopped{Style.RESET_ALL}")
+        with self._terminal_lock:
+            # Show cursor
+            sys.stdout.write('\033[?25h')
+            sys.stdout.flush()
+            
+            print(f"\n{Fore.YELLOW}📊 Live monitoring stopped{Style.RESET_ALL}")
     
     def _display_loop(self):
         """Main display loop."""
@@ -119,7 +123,7 @@ class LiveDisplay:
     
     def _update_display(self):
         """Update the terminal display."""
-        with self._lock:
+        with self._terminal_lock:  # Use terminal lock for thread-safe output
             # Clear screen and move cursor to top
             if os.name == 'nt':  # Windows
                 os.system('cls')
@@ -127,7 +131,8 @@ class LiveDisplay:
                 sys.stdout.write('\033[2J\033[H')
             
             # Build display content
-            content = self._build_display_content()
+            with self._lock:  # Use regular lock for data access
+                content = self._build_display_content()
             
             # Print content
             sys.stdout.write(content)
