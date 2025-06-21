@@ -8,6 +8,7 @@ import time
 from typing import Dict, Any, Optional, List
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from .terminal_tool import TerminalTool
+from utils.path_utils import get_absolute_project_path
 
 class FlutterTool(BaseTool):
     """
@@ -82,11 +83,10 @@ class FlutterTool(BaseTool):
     async def _create_project(self, project_name: str, template: str = "app", 
                              org: str = "com.example", **kwargs) -> ToolResult:
         """Create a new Flutter project with proper structure."""
-        # Ensure flutter_projects directory exists
-        flutter_projects_dir = os.path.join(os.path.dirname(self.project_directory), "flutter_projects")
+        # Ensure flutter_projects directory exists at repo root
+        project_path = get_absolute_project_path(project_name)
+        flutter_projects_dir = os.path.dirname(project_path)
         os.makedirs(flutter_projects_dir, exist_ok=True)
-        
-        project_path = os.path.join(flutter_projects_dir, project_name)
         
         # Check if project already exists and has essential files
         if os.path.exists(project_path):
@@ -96,7 +96,6 @@ class FlutterTool(BaseTool):
                 os.path.join(project_path, "test"),
                 os.path.join(project_path, "lib")
             ]
-            
             missing_files = [f for f in essential_files if not os.path.exists(f)]
             if missing_files:
                 return ToolResult(
@@ -104,7 +103,6 @@ class FlutterTool(BaseTool):
                     output=f"Project {project_name} exists but missing essential files: {missing_files}",
                     error=f"Incomplete Flutter project at {project_path}. Missing: {missing_files}"
                 )
-            
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output=f"Project {project_name} already exists at {project_path} with complete structure",
@@ -115,11 +113,9 @@ class FlutterTool(BaseTool):
                     "essential_files_verified": True
                 }
             )
-        
-        # Run flutter create in the correct directory
+        # Run flutter create in the correct directory (repo_root/flutter_projects)
         command = f"flutter create --org {org} --template {template} {project_name}"
         result = await self.terminal.execute(command, working_dir=flutter_projects_dir)
-        
         if result.status == ToolStatus.SUCCESS:
             # Verify essential files exist
             essential_files = [
@@ -128,7 +124,6 @@ class FlutterTool(BaseTool):
                 os.path.join(project_path, "test"),
                 os.path.join(project_path, "lib")
             ]
-            
             missing_files = [f for f in essential_files if not os.path.exists(f)]
             if missing_files:
                 return ToolResult(
@@ -136,12 +131,10 @@ class FlutterTool(BaseTool):
                     output=result.output,
                     error=f"Flutter project created but missing essential files: {missing_files}"
                 )
-            
             # Initialize git repository
             try:
                 git_init_result = await self.terminal.execute("git init", working_dir=project_path)
                 if git_init_result.status == ToolStatus.SUCCESS:
-                    # Add initial commit
                     await self.terminal.execute("git add .", working_dir=project_path)
                     await self.terminal.execute('git commit -m "Initial Flutter project structure"', working_dir=project_path)
                     git_initialized = True
@@ -150,7 +143,6 @@ class FlutterTool(BaseTool):
             except Exception as e:
                 print(f"Warning: Failed to initialize git repository: {e}")
                 git_initialized = False
-            
             result.data = {
                 "project_name": project_name,
                 "project_path": project_path,
@@ -160,7 +152,6 @@ class FlutterTool(BaseTool):
                 "essential_files_verified": True,
                 "note": "Flutter project created with proper structure. Implementation agents will generate custom code via LLMs."
             }
-        
         return result
     
     async def _build_project(self, platform: str = "apk", mode: str = "debug", **kwargs) -> ToolResult:

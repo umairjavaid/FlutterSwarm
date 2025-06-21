@@ -63,36 +63,39 @@ class PackageManagerTool(BaseTool):
         package_name = kwargs.get("package_name")
         version = kwargs.get("version")
         dev_dependency = kwargs.get("dev_dependency", False)
-        
+        project_path = kwargs.get("project_path")
+
         if not package_name:
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
                 error="Package name is required"
             )
-        
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
+
         # Build command
         cmd_parts = ["flutter", "pub", "add"]
         if dev_dependency:
             cmd_parts.append("--dev")
-        
         if version:
             cmd_parts.append(f"{package_name}:{version}")
         else:
             cmd_parts.append(package_name)
-        
         command = " ".join(cmd_parts)
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
-            # Verify package was added by checking pubspec.yaml
             pubspec_result = await self._read_pubspec()
             if pubspec_result.status == ToolStatus.SUCCESS:
                 dependencies = pubspec_result.data.get("dependencies", {})
                 dev_dependencies = pubspec_result.data.get("dev_dependencies", {})
-                
                 target_deps = dev_dependencies if dev_dependency else dependencies
-                
                 return ToolResult(
                     status=ToolStatus.SUCCESS,
                     output=f"Package '{package_name}' added successfully",
@@ -102,87 +105,106 @@ class PackageManagerTool(BaseTool):
                         "dev_dependency": dev_dependency
                     }
                 )
-        
         return result
-    
+
     async def _remove_package(self, **kwargs) -> ToolResult:
         """Remove a package from the project."""
         package_name = kwargs.get("package_name")
-        
+        project_path = kwargs.get("project_path")
         if not package_name:
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
                 error="Package name is required"
             )
-        
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         command = f"flutter pub remove {package_name}"
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output=f"Package '{package_name}' removed successfully",
                 data={"package_name": package_name}
             )
-        
         return result
-    
+
     async def _update_packages(self, **kwargs) -> ToolResult:
         """Update all packages or specific package."""
         package_name = kwargs.get("package_name")
-        
+        project_path = kwargs.get("project_path")
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         if package_name:
             command = f"flutter pub upgrade {package_name}"
         else:
             command = "flutter pub upgrade"
-        
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output="Packages updated successfully",
                 data={"updated_package": package_name or "all"}
             )
-        
         return result
-    
+
     async def _get_packages(self, **kwargs) -> ToolResult:
         """Get/download packages."""
+        project_path = kwargs.get("project_path")
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         command = "flutter pub get"
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output="Packages downloaded successfully",
                 data={"operation": "pub_get"}
             )
-        
         return result
-    
+
     async def _analyze_dependencies(self, **kwargs) -> ToolResult:
         """Analyze project dependencies."""
+        project_path = kwargs.get("project_path")
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         pubspec_result = await self._read_pubspec()
         if pubspec_result.status != ToolStatus.SUCCESS:
             return pubspec_result
-        
         pubspec_data = pubspec_result.data
         dependencies = pubspec_data.get("dependencies", {})
         dev_dependencies = pubspec_data.get("dev_dependencies", {})
-        
-        # Get dependency tree
         tree_result = await self.terminal.execute(
             "flutter pub deps --style=tree",
             working_dir=self.project_directory
         )
-        
-        # Count dependencies
         dep_count = len(dependencies)
         dev_dep_count = len(dev_dependencies)
         total_count = dep_count + dev_dep_count
-        
         analysis = {
             "total_dependencies": total_count,
             "runtime_dependencies": dep_count,
@@ -191,34 +213,37 @@ class PackageManagerTool(BaseTool):
             "dev_dependencies": dev_dependencies,
             "dependency_tree": tree_result.output if tree_result.status == ToolStatus.SUCCESS else None
         }
-        
         return ToolResult(
             status=ToolStatus.SUCCESS,
             output=f"Analyzed {total_count} dependencies ({dep_count} runtime, {dev_dep_count} dev)",
             data=analysis
         )
-    
+
     async def _search_packages(self, **kwargs) -> ToolResult:
         """Search for packages on pub.dev."""
         query = kwargs.get("query")
-        
+        project_path = kwargs.get("project_path")
         if not query:
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
                 error="Search query is required"
             )
-        
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         command = f"flutter pub search {query}"
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
-            # Parse search results
             packages = []
             lines = result.output.strip().split('\n')
-            
             for line in lines:
-                if line.startswith('  '):  # Package lines are indented
+                if line.startswith('  '):
                     parts = line.strip().split(' - ')
                     if len(parts) >= 2:
                         name = parts[0]
@@ -227,7 +252,6 @@ class PackageManagerTool(BaseTool):
                             "name": name,
                             "description": description
                         })
-            
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output=f"Found {len(packages)} packages matching '{query}'",
@@ -236,37 +260,39 @@ class PackageManagerTool(BaseTool):
                     "packages": packages
                 }
             )
-        
         return result
-    
+
     async def _check_outdated(self, **kwargs) -> ToolResult:
         """Check for outdated packages."""
+        project_path = kwargs.get("project_path")
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="project_path is required for package operations"
+            )
+        self.project_directory = project_path
+        self.terminal.project_directory = project_path
         command = "flutter pub outdated"
         result = await self.terminal.execute(command, working_dir=self.project_directory)
-        
         if result.status == ToolStatus.SUCCESS:
-            # Parse outdated packages info
             outdated_info = {
                 "raw_output": result.output,
                 "has_outdated": "outdated" in result.output.lower() and result.output.strip() != ""
             }
-            
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output="Checked for outdated packages",
                 data=outdated_info
             )
-        
         return result
-    
+
     async def _read_pubspec(self) -> ToolResult:
         """Read and parse pubspec.yaml - analysis only, no generation."""
         pubspec_path = os.path.join(self.project_directory, "pubspec.yaml")
-        
         try:
             with open(pubspec_path, 'r') as file:
                 pubspec_data = yaml.safe_load(file)
-            
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 output="Pubspec.yaml read successfully",

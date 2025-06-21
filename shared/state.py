@@ -198,6 +198,8 @@ class SharedState:
     """
     
     def __init__(self):
+        # WARNING: Uses thread locks (threading.RLock) in async code. This can cause deadlocks if async functions wait on thread locks.
+        # Minimal change for now to maintain stability. Marked for future refactor to use proper async locks throughout.
         try:
             self._config = get_config()
         except Exception as e:
@@ -253,6 +255,9 @@ class SharedState:
         self._loop = None  # Store event loop reference
         self._state_versions: Dict[str, List[Dict[str, Any]]] = {}
         self._version_counter = 0
+        
+        # Task deduplication tracking
+        self._completed_tasks: Dict[str, Dict[str, Any]] = {}  # task_hash -> result
     
     async def _get_async_lock(self, lock_name: str = "default") -> asyncio.Lock:
         """Get or create an async lock with the given name - thread-safe."""
@@ -471,18 +476,17 @@ class SharedState:
         with self._lock:
             try:
                 self._messages.append(message)
-                
                 # Clean up old messages if we exceed the limit
                 if len(self._messages) > self._max_messages:
                     self._messages = self._messages[-self._max_messages:]
-                
+                max_per_agent = 100
                 if to_agent:
                     # Direct message
                     if to_agent in self._message_queue:
                         self._message_queue[to_agent].append(message)
-                        # Clean up agent-specific queue
-                        if len(self._message_queue[to_agent]) > self._max_messages:
-                            self._message_queue[to_agent] = self._message_queue[to_agent][-self._max_messages:]
+                        # Always trim to last 100 messages
+                        if len(self._message_queue[to_agent]) > max_per_agent:
+                            self._message_queue[to_agent] = self._message_queue[to_agent][-max_per_agent:]
                     else:
                         # Less noisy logging for missing agents, especially supervision
                         if to_agent == "supervision":
@@ -496,9 +500,9 @@ class SharedState:
                         if agent_id != from_agent:
                             try:
                                 self._message_queue[agent_id].append(message)
-                                # Clean up agent-specific queue
-                                if len(self._message_queue[agent_id]) > self._max_messages:
-                                    self._message_queue[agent_id] = self._message_queue[agent_id][-self._max_messages:]
+                                # Always trim to last 100 messages
+                                if len(self._message_queue[agent_id]) > max_per_agent:
+                                    self._message_queue[agent_id] = self._message_queue[agent_id][-max_per_agent:]
                             except Exception as e:
                                 print(f"Warning: Failed to deliver message to agent {agent_id}: {e}")
                 
@@ -867,12 +871,22 @@ class SharedState:
                 self._awareness_state.agent_activity_streams[agent_id] = []
     
     def broadcast_agent_activity(self, event: AgentActivityEvent) -> None:
-        """Broadcast an agent activity event to all subscribed agents."""
+        """Broadcast an agent activity event to all subscribed agents - with filtering to prevent loops."""
         if not self._broadcast_enabled:
             return
             
         if not isinstance(event, AgentActivityEvent):
             print("Warning: Invalid event type passed to broadcast_agent_activity")
+            return
+        
+        # Filter out low-impact activities to prevent broadcast loops
+        important_activity_types = {
+            "file_created", "architecture_decision", "feature_completed",
+            "test_passed", "error_detected", "task_completed", "phase_transition"
+        }
+        
+        if event.activity_type not in important_activity_types:
+            # Skip broadcasting minor activities like status updates, monitoring, etc.
             return
             
         try:
@@ -884,7 +898,7 @@ class SharedState:
                 self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
                 
                 # Keep only recent activity (limit buffer size)
-                max_events_per_agent = 100
+                max_events_per_agent = 50  # Reduced from 100 to limit memory usage
                 if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
                     self._awareness_state.agent_activity_streams[event.agent_id] = \
                         self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
@@ -894,17 +908,19 @@ class SharedState:
                 if len(self._activity_event_buffer) > self._max_activity_events:
                     self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
                 
-                # Broadcast to subscribed agents
-                try:
-                    self._broadcast_real_time_update(event)
-                except Exception as e:
-                    print(f"Warning: Failed to broadcast real-time update: {e}")
+                # Only broadcast important events to prevent loops
+                if event.impact_level in ["high", "critical"]:
+                    try:
+                        self._broadcast_real_time_update(event)
+                    except Exception as e:
+                        print(f"Warning: Failed to broadcast real-time update: {e}")
                 
-                # Check for proactive collaboration opportunities
-                try:
-                    self._detect_collaboration_opportunities(event)
-                except Exception as e:
-                    print(f"Warning: Failed to detect collaboration opportunities: {e}")
+                # Check for proactive collaboration opportunities (less aggressive)
+                if event.activity_type in ["error_detected", "feature_completed"]:
+                    try:
+                        self._detect_collaboration_opportunities(event)
+                    except Exception as e:
+                        print(f"Warning: Failed to detect collaboration opportunities: {e}")
         except Exception as e:
             print(f"Error broadcasting agent activity: {e}")
     

@@ -4,6 +4,7 @@ Manages workflow, coordinates other agents, and makes high-level decisions.
 """
 
 import asyncio
+import uuid
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
@@ -178,10 +179,12 @@ class OrchestratorAgent(BaseAgent):
         shared_state.update_project(project_id, current_phase="architecture")
         
         # FIRST: Create the actual Flutter project structure
+        structure_task_id = str(uuid.uuid4())
         self.send_message_to_agent(
             to_agent="implementation",
             message_type=MessageType.TASK_REQUEST,
             content={
+                "task_id": structure_task_id,
                 "task_description": "setup_project_structure",
                 "task_data": {
                     "project_id": project_id,
@@ -192,20 +195,31 @@ class OrchestratorAgent(BaseAgent):
             priority=10  # High priority to create structure first
         )
         
-        # THEN: Assign architecture task to Architecture Agent
-        self.send_message_to_agent(
-            to_agent="architecture",
-            message_type=MessageType.TASK_REQUEST,
-            content={
-                "task_description": "design_flutter_architecture",
-                "task_data": {
-                    "project_id": project_id,
-                    "requirements": project.requirements,
-                    "planning_output": plan
-                }
-            },
-            priority=5
-        )
+        # WAIT for project structure to be created before proceeding
+        self.logger.info(f"⏳ Waiting for project structure setup to complete...")
+        structure_success = await self._wait_for_task_completion(structure_task_id, timeout=300)
+        
+        if structure_success:
+            self.logger.info(f"✅ Project structure created successfully, proceeding with architecture design")
+            
+            # THEN: Assign architecture task to Architecture Agent
+            architecture_task_id = str(uuid.uuid4())
+            self.send_message_to_agent(
+                to_agent="architecture",
+                message_type=MessageType.TASK_REQUEST,
+                content={
+                    "task_id": architecture_task_id,
+                    "task_description": "design_flutter_architecture",
+                    "task_data": {
+                        "project_id": project_id,
+                        "requirements": project.requirements,
+                        "planning_output": plan
+                    }
+                },
+                priority=5
+            )
+        else:
+            self.logger.error(f"❌ Project structure setup failed or timed out. Skipping architecture design.")
         
         print(f"🎯 Orchestrator: Initiated workflow for project {project.name}")
     
@@ -245,6 +259,7 @@ class OrchestratorAgent(BaseAgent):
     
     async def _assign_task_to_agent(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Assign a specific task to the most appropriate agent."""
+        import uuid
         task_description = task_data["task_description"]
         required_capabilities = task_data.get("required_capabilities", [])
         
@@ -252,16 +267,20 @@ class OrchestratorAgent(BaseAgent):
         best_agent = await self._find_best_agent_for_task(required_capabilities)
         
         if best_agent:
+            task_id = str(uuid.uuid4())
+            content = dict(task_data)
+            content["task_id"] = task_id
             self.send_message_to_agent(
                 to_agent=best_agent,
                 message_type=MessageType.TASK_REQUEST,
-                content=task_data,
+                content=content,
                 priority=task_data.get("priority", 3)
             )
             
             return {
                 "assigned_to": best_agent,
                 "task": task_description,
+                "task_id": task_id,
                 "status": "assigned"
             }
         else:
@@ -293,21 +312,25 @@ class OrchestratorAgent(BaseAgent):
         """Execute a coordination plan by assigning tasks to agents."""
         # This is a simplified implementation
         # In a real scenario, you'd parse the plan and extract specific tasks
-        
+        import uuid
         if "architecture" in phase.lower():
+            task_id = str(uuid.uuid4())
             self.send_message_to_agent(
                 to_agent="architecture",
                 message_type=MessageType.TASK_REQUEST,
                 content={
+                    "task_id": task_id,
                     "task_description": f"handle_{phase}_phase",
                     "task_data": {"project_id": project_id, "plan": plan}
                 }
             )
         elif "implementation" in phase.lower():
+            task_id = str(uuid.uuid4())
             self.send_message_to_agent(
                 to_agent="implementation",
                 message_type=MessageType.TASK_REQUEST,
                 content={
+                    "task_id": task_id,
                     "task_description": f"handle_{phase}_phase",
                     "task_data": {"project_id": project_id, "plan": plan}
                 }
@@ -448,3 +471,43 @@ class OrchestratorAgent(BaseAgent):
             progress = (current_phase_index + 1) / total_phases
             
             shared_state.update_project(project.project_id, progress=progress)
+    
+    async def _wait_for_task_completion(self, task_id: str, timeout: int = 300) -> bool:
+        """
+        Wait for a specific task to complete by monitoring the message queue.
+        
+        Args:
+            task_id: The unique task ID to wait for
+            timeout: Maximum time to wait in seconds
+            
+        Returns:
+            True if task completed successfully, False if timed out or failed
+        """
+        start_time = asyncio.get_event_loop().time()
+        
+        while True:
+            # Check if we've exceeded the timeout
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                self.logger.error(f"⏰ Task {task_id} timed out after {timeout} seconds")
+                return False
+            
+            # Get recent messages
+            messages = shared_state.get_messages(self.agent_id, mark_read=True, limit=50)
+            
+            # Look for task completion message
+            for message in messages:
+                if (message.message_type == MessageType.TASK_COMPLETED and 
+                    message.content.get("task_id") == task_id):
+                    
+                    result = message.content.get("result", {})
+                    status = result.get("status", "unknown")
+                    
+                    if status in ["completed", "success", "architecture_completed"]:
+                        self.logger.info(f"✅ Task {task_id} completed successfully")
+                        return True
+                    else:
+                        self.logger.error(f"❌ Task {task_id} failed with status: {status}")
+                        return False
+            
+            # Wait a short time before checking again
+            await asyncio.sleep(1)

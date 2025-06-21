@@ -244,13 +244,14 @@ class BaseAgent(ABC):
         try:
             result = await self.execute_task(task_description, task_data)
             
-            # Send completion message
+            # Send completion message with proper task_id
+            task_id = task_data.get("task_id", message.id)  # Use custom task_id if provided
             shared_state.send_message(
                 from_agent=self.agent_id,
                 to_agent=message.from_agent,
                 message_type=MessageType.TASK_COMPLETED,
                 content={
-                    "task_id": message.id,
+                    "task_id": task_id,
                     "result": result,
                     "success": True
                 }
@@ -259,12 +260,13 @@ class BaseAgent(ABC):
             self._update_status(AgentStatus.IDLE)
             
         except Exception as e:
+            task_id = task_data.get("task_id", message.id)  # Use custom task_id if provided
             shared_state.send_message(
                 from_agent=self.agent_id,
                 to_agent=message.from_agent,
                 message_type=MessageType.ERROR_REPORT,
                 content={
-                    "task_id": message.id,
+                    "task_id": task_id,
                     "error": str(e),
                     "success": False
                 }
@@ -1330,52 +1332,15 @@ Please contact the system administrator if this problem continues.
         """Execute a predictive action (to be overridden by subclasses)."""
         # Base implementation - log the action
         self.logger.debug(f"🎯 Predictive action: {action} based on {insight.get('type', 'unknown')} insight")
-        
-        # Common predictive actions
+
+        # Only perform non-broadcasting predictive actions
         if action == "monitor_collaborator_activities":
             collaborator = insight.get("collaborator", "")
             if collaborator:
                 # Subscribe to specific collaborator if not already subscribed
                 self._add_targeted_subscription(collaborator)
-        
-        elif action == "prepare_architecture_analysis":
-            # Broadcast readiness for architecture work
-            await self.broadcast_activity(
-                activity_type="predictive_preparation",
-                activity_details={
-                    "preparation_type": "architecture_analysis",
-                    "trigger": "predictive_insight",
-                    "insight_confidence": insight.get("confidence", 0.0)
-                },
-                impact_level="low",
-                collaboration_relevance=["architecture", "planning"]
-            )
-        
-        elif action == "prepare_implementation_structure":
-            # Broadcast readiness for implementation work
-            await self.broadcast_activity(
-                activity_type="predictive_preparation", 
-                activity_details={
-                    "preparation_type": "implementation_structure",
-                    "trigger": "predictive_insight",
-                    "insight_confidence": insight.get("confidence", 0.0)
-                },
-                impact_level="low",
-                collaboration_relevance=["implementation", "architecture"]
-            )
-        
-        elif action == "prepare_test_infrastructure":
-            # Broadcast readiness for testing work
-            await self.broadcast_activity(
-                activity_type="predictive_preparation",
-                activity_details={
-                    "preparation_type": "test_infrastructure",
-                    "trigger": "predictive_insight", 
-                    "insight_confidence": insight.get("confidence", 0.0)
-                },
-                impact_level="low",
-                collaboration_relevance=["testing", "qa"]
-            )
+        # All speculative predictive_preparation broadcasts are removed to prevent loops
+        # Actual work broadcasts are handled elsewhere when real work is performed
     
     def _add_targeted_subscription(self, target_agent: str) -> None:
         """Add targeted subscription to a specific agent."""
