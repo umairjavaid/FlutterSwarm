@@ -407,4 +407,3 @@ class AgentToolbox:
         if tool_name in self.available_tools:
             return self.tool_manager.get_tool_info(tool_name)
         return None
-        return None
