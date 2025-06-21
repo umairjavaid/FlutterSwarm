@@ -942,7 +942,7 @@ class SharedState:
                 self._awareness_state.agent_activity_streams[agent_id] = []
     
     def broadcast_agent_activity(self, event: AgentActivityEvent) -> None:
-        """Broadcast an agent activity event to all subscribed agents - with filtering to prevent loops."""
+        """Broadcast an agent activity event to all subscribed agents - with strict filtering to prevent loops."""
         if not self._broadcast_enabled:
             return
             
@@ -950,14 +950,22 @@ class SharedState:
             print("Warning: Invalid event type passed to broadcast_agent_activity")
             return
         
-        # Filter out low-impact activities to prevent broadcast loops
-        important_activity_types = {
-            "file_created", "architecture_decision", "feature_completed",
-            "test_passed", "error_detected", "task_completed", "phase_transition"
+        # STRICT filtering to prevent broadcast loops - only truly critical activities
+        critical_activity_types = {
+            "file_created", "task_completed", "error_detected"
         }
         
-        if event.activity_type not in important_activity_types:
-            # Skip broadcasting minor activities like status updates, monitoring, etc.
+        if event.activity_type not in critical_activity_types:
+            # Skip broadcasting all non-critical activities to prevent loops
+            return
+            
+        # Additional rate limiting at the shared state level
+        current_time = time.time()
+        if not hasattr(self, '_last_broadcast_times'):
+            self._last_broadcast_times = {}
+            
+        last_broadcast = self._last_broadcast_times.get(event.agent_id, 0)
+        if current_time - last_broadcast < 5.0:  # 5 seconds minimum between broadcasts per agent
             return
             
         try:
@@ -969,7 +977,7 @@ class SharedState:
                 self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
                 
                 # Keep only recent activity (limit buffer size)
-                max_events_per_agent = 50  # Reduced from 100 to limit memory usage
+                max_events_per_agent = 20  # Further reduced to limit memory usage
                 if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
                     self._awareness_state.agent_activity_streams[event.agent_id] = \
                         self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
@@ -979,19 +987,23 @@ class SharedState:
                 if len(self._activity_event_buffer) > self._max_activity_events:
                     self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
                 
-                # Only broadcast important events to prevent loops
-                if event.impact_level in ["high", "critical"]:
+                # Only broadcast CRITICAL events to prevent loops
+                if event.impact_level in ["critical"]:  # Only critical, not high
                     try:
                         self._broadcast_real_time_update(event)
                     except Exception as e:
                         print(f"Warning: Failed to broadcast real-time update: {e}")
                 
-                # Check for proactive collaboration opportunities (less aggressive)
-                if event.activity_type in ["error_detected", "feature_completed"]:
-                    try:
-                        self._detect_collaboration_opportunities(event)
-                    except Exception as e:
-                        print(f"Warning: Failed to detect collaboration opportunities: {e}")
+                # DISABLED: Proactive collaboration detection was causing loops
+                # if event.activity_type in ["error_detected", "feature_completed"]:
+                #     try:
+                #         self._detect_collaboration_opportunities(event)
+                #     except Exception as e:
+                #         print(f"Warning: Failed to detect collaboration opportunities: {e}")
+                        
+                # Update broadcast time
+                self._last_broadcast_times[event.agent_id] = current_time
+                
         except Exception as e:
             print(f"Error broadcasting agent activity: {e}")
     

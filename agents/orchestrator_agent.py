@@ -518,11 +518,14 @@ class OrchestratorAgent(BaseAgent):
         # Add circuit breaker to prevent infinite waiting
         from shared.state import CircuitBreaker
         circuit_breaker = CircuitBreaker(
-            max_iterations=int(timeout * 10),  # 10 checks per second max
+            max_iterations=int(timeout * 2),   # 2 checks per second max  
             max_time=timeout + 5,              # Slightly longer than timeout
             name=f"orchestrator_wait_task_{task_id}"
         )
         
+        self.logger.info(f"⏳ Waiting for task {task_id} to complete (timeout: {timeout}s)")
+        
+        check_count = 0
         while circuit_breaker.check():
             # Check if we've exceeded the timeout
             current_time = asyncio.get_event_loop().time()
@@ -530,8 +533,8 @@ class OrchestratorAgent(BaseAgent):
                 self.logger.error(f"⏰ Task {task_id} timed out after {timeout} seconds")
                 return False
             
-            # Get recent messages
-            messages = shared_state.get_messages(self.agent_id, mark_read=True, limit=50)
+            # Get recent messages with priority for task completion
+            messages = shared_state.get_messages(self.agent_id, mark_read=True, limit=100)
             
             # Look for task completion message
             for message in messages:
@@ -541,12 +544,32 @@ class OrchestratorAgent(BaseAgent):
                     result = message.content.get("result", {})
                     status = result.get("status", "unknown")
                     
-                    if status in ["completed", "success", "architecture_completed"]:
-                        self.logger.info(f"✅ Task {task_id} completed successfully")
+                    elapsed_time = current_time - start_time
+                    
+                    if status in ["completed", "success", "project_structure_created", "architecture_completed"]:
+                        self.logger.info(f"✅ Task {task_id} completed successfully in {elapsed_time:.2f}s")
                         return True
                     else:
-                        self.logger.error(f"❌ Task {task_id} failed with status: {status}")
+                        self.logger.error(f"❌ Task {task_id} failed with status: {status} after {elapsed_time:.2f}s")
                         return False
+                        
+                # Also check for error reports
+                elif (message.message_type == MessageType.ERROR_REPORT and 
+                      message.content.get("task_id") == task_id):
+                    
+                    error = message.content.get("error", "Unknown error")
+                    elapsed_time = current_time - start_time
+                    self.logger.error(f"❌ Task {task_id} failed with error: {error} after {elapsed_time:.2f}s")
+                    return False
+            
+            check_count += 1
+            if check_count % 10 == 0:  # Log every 5 seconds
+                elapsed = current_time - start_time
+                self.logger.info(f"⏳ Still waiting for task {task_id} ({elapsed:.1f}s elapsed)")
             
             # Wait a short time before checking again
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)  # Check every 500ms
+        
+        # Circuit breaker triggered
+        self.logger.error(f"🚨 Task waiting stopped by circuit breaker for {task_id}")
+        return False

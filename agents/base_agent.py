@@ -54,6 +54,14 @@ class BaseAgent(ABC):
         self._monitoring_task = None
         self._async_lock = asyncio.Lock()  # Use async lock instead of threading lock
         
+        # Real-time awareness control (DISABLED by default to prevent loops)
+        self._monitoring_enabled = False
+        self._real_time_enabled = False
+        
+        # Rate limiting for broadcasts to prevent message storms
+        self._last_broadcast_time = {}
+        self._min_broadcast_interval = 5.0  # 5 seconds minimum between broadcasts
+        
         # Ensure exception handlers are set
         ensure_exception_handler_set()
         
@@ -63,8 +71,8 @@ class BaseAgent(ABC):
             capabilities=self.agent_config.get("capabilities", [])
         )
         
-        # Enable real-time awareness (disabled to prevent endless loops)
-        # self.enable_real_time_awareness()
+        # Real-time awareness DISABLED by default to prevent endless loops
+        # Can be enabled manually if needed: self.enable_real_time_awareness()
         
         # Track last status for monitoring
         self._last_status = AgentStatus.IDLE
@@ -172,17 +180,27 @@ class BaseAgent(ABC):
             # Log to monitoring system
             self._log_status_change(status, task)
             
-            # Broadcast status change as real-time activity
-            await self.broadcast_activity(
-                activity_type="status_change",
-                activity_details={
-                    "new_status": status.value,
-                    "task": task,
-                    "metadata": metadata or {}
-                },
-                impact_level="low" if status == AgentStatus.IDLE else "medium",
-                collaboration_relevance=["all"]  # All agents might be interested in status changes
-            )
+            # Rate-limited broadcast of status changes (only important ones)
+            current_time = time.time()
+            last_broadcast = self._last_broadcast_time.get("status_change", 0)
+            
+            # Only broadcast important status changes and respect rate limiting
+            if (status in [AgentStatus.WORKING, AgentStatus.COMPLETED, AgentStatus.ERROR] and 
+                current_time - last_broadcast >= self._min_broadcast_interval):
+                
+                await self.broadcast_activity(
+                    activity_type="status_change",
+                    activity_details={
+                        "new_status": status.value,
+                        "task": task,
+                        "metadata": metadata or {}
+                    },
+                    impact_level="low" if status == AgentStatus.IDLE else "medium",
+                    collaboration_relevance=[self.agent_id]  # Only self-relevant, not "all"
+                )
+                
+                self._last_broadcast_time["status_change"] = current_time
+                
         except Exception as e:
             self.logger.error(f"Failed to update status: {e}")
     
@@ -203,17 +221,33 @@ class BaseAgent(ABC):
         self.logger.info(f"🛑 {self.agent_config.get('name', self.agent_id)} stopped")
     
     async def _handle_message(self, message: AgentMessage) -> None:
-        """Handle incoming messages."""
+        """Handle incoming messages with task prioritization."""
         try:
             # Log message to monitoring system
             self._log_message_received(message)
             
+            # PRIORITIZE TASK MESSAGES over awareness/status messages
             if message.message_type == MessageType.TASK_REQUEST:
+                # Task requests get highest priority - handle immediately
                 await self._handle_task_request(message)
+            elif message.message_type == MessageType.TASK_COMPLETED:
+                # Task completion messages are also high priority
+                await self._handle_task_completion(message)
             elif message.message_type == MessageType.COLLABORATION_REQUEST:
                 await self._handle_collaboration_request(message)
             elif message.message_type == MessageType.STATE_SYNC:
                 await self._handle_state_sync(message)
+            elif message.message_type in [
+                MessageType.REAL_TIME_STATUS_BROADCAST,
+                MessageType.PROACTIVE_ASSISTANCE_OFFER,
+                MessageType.CONSCIOUSNESS_UPDATE
+            ]:
+                # Low priority - only process if not busy with tasks
+                if not self._is_busy_with_tasks():
+                    await self._handle_real_time_message(message)
+                else:
+                    # Skip real-time messages when busy with actual work
+                    self.logger.debug(f"Skipping real-time message {message.message_type.value} - busy with tasks")
             else:
                 await self._handle_custom_message(message)
         except Exception as e:
@@ -244,13 +278,15 @@ class BaseAgent(ABC):
             self.logger.warning(f"Failed to log message: {e}")
     
     async def _handle_task_request(self, message: AgentMessage) -> None:
-        """Handle task requests."""
+        """Handle task requests with proper status management."""
         task_description = message.content.get("task_description", "")
         task_data = message.content.get("task_data", {})
         
-        self._update_status(
+        self.logger.info(f"🎯 {self.agent_id} received task: {task_description}")
+        
+        await self._update_status(
             AgentStatus.WORKING,
-            current_task=task_description
+            task=task_description
         )
         
         try:
@@ -269,7 +305,8 @@ class BaseAgent(ABC):
                 }
             )
             
-            self._update_status(AgentStatus.IDLE)
+            await self._update_status(AgentStatus.IDLE)
+            self.logger.info(f"✅ {self.agent_id} completed task: {task_description}")
             
         except Exception as e:
             task_id = task_data.get("task_id", message.id)  # Use custom task_id if provided
@@ -283,7 +320,66 @@ class BaseAgent(ABC):
                     "success": False
                 }
             )
-            self._update_status(AgentStatus.ERROR)
+            await self._update_status(AgentStatus.ERROR)
+            self.logger.error(f"❌ {self.agent_id} failed task: {task_description} - {e}")
+    
+    async def _handle_task_completion(self, message: AgentMessage) -> None:
+        """Handle task completion messages."""
+        task_id = message.content.get("task_id", "")
+        success = message.content.get("success", False)
+        self.logger.info(f"📨 {self.agent_id} received task completion: {task_id} (success: {success})")
+    
+    async def _handle_real_time_message(self, message: AgentMessage) -> None:
+        """Handle real-time awareness messages (low priority)."""
+        if message.message_type == MessageType.REAL_TIME_STATUS_BROADCAST:
+            event_data = message.content.get("event", {})
+            consciousness_update = message.content.get("consciousness_update", {})
+            
+            # Process the real-time update
+            self._process_peer_activity(event_data, consciousness_update)
+        
+        elif message.message_type == MessageType.PROACTIVE_ASSISTANCE_OFFER:
+            # Handle proactive collaboration opportunity
+            self._handle_proactive_opportunity(message.content)
+    
+    def _is_busy_with_tasks(self) -> bool:
+        """Check if agent is currently busy with important tasks."""
+        return (hasattr(self, '_last_status') and 
+                self._last_status in [AgentStatus.WORKING])
+    
+    async def _update_consciousness(self) -> None:
+        """Update shared consciousness with current insights (RATE LIMITED)."""
+        try:
+            # Rate limiting for consciousness updates
+            current_time = time.time()
+            last_update = self._last_broadcast_time.get("consciousness_update", 0)
+            
+            if current_time - last_update < 30.0:  # 30 seconds minimum between updates
+                return
+            
+            # Generate insights about current state
+            insights = await self._generate_current_insights()
+            
+            if insights:
+                for key, value in insights.items():
+                    shared_state.update_shared_consciousness(f"{self.agent_id}_{key}", value)
+            
+            # Skip predictive insights generation to prevent loops
+            # predictive_insights = shared_state.generate_predictive_insights(self.agent_id)
+            # await self._act_on_predictive_insights(predictive_insights)
+            
+            self._last_broadcast_time["consciousness_update"] = current_time
+                    
+        except Exception as e:
+            self.logger.debug(f"Error updating consciousness: {e}")
+            
+    async def _act_on_predictive_insights(self, insights: List[Dict[str, Any]]) -> None:
+        """Act on high-confidence predictive insights (DISABLED to prevent loops)."""
+        # DISABLED: Predictive actions were causing endless loops
+        # Only log the insights without taking action
+        if insights:
+            self.logger.debug(f"🔮 Received {len(insights)} predictive insights (action disabled to prevent loops)")
+        return
     
     async def _handle_collaboration_request(self, message: AgentMessage) -> None:
         """Handle collaboration requests from other agents."""
@@ -1067,24 +1163,49 @@ Please contact the system administrator if this problem continues.
 
     # Real-time awareness methods
     def enable_real_time_awareness(self) -> None:
-        """Enable real-time awareness for this agent."""
+        """Enable real-time awareness for this agent (DISABLED by default to prevent loops)."""
         # Subscribe to all other agents
         shared_state.subscribe_agent_to_all(self.agent_id)
         
         # DISABLED: Start continuous monitoring to prevent endless loops
-        # if not hasattr(self, '_monitoring_enabled'):
-        #     self._monitoring_enabled = True
-        #     self.start_continuous_monitoring()
+        # Real-time awareness creates cascading message loops that block task execution
+        # Only enable if absolutely necessary for specific use cases
+        self._real_time_enabled = True
         
-        self.logger.info(f"Real-time awareness enabled for {self.agent_id} (monitoring disabled to prevent loops)")
+        self.logger.info(f"Real-time awareness enabled for {self.agent_id} (continuous monitoring DISABLED to prevent loops)")
     
     async def broadcast_activity(self, activity_type: str, activity_details: Dict[str, Any], 
                           impact_level: str = "medium", 
                           collaboration_relevance: List[str] = None) -> None:
-        """Broadcast an activity event to other agents."""
+        """Broadcast an activity event to other agents with rate limiting."""
         try:
             if collaboration_relevance is None:
                 collaboration_relevance = []
+            
+            # Rate limiting check
+            current_time = time.time()
+            last_broadcast = self._last_broadcast_time.get(activity_type, 0)
+            
+            # Apply rate limiting based on activity type
+            if activity_type in ["status_change", "predictive_preparation", "monitoring"]:
+                min_interval = 10.0  # 10 seconds for frequent activities
+            else:
+                min_interval = 2.0   # 2 seconds for important activities
+            
+            if current_time - last_broadcast < min_interval:
+                # Skip broadcast to prevent spam
+                self.logger.debug(f"Skipping {activity_type} broadcast due to rate limiting")
+                return
+            
+            # Only broadcast truly important activities
+            important_activities = {
+                "file_created", "task_completed", "error_detected", 
+                "architecture_decision", "feature_completed", "test_passed"
+            }
+            
+            if activity_type not in important_activities:
+                # Skip non-critical activities to reduce noise
+                return
             
             event = AgentActivityEvent(
                 agent_id=self.agent_id,
@@ -1097,6 +1218,8 @@ Please contact the system administrator if this problem continues.
             )
             
             shared_state.broadcast_agent_activity(event)
+            self._last_broadcast_time[activity_type] = current_time
+            
         except Exception as e:
             self.logger.error(f"Failed to broadcast activity: {e}")
     
