@@ -123,7 +123,8 @@ class BaseAgent(ABC):
                 anthropic_api_key=api_key
             )
         except Exception as e:
-            self.logger.error(f"Failed to initialize LLM: {e}")
+            import traceback
+            self.logger.error(f"Failed to initialize LLM: {e}\n{traceback.format_exc()}")
             # Raise a descriptive error with troubleshooting guidance
             raise ValueError(f"LLM initialization failed for agent {self.agent_id}: {e}. Please check your API key configuration and network connection.")
     

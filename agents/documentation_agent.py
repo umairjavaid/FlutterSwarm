@@ -67,7 +67,8 @@ class DocumentationAgent(BaseAgent):
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Error executing documentation task: {str(e)}")
+            import traceback
+            self.logger.error(f"❌ Error executing documentation task: {str(e)}\n{traceback.format_exc()}")
             return {
                 "status": "failed",
                 "error": str(e),

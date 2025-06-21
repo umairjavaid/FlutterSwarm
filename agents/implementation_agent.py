@@ -101,7 +101,8 @@ class ImplementationAgent(BaseAgent):
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Error executing implementation task: {str(e)}")
+            import traceback
+            self.logger.error(f"❌ Error executing implementation task: {str(e)}\n{traceback.format_exc()}")
             return {
                 "status": "failed",
                 "error": str(e),
@@ -2191,7 +2192,6 @@ class ImplementationAgent(BaseAgent):
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Error creating file {file_path}: {e}")
             return False
     
     async def _fallback_file_extraction(self, project_path: str, code_content: str) -> List[str]:
