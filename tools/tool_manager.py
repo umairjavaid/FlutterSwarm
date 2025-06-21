@@ -3,6 +3,7 @@ Tool manager for organizing and executing tools for FlutterSwarm agents.
 """
 
 import asyncio
+import os
 from typing import Dict, List, Any, Optional, Type
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from .terminal_tool import TerminalTool
@@ -157,7 +158,7 @@ class ToolManager:
         """Run tests."""
         return await self.execute_tool("testing", "run", test_type=test_type, **kwargs)
     
-    async def add_package(self, package_name: str, **kwargs) -> ToolResult:
+    async def add_package(self, package_name: str, project_path: str = None, **kwargs) -> ToolResult:
         """Add package - infrastructure only, no code generation."""
         try:
             # Use flutter tool to add package
@@ -169,7 +170,42 @@ class ToolManager:
                     error="Flutter tool not available"
                 )
             
-            result = await flutter_tool.execute("pub_add", packages=[package_name], **kwargs)
+            # Determine the correct Flutter project directory
+            if project_path:
+                flutter_project_dir = project_path
+            else:
+                # Check if we're in a Flutter project directory
+                current_dir = os.getcwd()
+                flutter_projects_dir = None
+                
+                # Look for flutter_projects directory
+                if "flutter_projects" in current_dir:
+                    flutter_projects_dir = current_dir
+                else:
+                    # Look for flutter_projects in parent directories
+                    parent_dir = os.path.dirname(current_dir)
+                    potential_flutter_dir = os.path.join(parent_dir, "flutter_projects")
+                    if os.path.exists(potential_flutter_dir):
+                        flutter_projects_dir = potential_flutter_dir
+                    else:
+                        # Create flutter_projects directory if it doesn't exist
+                        flutter_projects_dir = os.path.join(current_dir, "flutter_projects")
+                        os.makedirs(flutter_projects_dir, exist_ok=True)
+                
+                flutter_project_dir = flutter_projects_dir
+            
+            # Verify that the target directory contains a Flutter project
+            pubspec_path = os.path.join(flutter_project_dir, "pubspec.yaml")
+            if not os.path.exists(pubspec_path):
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    output="",
+                    error=f"No Flutter project found at {flutter_project_dir}. Missing pubspec.yaml"
+                )
+            
+            # Execute pub add in the Flutter project directory
+            result = await flutter_tool.execute("pub_add", packages=[package_name], 
+                                              working_dir=flutter_project_dir, **kwargs)
             
             if result.status == ToolStatus.SUCCESS:
                 return ToolResult(

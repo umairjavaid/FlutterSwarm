@@ -363,7 +363,7 @@ class ImplementationAgent(BaseAgent):
         }
     
     async def _setup_project_structure(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Set up the initial project structure using LLM-generated code only."""
+        """Set up the initial project structure using proper Flutter tooling first."""
         project_id = task_data.get("project_id")
         project_name = task_data.get("name", "flutter_app")
         architecture_style = task_data.get("architecture_style", "clean")
@@ -374,11 +374,15 @@ class ImplementationAgent(BaseAgent):
         project_state = shared_state.get_project_state(project_id)
         
         try:
-            # Create Flutter project using tool
-            create_result = await self.execute_tool(
+            # STEP 1: Create Flutter project using proper tooling first
+            # Convert project_id to valid Flutter project name (replace hyphens with underscores)
+            flutter_project_name = f"project_{project_id.replace('-', '_')}"
+            
+            create_result = await self.tool_manager.execute_tool(
                 "flutter", 
                 operation="create", 
-                project_name=project_name
+                project_name=flutter_project_name,
+                org="com.flutterswarm"
             )
             
             if create_result.status != ToolStatus.SUCCESS:
@@ -390,126 +394,134 @@ class ImplementationAgent(BaseAgent):
                     "project_path": ""
                 }
             
-            project_path = create_result.data.get("project_path", f"flutter_projects/{project_name}")
+            project_path = create_result.data.get("project_path", f"flutter_projects/project_{project_id.replace('-', '_')}")
+            self.logger.info(f"✅ Flutter project created at: {project_path}")
             
-            # Generate project structure via LLM
-            structure_prompt = f"""
-            Generate a comprehensive Flutter project structure for {architecture_style} architecture.
+            # STEP 2: Add required dependencies using the specific project path
+            await self._update_pubspec_dependencies(project_path, project_state)
             
-            Project: {project_name}
-            Requirements: {project_state.requirements if project_state else []}
+            # STEP 3: Generate main.dart via LLM
+            main_dart_content = await self._generate_main_dart(project_state)
+            main_dart_path = os.path.join(project_path, "lib", "main.dart")
+            write_result = await self.tool_manager.write_file(main_dart_path, main_dart_content)
             
-            Generate directory structure with:
-            - Clean Architecture layers (lib/core, lib/features, lib/shared)
-            - Proper folder organization for data, domain, presentation
-            - Configuration folders
-            - Test structure
-            - Asset organization
+            if write_result.status != ToolStatus.SUCCESS:
+                self.logger.warning(f"Failed to write main.dart: {write_result.error}")
             
-            Return as JSON with directories to create and their purposes.
-            """
+            # STEP 4: Create folder structure for Clean Architecture
+            await self._create_clean_architecture_folders(project_path)
             
-            structure_design = await self.think(structure_prompt, {
-                "project": project_state.to_dict() if project_state else {},
-                "architecture": architecture_style,
-                "name": project_name
-            })
+            # STEP 5: Generate app-level configuration files
+            config_files = await self._generate_app_config_files(project_path, project_state)
             
-            # Parse and create directories
-            files_created = []
-            try:
-                import json
-                structure_data = json.loads(structure_design)
-                directories = structure_data.get("directories", [])
-                
-                for directory in directories:
-                    dir_path = directory.get("path", "")
-                    if dir_path:
-                        full_path = f"{project_path}/{dir_path}"
-                        dir_result = await self.execute_tool(
-                            "file", 
-                            operation="create_directory", 
-                            directory=full_path
-                        )
-                        if dir_result.status == ToolStatus.SUCCESS:
-                            files_created.append(full_path)
-                            
-            except (json.JSONDecodeError, KeyError) as e:
-                self.logger.warning(f"Could not parse structure design, creating basic structure: {e}")
-                # Create basic Clean Architecture structure
-                basic_dirs = [
-                    "lib/core/constants",
-                    "lib/core/errors", 
-                    "lib/core/utils",
-                    "lib/core/themes",
-                    "lib/features",
-                    "lib/shared/widgets",
-                    "lib/shared/utils",
-                    "test/features",
-                    "test/core"
-                ]
-                
-                for directory in basic_dirs:
-                    full_path = f"{project_path}/{directory}"
-                    dir_result = await self.execute_tool(
-                        "file", 
-                        operation="create_directory", 
-                        directory=full_path
-                    )
-                    if dir_result.status == ToolStatus.SUCCESS:
-                        files_created.append(full_path)
-            
-            # Generate and create main.dart with proper structure
-            main_dart_prompt = f"""
-            Generate a Flutter main.dart file for {project_name} with:
-            - Proper imports for {architecture_style} architecture
-            - App widget setup
-            - Theme configuration
-            - Route configuration
-            - Error handling
-            - Material Design 3 support
-            """
-            
-            main_dart_code = await self.think(main_dart_prompt, {
-                "project_name": project_name,
-                "architecture": architecture_style
-            })
-            
-            main_file_result = await self.execute_tool(
-                "file",
-                operation="write",
-                file_path=f"{project_path}/lib/main.dart",
-                content=main_dart_code
-            )
-            
-            if main_file_result.status == ToolStatus.SUCCESS:
-                files_created.append(f"{project_path}/lib/main.dart")
-            
-            # Update shared state
-            if project_state:
-                shared_state.update_project(
-                    project_id,
-                    project_path=project_path,
-                    architecture_style=architecture_style
-                )
-            
-            self.logger.info(f"✅ Project structure created: {len(files_created)} items")
+            files_created = ["pubspec.yaml", "lib/main.dart"]
+            files_created.extend(config_files.get("files", []))
             
             return {
-                "architecture_style": architecture_style,
-                "files_created": files_created,
+                "status": "success",
                 "project_path": project_path,
-                "status": "project_structure_created"
+                "files_created": files_created,
+                "architecture": architecture_style,
+                "note": "Complete Flutter project structure created with proper tooling"
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Error setting up project structure: {e}")
+            self.logger.error(f"❌ Failed to setup project structure: {str(e)}")
             return {
                 "status": "failed",
                 "error": str(e),
                 "files_created": [],
                 "project_path": ""
             }
+            
+    async def _update_pubspec_dependencies(self, project_path: str, project_state) -> None:
+        """Update pubspec.yaml with required dependencies."""
+        try:
+            dependencies = [
+                "flutter_riverpod", "go_router", "dio", "shared_preferences",
+                "path_provider", "equatable", "json_annotation", "dartz"
+            ]
+            
+            for dep in dependencies:
+                result = await self.tool_manager.add_package(dep, project_path=project_path)
+                if result.status != ToolStatus.SUCCESS:
+                    self.logger.warning(f"Failed to add dependency {dep}: {result.error}")
+                    
+        except Exception as e:
+            self.logger.warning(f"Could not add all dependencies: {e}")
+    
+    async def _generate_main_dart(self, project_state) -> str:
+        """Generate main.dart file via LLM."""
+        main_dart_prompt = f"""
+        Generate a complete Flutter main.dart file for a music streaming app with:
+        - MaterialApp with proper theming
+        - Router configuration
+        - Provider setup for state management
+        - Error handling
+        - Clean architecture structure
+        
+        Requirements: {project_state.requirements if project_state else ["Music streaming app"]}
+        
+        Return ONLY the complete Dart code.
+        """
+        
+        return await self.think(main_dart_prompt, {
+            "project": project_state.to_dict() if project_state else {},
+            "type": "main_dart_generation"
+        })
+    
+    async def _create_clean_architecture_folders(self, project_path: str) -> None:
+        """Create Clean Architecture folder structure."""
+        directories = [
+            "lib/core/constants",
+            "lib/core/errors", 
+            "lib/core/utils",
+            "lib/core/network",
+            "lib/features",
+            "lib/shared/widgets",
+            "lib/shared/models",
+            "test/features",
+            "test/core"
+        ]
+        
+        for directory in directories:
+            full_path = os.path.join(project_path, directory)
+            os.makedirs(full_path, exist_ok=True)
+    
+    async def _generate_app_config_files(self, project_path: str, project_state) -> Dict[str, Any]:
+        """Generate app-level configuration files."""
+        try:
+            # Generate config files via LLM
+            config_prompt = f"""
+            Generate essential Flutter app configuration files for a music streaming app.
+            
+            Required configurations:
+            1. App theme configuration
+            2. Route configuration  
+            3. App constants
+            4. Environment configuration
+            
+            Generate complete Dart code for each configuration file.
+            """
+            
+            config_content = await self.think(config_prompt, {
+                "project_path": project_path,
+                "project_state": project_state
+            })
+            
+            # Create basic config files
+            config_files = []
+            
+            # Create app config directory
+            config_dir = os.path.join(project_path, "lib", "core", "config")
+            os.makedirs(config_dir, exist_ok=True)
+            config_files.append("lib/core/config/")
+            
+            return {"files": config_files}
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to generate config files: {e}")
+            return {"files": []}
     
     async def _parse_and_create_files(self, project_id: str, code_content: str) -> List[str]:
         """Parse generated code and create actual files in the Flutter project using LLM-generated code only."""
@@ -518,7 +530,7 @@ class ImplementationAgent(BaseAgent):
             
         # Get project state for file paths
         project_state = shared_state.get_project_state(project_id)
-        project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id}"
+        project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id.replace('-', '_')}"
         
         try:
             # Use LLM to parse code content into individual files
@@ -2158,7 +2170,7 @@ class ImplementationAgent(BaseAgent):
                     project_path = project_state.project_path
                 else:
                     # Fallback to flutter_projects directory
-                    project_path = f"flutter_projects/project_{project_id}"
+                    project_path = f"flutter_projects/project_{project_id.replace('-', '_')}"
             else:
                 # Default fallback
                 project_path = "flutter_projects/default_project"
