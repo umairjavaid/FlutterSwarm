@@ -60,7 +60,9 @@ class BaseAgent(ABC):
         
         # Rate limiting for broadcasts to prevent message storms
         self._last_broadcast_time = {}
-        self._min_broadcast_interval = 5.0  # 5 seconds minimum between broadcasts
+        self._min_broadcast_interval = 10.0  # 10 seconds minimum between broadcasts
+        self._max_awareness_iterations = 50  # Maximum awareness iterations before circuit breaker
+        self._awareness_iteration_count = 0
         
         # Ensure exception handlers are set
         ensure_exception_handler_set()
@@ -345,11 +347,18 @@ class BaseAgent(ABC):
     def _is_busy_with_tasks(self) -> bool:
         """Check if agent is currently busy with important tasks."""
         return (hasattr(self, '_last_status') and 
-                self._last_status in [AgentStatus.WORKING])
+                self._last_status in [AgentStatus.WORKING] or
+                hasattr(self, '_executing_task') and self._executing_task)
     
     async def _update_consciousness(self) -> None:
         """Update shared consciousness with current insights (RATE LIMITED)."""
         try:
+            # Circuit breaker: Limit awareness iterations
+            self._awareness_iteration_count += 1
+            if self._awareness_iteration_count > self._max_awareness_iterations:
+                self.logger.warning(f"🚨 Awareness circuit breaker triggered for {self.agent_id} after {self._max_awareness_iterations} iterations")
+                return
+            
             # Rate limiting for consciousness updates
             current_time = time.time()
             last_update = self._last_broadcast_time.get("consciousness_update", 0)
@@ -1287,26 +1296,11 @@ Please contact the system administrator if this problem continues.
 
     # Continuous monitoring methods
     def start_continuous_monitoring(self) -> None:
-        """Start continuous monitoring loop."""
-        import asyncio
-        
-        if self._monitoring_task is None or self._monitoring_task.done():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # No running event loop, create one if needed
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                except Exception:
-                    self.logger.warning(f"Could not create event loop for {self.agent_id} monitoring")
-                    return
-            
-            try:
-                self._monitoring_task = loop.create_task(self._continuous_monitoring_loop())
-                self.logger.debug(f"🔄 Started continuous monitoring for {self.agent_id}")
-            except Exception as e:
-                self.logger.error(f"Failed to start monitoring task for {self.agent_id}: {e}")
+        """Start continuous monitoring loop (DISABLED by default to prevent endless loops)."""
+        # DISABLED: Continuous monitoring creates endless awareness loops
+        # that prevent actual task execution
+        self.logger.debug(f"Continuous monitoring disabled for {self.agent_id} to prevent endless loops")
+        return
 
     async def _continuous_monitoring_loop(self) -> None:
         """Main continuous monitoring loop."""
