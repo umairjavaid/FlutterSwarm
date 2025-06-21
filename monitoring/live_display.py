@@ -113,13 +113,52 @@ class LiveDisplay:
     
     def _display_loop(self):
         """Main display loop."""
-        while self.is_running:
+        # Add circuit breaker to prevent infinite loops
+        import time
+        
+        class SimpleCircuitBreaker:
+            def __init__(self, max_iterations, max_time, name):
+                self.max_iterations = max_iterations
+                self.max_time = max_time
+                self.name = name
+                self.start_time = time.time()
+                self.iterations = 0
+                
+            def check(self):
+                self.iterations += 1
+                elapsed = time.time() - self.start_time
+                
+                if self.iterations > self.max_iterations:
+                    print(f"⚠️ Circuit breaker {self.name}: Maximum iterations exceeded")
+                    return False
+                if elapsed > self.max_time:
+                    print(f"⚠️ Circuit breaker {self.name}: Maximum time exceeded")
+                    return False
+                return True
+        
+        circuit_breaker = SimpleCircuitBreaker(
+            max_iterations=86400,  # 24 hours at 1 second intervals 
+            max_time=86400.0,      # 24 hours max
+            name="live_display"
+        )
+        
+        iteration_count = 0
+        while self.is_running and circuit_breaker.check():
             try:
                 self._update_display()
                 time.sleep(self.config.refresh_rate)
+                
+                iteration_count += 1
+                # Log status every 3600 iterations (1 hour at 1s intervals)
+                if iteration_count % 3600 == 0:
+                    print(f"🔍 Live display: {iteration_count} iterations, elapsed: {iteration_count}s")
+                    
             except Exception as e:
                 print(f"Display error: {e}")
                 break
+                
+        if not circuit_breaker.check():
+            print("⚠️ Live display stopped by circuit breaker")
     
     def _update_display(self):
         """Update the terminal display."""

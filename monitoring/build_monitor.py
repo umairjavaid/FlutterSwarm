@@ -138,9 +138,30 @@ class BuildMonitor:
     async def _monitoring_loop(self):
         """Main monitoring loop."""
         try:
-            while self.is_monitoring:
+            # Add circuit breaker to prevent infinite loops
+            from shared.state import CircuitBreaker
+            circuit_breaker = CircuitBreaker(
+                max_iterations=7200,    # 1 hour at 500ms intervals
+                max_time=3600.0,        # 1 hour max
+                name="build_monitoring"
+            )
+            
+            iteration_count = 0
+            while self.is_monitoring and circuit_breaker.check():
                 await self._update_monitoring_data()
                 await asyncio.sleep(0.5)  # Update every 500ms
+                
+                iteration_count += 1
+                # Log status every 120 iterations (1 minute)
+                if iteration_count % 120 == 0:
+                    print(f"🔍 Build monitoring: {iteration_count} iterations, elapsed: {iteration_count * 0.5}s")
+                    
+            if not circuit_breaker.check():
+                print("⚠️ Build monitoring stopped by circuit breaker")
+                if self.enable_logging:
+                    agent_logger.log_warning("build_monitor", "circuit_breaker_triggered", 
+                                           "Build monitoring stopped by circuit breaker")
+                    
         except asyncio.CancelledError:
             pass
         except Exception as e:

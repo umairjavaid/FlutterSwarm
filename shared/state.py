@@ -8,12 +8,51 @@ import json
 import uuid
 import threading
 import copy
+import time
+import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pydantic import BaseModel
 from config.config_manager import get_config
+
+class CircuitBreaker:
+    """Circuit breaker for preventing infinite loops and managing timeouts."""
+    
+    def __init__(self, max_iterations: int = 1000, max_time: float = 300.0, name: str = "unknown"):
+        self.max_iterations = max_iterations
+        self.max_time = max_time
+        self.name = name
+        self.start_time = time.time()
+        self.iterations = 0
+        self.should_stop = False
+        
+    def check(self) -> bool:
+        """Check if circuit breaker should trip. Returns True if should continue, False if should stop."""
+        if self.should_stop:
+            return False
+            
+        self.iterations += 1
+        elapsed = time.time() - self.start_time
+        
+        if self.iterations > self.max_iterations:
+            print(f"⚠️ Circuit breaker {self.name}: Maximum iterations ({self.max_iterations}) exceeded")
+            self.should_stop = True
+            return False
+            
+        if elapsed > self.max_time:
+            print(f"⚠️ Circuit breaker {self.name}: Maximum time ({self.max_time}s) exceeded")
+            self.should_stop = True
+            return False
+            
+        return True
+    
+    def reset(self):
+        """Reset the circuit breaker."""
+        self.start_time = time.time()
+        self.iterations = 0
+        self.should_stop = False
 
 class AgentStatus(Enum):
     IDLE = "idle"
@@ -198,16 +237,22 @@ class SharedState:
     """
     
     def __init__(self):
-        # WARNING: Uses thread locks (threading.RLock) in async code. This can cause deadlocks if async functions wait on thread locks.
-        # Minimal change for now to maintain stability. Marked for future refactor to use proper async locks throughout.
+        # Initialize event loop and async-safe locking
         try:
             self._config = get_config()
         except Exception as e:
             print(f"Warning: Failed to load config: {e}")
             self._config = None
             
-        # Use consistent threading approach for sync operations
-        self._lock = threading.RLock()  # For synchronous operations
+        # Thread-safe initialization of async locks
+        self._shutdown_event = threading.Event()
+        self._sync_lock = threading.RLock()  # Only for sync initialization
+        self._main_async_lock = None  # Will be initialized in async context
+        self._async_locks: Dict[str, asyncio.Lock] = {}
+        self._async_lock_creation_lock = threading.Lock()
+        self._loop = None
+        
+        # State data structures
         self._agents: Dict[str, AgentState] = {}
         self._projects: Dict[str, ProjectState] = {}
         self._messages: List[AgentMessage] = []
@@ -266,6 +311,31 @@ class SharedState:
                 if lock_name not in self._async_locks:  # Double-check pattern
                     self._async_locks[lock_name] = asyncio.Lock()
         return self._async_locks[lock_name]
+    
+    async def shutdown(self) -> None:
+        """Shutdown the shared state and cleanup resources."""
+        print("🔄 Shutting down SharedState...")
+        self._shutdown_event.set()
+        
+        # Cancel any ongoing async operations
+        current_tasks = [task for task in asyncio.all_tasks() if not task.done()]
+        if current_tasks:
+            print(f"🔄 Cancelling {len(current_tasks)} pending tasks...")
+            for task in current_tasks:
+                task.cancel()
+            
+            # Wait for tasks to complete cancellation
+            await asyncio.gather(*current_tasks, return_exceptions=True)
+        
+        print("✅ SharedState shutdown complete")
+    
+    def is_shutdown(self) -> bool:
+        """Check if shutdown has been initiated."""
+        return self._shutdown_event.is_set()
+    
+    def _use_sync_lock(self, method_name: str = "unknown"):
+        """Context manager for sync operations - use sparingly and only for quick operations."""
+        return self._sync_lock
         
     def register_agent(self, agent_id: str, capabilities: List[str], overwrite: bool = False) -> None:
         """Register a new agent with the shared state."""

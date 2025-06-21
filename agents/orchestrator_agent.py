@@ -515,9 +515,18 @@ class OrchestratorAgent(BaseAgent):
         """
         start_time = asyncio.get_event_loop().time()
         
-        while True:
+        # Add circuit breaker to prevent infinite waiting
+        from shared.state import CircuitBreaker
+        circuit_breaker = CircuitBreaker(
+            max_iterations=int(timeout * 10),  # 10 checks per second max
+            max_time=timeout + 5,              # Slightly longer than timeout
+            name=f"orchestrator_wait_task_{task_id}"
+        )
+        
+        while circuit_breaker.check():
             # Check if we've exceeded the timeout
-            if asyncio.get_event_loop().time() - start_time > timeout:
+            current_time = asyncio.get_event_loop().time()
+            if current_time - start_time > timeout:
                 self.logger.error(f"⏰ Task {task_id} timed out after {timeout} seconds")
                 return False
             

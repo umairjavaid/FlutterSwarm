@@ -166,15 +166,37 @@ class ProcessSupervisionAgent(BaseAgent):
     
     async def _monitoring_loop(self):
         """Main monitoring loop that checks process health."""
-        while self.is_monitoring:
+        from shared.state import CircuitBreaker
+        
+        # Add circuit breaker to prevent infinite loops
+        circuit_breaker = CircuitBreaker(
+            max_iterations=10000,  # Allow many iterations for long-running monitoring
+            max_time=86400.0,      # 24 hours max before forcing restart
+            name="supervision_monitoring"
+        )
+        
+        iteration_count = 0
+        while self.is_monitoring and circuit_breaker.check():
             try:
                 await self._perform_health_checks()
                 await asyncio.sleep(self.health_check_interval)
+                
+                iteration_count += 1
+                # Log status every 100 iterations
+                if iteration_count % 100 == 0:
+                    self.logger.info(f"🔍 Supervision monitoring: {iteration_count} iterations completed")
+                    
             except asyncio.CancelledError:
+                self.logger.info("🔍 Supervision monitoring cancelled")
                 break
             except Exception as e:
                 self.logger.error(f"❌ Error in monitoring loop: {e}")
                 await asyncio.sleep(5)  # Brief pause on error
+        
+        if not circuit_breaker.check():
+            self.logger.warning("⚠️ Supervision monitoring stopped by circuit breaker")
+        else:
+            self.logger.info("🔍 Supervision monitoring stopped normally")
     
     async def _perform_health_checks(self):
         """Perform comprehensive health checks on all supervised processes."""

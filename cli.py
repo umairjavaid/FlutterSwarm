@@ -8,6 +8,8 @@ import asyncio
 import json
 import sys
 import logging
+import signal
+import atexit
 from datetime import datetime
 from pathlib import Path
 from flutter_swarm import FlutterSwarm
@@ -17,6 +19,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.live import Live
 from rich.panel import Panel
 from config.config_manager import get_config
+
+# Import task management utilities
+from utils.task_manager import task_manager, shutdown_all_tasks
 
 # Reduce log spam - only show INFO and above for agents
 logging.getLogger('flutterswarm').setLevel(logging.INFO)
@@ -29,6 +34,43 @@ logging.getLogger('flutterswarm.devops').setLevel(logging.WARNING)
 config = get_config()
 cli_config = config.get_cli_config()
 console = Console(width=cli_config.get('console_width', 80))
+
+# Global flag for graceful shutdown
+_shutdown_initiated = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    global _shutdown_initiated
+    if _shutdown_initiated:
+        print("\n⚠️ Force shutdown requested. Terminating immediately.")
+        sys.exit(1)
+    
+    _shutdown_initiated = True
+    print(f"\n🔄 Received signal {signum}. Initiating graceful shutdown...")
+    
+    # Try to cancel all tasks
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(shutdown_all_tasks(timeout=10.0))
+    except Exception:
+        pass
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register atexit handler for cleanup
+def cleanup_on_exit():
+    """Cleanup function called on exit."""
+    if not _shutdown_initiated:
+        print("🔄 Performing final cleanup...")
+        try:
+            asyncio.run(shutdown_all_tasks(timeout=5.0))
+        except Exception:
+            pass
+
+atexit.register(cleanup_on_exit)
 
 class FlutterSwarmCLI:
     """Command line interface for FlutterSwarm."""
@@ -255,7 +297,36 @@ class FlutterSwarmCLI:
         swarm_task = asyncio.create_task(self.swarm.start())
         
         try:
-            while True:
+            # Add circuit breaker for interactive CLI
+            import time
+            
+            class CLICircuitBreaker:
+                def __init__(self, max_iterations, max_time, name):
+                    self.max_iterations = max_iterations
+                    self.max_time = max_time
+                    self.name = name
+                    self.start_time = time.time()
+                    self.iterations = 0
+                    
+                def check(self):
+                    self.iterations += 1
+                    elapsed = time.time() - self.start_time
+                    
+                    if self.iterations > self.max_iterations:
+                        console.print(f"⚠️ Interactive session limit reached ({self.max_iterations} commands)")
+                        return False
+                    if elapsed > self.max_time:
+                        console.print(f"⚠️ Interactive session time limit reached ({self.max_time/3600:.1f} hours)")
+                        return False
+                    return True
+            
+            circuit_breaker = CLICircuitBreaker(
+                max_iterations=10000,  # 10k commands max
+                max_time=28800.0,      # 8 hours max
+                name="interactive_cli"
+            )
+            
+            while circuit_breaker.check():
                 command = console.input("\n[bold cyan]FlutterSwarm>[/bold cyan] ")
                 
                 if command.lower() in ['quit', 'exit', 'q']:
@@ -384,8 +455,19 @@ class FlutterSwarmCLI:
             
             # Keep monitoring until interrupted
             console.print("🔄 [dim]Monitoring active... (Ctrl+C to stop)[/dim]")
+            
+            # Add circuit breaker for monitoring loop
+            import time
+            monitoring_start = time.time()
+            max_monitoring_time = 86400  # 24 hours max
+            
             while True:
                 await asyncio.sleep(1)
+                
+                # Check if we've exceeded maximum monitoring time
+                if time.time() - monitoring_start > max_monitoring_time:
+                    console.print(f"\n⚠️ [yellow]Maximum monitoring time ({max_monitoring_time/3600:.1f} hours) reached[/yellow]")
+                    break
                 
         except KeyboardInterrupt:
             console.print("\n⏸️ [yellow]Monitoring stopped by user[/yellow]")
