@@ -64,6 +64,10 @@ class FlutterTool(BaseTool):
                 return await self._run_app(**kwargs)
             elif operation == "generate":
                 return await self._generate_code(**kwargs)
+            elif operation == "validate":
+                return await self._validate_project(**kwargs)
+            elif operation == "health":
+                return await self._get_project_health(**kwargs)
             else:
                 return ToolResult(
                     status=ToolStatus.ERROR,
@@ -349,6 +353,98 @@ class FlutterTool(BaseTool):
         
         return result
     
+    async def _validate_project(self, project_path: str = None, **kwargs) -> ToolResult:
+        """Validate Flutter project structure and configuration."""
+        from utils.flutter_validation import validate_flutter_project
+        
+        if not project_path:
+            project_path = self.project_directory
+            
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="No project path specified for validation"
+            )
+        
+        try:
+            # Perform comprehensive project validation
+            validation_result = await validate_flutter_project(project_path)
+            
+            # Determine status based on validation
+            if validation_result['valid']:
+                status = ToolStatus.SUCCESS
+                output = f"✅ Flutter project validation passed for {project_path}"
+            else:
+                status = ToolStatus.ERROR
+                missing_files = validation_result.get('missing_files', [])
+                output = f"❌ Flutter project validation failed. Missing files: {missing_files}"
+            
+            return ToolResult(
+                status=status,
+                output=output,
+                data=validation_result
+            )
+            
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Error during project validation: {str(e)}"
+            )
+
+    async def _get_project_health(self, project_path: str = None, **kwargs) -> ToolResult:
+        """Get Flutter project health score and recommendations."""
+        from utils.flutter_validation import validate_flutter_project, get_flutter_project_health_score
+        
+        if not project_path:
+            project_path = self.project_directory
+            
+        if not project_path:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error="No project path specified for health check"
+            )
+        
+        try:
+            # Get validation results
+            validation_result = await validate_flutter_project(project_path)
+            
+            # Calculate health score
+            health_score = get_flutter_project_health_score(validation_result)
+            
+            # Format output message
+            score = health_score['score']
+            grade = health_score['grade']
+            issues_count = len(health_score['issues'])
+            
+            if score >= 80:
+                status = ToolStatus.SUCCESS
+                output = f"🎯 Project health: {score}/100 (Grade: {grade}) - Good project structure"
+            elif score >= 60:
+                status = ToolStatus.WARNING
+                output = f"⚠️ Project health: {score}/100 (Grade: {grade}) - {issues_count} issues found"
+            else:
+                status = ToolStatus.ERROR
+                output = f"🚨 Project health: {score}/100 (Grade: {grade}) - Significant issues detected"
+            
+            return ToolResult(
+                status=status,
+                output=output,
+                data={
+                    'health_score': health_score,
+                    'validation_result': validation_result
+                }
+            )
+            
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                output="",
+                error=f"Error during health check: {str(e)}"
+            )
+
     # Public methods for test and agent compatibility
     async def doctor(self, **kwargs):
         return await self.execute("doctor", **kwargs)

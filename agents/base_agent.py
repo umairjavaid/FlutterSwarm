@@ -9,7 +9,7 @@ import time
 import threading
 import random
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable, Awaitable
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,7 +21,6 @@ from utils.exception_handler import with_exception_handling, log_and_suppress_ex
 import os
 from dotenv import load_dotenv
 import logging
-import random
 
 load_dotenv()
 
@@ -985,6 +984,46 @@ Please contact the system administrator if this problem continues.
         # This should never be reached due to the raise above, but adding as a safeguard
         raise last_exception
     
+    async def execute_with_retry(self, operation, max_retries=3):
+        """Execute operation with retry logic and exponential backoff."""
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                result = await operation()
+                if attempt > 0:
+                    self.logger.info(f"✅ Operation succeeded on attempt {attempt + 1}/{max_retries}")
+                return result
+            except Exception as e:
+                last_exception = e
+                
+                if attempt == max_retries - 1:
+                    # Last attempt failed, re-raise the exception
+                    self.logger.error(f"❌ All {max_retries} retry attempts failed: {str(e)}")
+                    try:
+                        from monitoring.agent_logger import agent_logger
+                        agent_logger.log_error(
+                            agent_id=getattr(self, 'agent_id', 'unknown'),
+                            error_type=type(e).__name__,
+                            error_message=str(e),
+                            context={"file": __file__, "operation": "execute_with_retry"},
+                            exception=e
+                        )
+                    except ImportError:
+                        # If agent_logger is not available, continue without logging
+                        pass
+                    raise
+                    
+                # Calculate wait time with exponential backoff and small jitter
+                wait_time = (2 ** attempt) + (random.random() * 0.5)
+                self.logger.warning(f"⚠️ Retry {attempt + 1}/{max_retries} after error: {str(e)}. Waiting {wait_time:.2f}s")
+                
+                # Wait before retrying
+                await asyncio.sleep(wait_time)
+        
+        # This should never be reached due to the raise above, but adding as a safeguard
+        raise last_exception
+
     # Abstract methods that must be implemented by subclasses
     @abstractmethod
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
