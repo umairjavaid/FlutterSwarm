@@ -246,6 +246,7 @@ class SharedState:
             
         # Thread-safe initialization of async locks
         self._shutdown_event = threading.Event()
+        self._lock = threading.RLock()  # Main thread synchronization lock
         self._sync_lock = threading.RLock()  # Only for sync initialization
         self._main_async_lock = None  # Will be initialized in async context
         self._async_locks: Dict[str, asyncio.Lock] = {}
