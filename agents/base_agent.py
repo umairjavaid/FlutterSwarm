@@ -106,13 +106,26 @@ class BaseAgent(ABC):
             
             if not api_key:
                 # Try fallback configuration
-                fallback_config = self._config_manager.get_llm_config(fallback=True)
-                fallback_api_key_env = fallback_config.get('api_key_env', 'OPENAI_API_KEY')
-                api_key = os.getenv(fallback_api_key_env)
-                
-                if not api_key:
-                    raise ValueError(f"No API key found in environment variables: {api_key_env}, {fallback_api_key_env}")
-            
+                try:
+                    fallback_config = self._config_manager.get_llm_config(fallback=True)
+                    fallback_api_key_env = fallback_config.get('api_key_env', 'OPENAI_API_KEY')
+                    api_key = os.getenv(fallback_api_key_env)
+                    
+                    if not api_key:
+                        raise ValueError(f"No API key found in environment variables: {api_key_env}, {fallback_api_key_env}")
+                    
+                    # Check if the fallback is trying to use a different provider
+                    if "openai" in fallback_api_key_env.lower():
+                        raise NotImplementedError("Fallback to OpenAI is not yet implemented. Please configure an Anthropic API key.")
+
+                except ValueError as e:
+                    raise e  # Re-raise the ValueError
+                except NotImplementedError as e:
+                    raise e # Re-raise the NotImplementedError
+                except Exception:
+                    self.logger.warning(f"Primary API key not found, and fallback configuration failed. Please check your environment variables and config files.")
+                    raise ValueError(f"No valid API key found.")
+
             # Get default model from config
             default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
             default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
@@ -509,7 +522,7 @@ class BaseAgent(ABC):
         llm_config = self.agent_config.get('llm', {})
         
         # Get global config defaults
-        default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20241022')
+        default_model = self._config_manager.get('agents.llm.primary.model', 'claude-3-5-sonnet-20240620')
         default_temperature = self._config_manager.get('agents.llm.primary.temperature', 0.7)
         default_max_tokens = self._config_manager.get('agents.llm.primary.max_tokens', 4000)
         
@@ -525,7 +538,7 @@ class BaseAgent(ABC):
         elif task_complexity == "low":
             # Use faster model with higher creativity for simple tasks
             return {
-                "model": llm_config.get("low_complexity_model", "claude-3-5-sonnet-20241022"),
+                "model": llm_config.get("low_complexity_model", "claude-3-5-sonnet-20240620"),
                 "temperature": llm_config.get("low_complexity_temperature", 0.8),
                 "max_tokens": llm_config.get("low_complexity_max_tokens", 2000),
                 "provider": llm_config.get("provider", "anthropic")
