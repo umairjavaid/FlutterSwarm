@@ -513,7 +513,15 @@ class TestingAgent(BaseAgent):
             asyncio.create_task(self._async_create_tests_for_files(files_created))
             
         except Exception as e:
-            self.logger.error(f"❌ Error preparing tests for new code: {e}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'testing'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
 
     def _prepare_testing_strategy(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
         """Prepare testing strategy based on architecture decisions."""
@@ -550,7 +558,15 @@ class TestingAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Error preparing testing strategy: {e}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'testing'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
 
     def _add_security_test_scenarios(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
         """Add security-focused test scenarios based on security findings."""
@@ -577,7 +593,15 @@ class TestingAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Error adding security test scenarios: {e}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'testing'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
 
     def _create_performance_test_cases(self, activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
         """Create performance test cases based on performance issues."""
@@ -604,7 +628,15 @@ class TestingAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Error creating performance test cases: {e}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'testing'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
 
     async def _async_create_tests_for_files(self, files: List[str]) -> None:
         """Asynchronously create tests for newly implemented files."""
@@ -615,7 +647,15 @@ class TestingAgent(BaseAgent):
                     "target_files": files
                 })
         except Exception as e:
-            self.logger.error(f"❌ Error in async test creation: {e}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'testing'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
 
     def _determine_test_strategy_for_architecture(self, patterns: List[str]) -> Dict[str, Any]:
         """Determine optimal testing strategy based on architecture patterns."""

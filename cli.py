@@ -588,6 +588,14 @@ Examples:
     except KeyboardInterrupt:
         console.print("\n🛑 [yellow]Interrupted by user[/yellow]")
     except Exception as e:
+        from monitoring.agent_logger import agent_logger
+        agent_logger.log_error(
+            agent_id="cli",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            context={"file": __file__},
+            exception=e
+        )
         console.print(f"❌ [red]Error: {e}[/red]")
         sys.exit(1)
 

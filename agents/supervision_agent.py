@@ -100,14 +100,15 @@ class ProcessSupervisionAgent(BaseAgent):
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Error executing supervision task: {str(e)}")
-            return {
-                "status": "failed",
-                "error": str(e),
-                "task_type": task_description,
-                "execution_time": datetime.now().isoformat(),
-                "agent": self.agent_id
-            }
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'supervision'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
+            raise
     
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests."""

@@ -201,6 +201,14 @@ class BaseAgent(ABC):
                 await self._handle_custom_message(message)
         except Exception as e:
             self.logger.error(f"❌ Error handling message in {self.agent_id}: {str(e)}")
+            from monitoring.agent_logger import agent_logger
+            agent_logger.log_error(
+                agent_id=getattr(self, 'agent_id', 'unknown'),
+                error_type=type(e).__name__,
+                error_message=str(e),
+                context={"file": __file__},
+                exception=e
+            )
     
     def _log_message_received(self, message: AgentMessage):
         """Log received message to monitoring system."""
@@ -936,6 +944,14 @@ Please contact the system administrator if this problem continues.
                 if attempt == max_retries - 1:
                     # Last attempt failed, re-raise the exception
                     self.logger.error(f"❌ All {max_retries} retry attempts failed: {str(e)}")
+                    from monitoring.agent_logger import agent_logger
+                    agent_logger.log_error(
+                        agent_id=getattr(self, 'agent_id', 'unknown'),
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        context={"file": __file__},
+                        exception=e
+                    )
                     raise
                     
                 # Calculate wait time with exponential backoff and small jitter

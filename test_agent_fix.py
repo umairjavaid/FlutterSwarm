@@ -9,6 +9,12 @@ import os
 # Add project root to path
 sys.path.insert(0, '/home/umair/Desktop/FlutterSwarm')
 
+# Import agent_logger for error logging
+try:
+    from monitoring.agent_logger import agent_logger
+except ImportError:
+    agent_logger = None
+
 try:
     print("🧪 Testing agent creation fix...")
     
@@ -35,6 +41,13 @@ try:
     print("\n🎉 All agents created successfully - fix worked!")
     
 except Exception as e:
-    print(f"❌ Error: {e}")
+    if agent_logger:
+        agent_logger.log_error(
+            agent_id="system", 
+            error_type="TestAgentFixError", 
+            error_message=str(e), 
+            context={"file": __file__}, 
+            exception=e
+        )
     import traceback
     traceback.print_exc()
