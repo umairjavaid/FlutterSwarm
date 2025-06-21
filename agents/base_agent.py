@@ -244,9 +244,17 @@ class BaseAgent(ABC):
                 MessageType.PROACTIVE_ASSISTANCE_OFFER,
                 MessageType.CONSCIOUSNESS_UPDATE
             ]:
-                # Low priority - only process if not busy with tasks
+                # Low priority - only process if not busy with tasks and rate limit
                 if not self._is_busy_with_tasks():
-                    await self._handle_real_time_message(message)
+                    # Rate limit awareness message processing
+                    current_time = time.time()
+                    last_awareness_msg = self._last_broadcast_time.get("awareness_msg_processed", 0)
+                    
+                    if current_time - last_awareness_msg >= 10.0:  # Max 1 awareness message per 10 seconds
+                        await self._handle_real_time_message(message)
+                        self._last_broadcast_time["awareness_msg_processed"] = current_time
+                    else:
+                        self.logger.debug(f"Rate limiting awareness message {message.message_type.value}")
                 else:
                     # Skip real-time messages when busy with actual work
                     self.logger.debug(f"Skipping real-time message {message.message_type.value} - busy with tasks")
@@ -1260,8 +1268,10 @@ Please contact the system administrator if this problem continues.
     
     def _react_to_peer_activity(self, peer_agent: str, activity_type: str, 
                                activity_details: Dict[str, Any], consciousness_update: Dict[str, Any]) -> None:
-        """React to specific peer activities (to be overridden by subclasses)."""
-        # Base implementation - subclasses should override for specific behaviors
+        """React to specific peer activities (DISABLED to prevent cascading loops)."""
+        # DISABLED: Reactive behaviors create cascading loops that prevent task execution
+        # Only log the activity without taking reactive action
+        self.logger.debug(f"🔗 Observed peer activity: {peer_agent} -> {activity_type} (reactions disabled)")
         pass
     
     def _handle_proactive_opportunity(self, opportunity: Dict[str, Any]) -> None:
