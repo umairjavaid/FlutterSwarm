@@ -106,17 +106,21 @@ class LLMLogger:
         with self._lock:
             self.total_requests += 1
         
-        # Truncate prompt for logging if too long
-        prompt_preview = prompt[:200] + "..." if len(prompt) > 200 else prompt
-        
+        # Log full prompt details
         self.logger.info(f"🚀 LLM Request [{interaction_id}]")
         self.logger.info(f"   Agent: {agent_id}")
         self.logger.info(f"   Model: {model} ({provider})")
         self.logger.info(f"   Type: {request_type}")
         self.logger.info(f"   Temperature: {temperature}, Max Tokens: {max_tokens}")
-        self.logger.debug(f"   Prompt: {prompt_preview}")
+        
+        # Log FULL prompt for visibility
+        self.logger.info(f"   FULL PROMPT:")
+        self.logger.info(f"   {'-'*60}")
+        self.logger.info(f"{prompt}")
+        self.logger.info(f"   {'-'*60}")
+        
         if context:
-            self.logger.debug(f"   Context: {json.dumps(context, default=str)[:500]}...")
+            self.logger.info(f"   Context: {json.dumps(context, default=str, indent=2)}")
         
         return interaction_id
     
@@ -157,15 +161,25 @@ class LLMLogger:
             if error:
                 self.error_count += 1
         
-        # Log response
+        # Log response with full details
         if success:
             self.logger.info(f"✅ LLM Response [{interaction_id}] - {duration:.2f}s")
-            self.logger.debug(f"   Response: {response_preview}")
+            
+            # Log FULL response for visibility
+            self.logger.info(f"   FULL RESPONSE:")
+            self.logger.info(f"   {'-'*60}")
+            self.logger.info(f"{response}")
+            self.logger.info(f"   {'-'*60}")
+            
             if token_usage:
                 self.logger.info(f"   Tokens: {token_usage}")
         else:
             self.logger.error(f"❌ LLM Error [{interaction_id}] - {duration:.2f}s")
             self.logger.error(f"   Error: {error}")
+            
+            # Still log partial response if available
+            if response:
+                self.logger.error(f"   Partial Response: {response[:500]}...")
         
         # Log to monitoring system if available
         try:

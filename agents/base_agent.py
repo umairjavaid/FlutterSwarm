@@ -64,8 +64,8 @@ class BaseAgent(ABC):
             capabilities=self.agent_config.get("capabilities", [])
         )
         
-        # Enable real-time awareness
-        self.enable_real_time_awareness()
+        # Enable real-time awareness (disabled to prevent endless loops)
+        # self.enable_real_time_awareness()
         
         # Track last status for monitoring
         self._last_status = AgentStatus.IDLE
@@ -1017,10 +1017,12 @@ Please contact the system administrator if this problem continues.
         # Subscribe to all other agents
         shared_state.subscribe_agent_to_all(self.agent_id)
         
-        # Start continuous monitoring (if not already running)
-        if not hasattr(self, '_monitoring_enabled'):
-            self._monitoring_enabled = True
-            self.start_continuous_monitoring()
+        # DISABLED: Start continuous monitoring to prevent endless loops
+        # if not hasattr(self, '_monitoring_enabled'):
+        #     self._monitoring_enabled = True
+        #     self.start_continuous_monitoring()
+        
+        self.logger.info(f"Real-time awareness enabled for {self.agent_id} (monitoring disabled to prevent loops)")
     
     async def broadcast_activity(self, activity_type: str, activity_details: Dict[str, Any], 
                           impact_level: str = "medium", 
