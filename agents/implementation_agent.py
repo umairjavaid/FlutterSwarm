@@ -1342,7 +1342,7 @@ class ImplementationAgent(BaseAgent):
                 feature_result = await self._implement_single_feature(project_id, feature)
                 implementation_results["feature_results"][feature_id] = feature_result
                 
-                if feature_result["status"] == "success":
+                if feature_result.get("status") == "success":
                     # Validate the feature
                     validation_result = await self._validate_implemented_feature(project_id, feature)
                     

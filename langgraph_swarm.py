@@ -768,10 +768,12 @@ class FlutterSwarmGovernance:
                 
                 # Process the result
                 if result.get("status") == "architecture_completed":
-                    architecture_decisions = result.get("architecture_decisions", [])
+                    # Get architecture decision from result (it's a single decision, not a list)
+                    decision_record = result.get("decision_record")
+                    architecture_decisions = [decision_record] if decision_record else []
                     
-                    # Update state with architecture decisions
-                    await shared_state.update_project_async(
+                    # Update state with architecture decisions (use sync method)
+                    shared_state.update_project(
                         project_id,
                         architecture_decisions=architecture_decisions
                     )
@@ -795,7 +797,7 @@ class FlutterSwarmGovernance:
                     
                 else:
                     # Architecture failed
-                    self.logger.error(f"❌ Architecture design failed: {result.get('status')}")
+                    self.logger.error(f"❌ Architecture design failed: {result.get('status', 'unknown_status')}")
                     architecture_criteria = {
                         'architecture_design_complete': False,
                         'security_review_passed': False,
@@ -1627,18 +1629,36 @@ class FlutterSwarmGovernance:
         if not project:
             return False
         
-        # Check for security-related architecture decisions
+        # Check for security-related content in architecture decisions
         architecture_decisions = getattr(project, 'architecture_decisions', [])
-        return any(d.get('type') == 'security' for d in architecture_decisions)
+        if not architecture_decisions:
+            return False
+            
+        # Look for security-related keywords in the descriptions
+        security_keywords = ['security', 'authentication', 'authorization', 'secure', 'encryption', 'token']
+        for decision in architecture_decisions:
+            description = str(decision.get('description', '')).lower()
+            if any(keyword in description for keyword in security_keywords):
+                return True
+        return False
     
     def _check_performance_optimization(self, project) -> bool:
         """Check if performance considerations are addressed."""
         if not project:
             return False
         
-        # Check for performance-related architecture decisions
+        # Check for performance-related content in architecture decisions
         architecture_decisions = getattr(project, 'architecture_decisions', [])
-        return any(d.get('type') == 'performance' for d in architecture_decisions)
+        if not architecture_decisions:
+            return False
+            
+        # Look for performance-related keywords in the descriptions
+        performance_keywords = ['performance', 'optimization', 'caching', 'lazy', 'memory', 'efficient']
+        for decision in architecture_decisions:
+            description = str(decision.get('description', '')).lower()
+            if any(keyword in description for keyword in performance_keywords):
+                return True
+        return False
     
     def _check_scalability_verification(self, project) -> bool:
         """Check if the architecture includes scalability verification."""
@@ -1646,11 +1666,17 @@ class FlutterSwarmGovernance:
             return False
         
         # Check if architecture decisions include scalability considerations
-        architecture_decisions = project.architecture_decisions
-        return any(
-            'scalability' in str(decision).lower() 
-            for decision in architecture_decisions
-        )
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        if not architecture_decisions:
+            return False
+            
+        # Look for scalability-related keywords in the descriptions
+        scalability_keywords = ['scalability', 'scalable', 'scale', 'distributed', 'microservices']
+        for decision in architecture_decisions:
+            description = str(decision.get('description', '')).lower()
+            if any(keyword in description for keyword in scalability_keywords):
+                return True
+        return False
     
     def _check_performance_considerations(self, project) -> bool:
         """Check if the architecture addresses performance considerations."""
@@ -1658,11 +1684,17 @@ class FlutterSwarmGovernance:
             return False
         
         # Check if architecture decisions include performance considerations
-        architecture_decisions = project.architecture_decisions
-        return any(
-            'performance' in str(decision).lower() 
-            for decision in architecture_decisions
-        )
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        if not architecture_decisions:
+            return False
+            
+        # Look for performance-related keywords in the descriptions
+        performance_keywords = ['performance', 'optimization', 'caching', 'lazy', 'memory', 'efficient']
+        for decision in architecture_decisions:
+            description = str(decision.get('description', '')).lower()
+            if any(keyword in description for keyword in performance_keywords):
+                return True
+        return False
     
     def _check_documentation_complete(self, project) -> bool:
         """Check if documentation is complete."""
@@ -1851,8 +1883,9 @@ class FlutterSwarmGovernance:
             # Extract project results from shared state
             project = shared_state.get_project_state(project_id)
             if project:
+                overall_progress = result.get("overall_progress", 0.0)
                 return {
-                    "status": "completed" if result["overall_progress"] >= 0.9 else "partial",
+                    "status": "completed" if overall_progress >= 0.9 else "partial",
                     "project_id": project_id,
                     "files_created": len(getattr(project, "files_created", {})),
                     "architecture_decisions": len(getattr(project, "architecture_decisions", [])),
@@ -1861,8 +1894,8 @@ class FlutterSwarmGovernance:
                     "documentation": getattr(project, "documentation", []),
                     "performance_metrics": getattr(project, "performance_metrics", {}),
                     "quality_assessment": {
-                        "score": result["overall_progress"] * 100,
-                        "issues": result["execution_errors"]
+                        "score": overall_progress * 100,
+                        "issues": result.get("execution_errors", [])
                     },
                     "deployment_config": {
                         "platforms": platforms or ["android", "ios"],
