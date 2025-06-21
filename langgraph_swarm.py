@@ -1358,8 +1358,8 @@ class FlutterSwarmGovernance:
         failure_patterns = self._analyze_failure_patterns(state)
         
         # Check for circuit breaker conditions
-        if circuit_breaker["status"] == "open":
-            print(f"🚫 Circuit breaker is OPEN for fallback coordination")
+        if circuit_breaker.get("triggered", False):
+            print(f"🚫 Circuit breaker is TRIGGERED for fallback coordination")
             coordination_needs.append('circuit_breaker_open')
         
         # Check if agents are stuck or not collaborating
@@ -1403,7 +1403,7 @@ class FlutterSwarmGovernance:
                 # Enhanced gate reset with circuit breaker awareness
                 for gate in failed_gates:
                     gate_circuit_breaker = self._get_circuit_breaker_status(gate, state)
-                    if gate_circuit_breaker["status"] != "open":
+                    if not gate_circuit_breaker.get("triggered", False):
                         state['gate_statuses'][gate] = 'pending'
                     else:
                         # Skip gates with open circuit breakers
