@@ -98,14 +98,44 @@ class OrchestratorAgent(BaseAgent):
     async def on_state_change(self, change_data: Dict[str, Any]) -> None:
         """React to state changes and coordinate accordingly."""
         event = change_data.get("event")
-        
         if event == "project_created":
             await self._initiate_project_workflow(change_data["project_id"])
         elif event == "agent_status_changed":
+            # FIX: Add missing handler for agent status changes
             await self._handle_agent_status_change(change_data)
         elif event == "phase_completed":
             await self._advance_to_next_phase(change_data)
-    
+
+    async def _handle_agent_status_change(self, change_data: Dict[str, Any]) -> None:
+        """Handle agent status changes (e.g., for stuck/idle agents)."""
+        # Placeholder: implement logic as needed
+        agent_id = change_data.get("agent_id")
+        new_status = change_data.get("new_status")
+        # Example: log or trigger recovery if agent is stuck
+        self.logger.info(f"Agent {agent_id} changed status to {new_status}")
+
+    async def _advance_to_next_phase(self, change_data: Dict[str, Any]) -> None:
+        """Advance project to the next workflow phase after completion."""
+        project_id = change_data.get("project_id")
+        project = shared_state.get_project_state(project_id)
+        if not project:
+            return
+        current_phase = project.current_phase
+        try:
+            current_phase_index = self.workflow_phases.index(current_phase)
+        except ValueError:
+            self.logger.error(f"Unknown phase: {current_phase}")
+            return
+        if current_phase_index < len(self.workflow_phases) - 1:
+            next_phase = self.workflow_phases[current_phase_index + 1]
+            shared_state.update_project(project_id, current_phase=next_phase)
+            await self._coordinate_phase({
+                "phase": next_phase,
+                "project_id": project_id
+            })
+        else:
+            self.logger.info(f"Project {project_id} completed all phases.")
+
     async def _create_flutter_project(self, project_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initiate the workflow for an existing Flutter project."""
         name = project_data["name"]
