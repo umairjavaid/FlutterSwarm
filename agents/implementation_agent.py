@@ -2725,8 +2725,11 @@ class ImplementationAgent(BaseAgent):
         project_id = project_data.get("project_id")
         project_name = project_data.get("name", "flutter_app")
         
+        # Convert project name to valid Flutter package name (lowercase, underscores)
+        flutter_package_name = self._normalize_flutter_package_name(project_name)
+        
         # Determine project path
-        project_path = os.path.join("flutter_projects", f"{project_name}_{project_id[:8]}")
+        project_path = os.path.join("flutter_projects", f"{flutter_package_name}")
         
         # Check if Flutter project exists
         pubspec_path = os.path.join(project_path, "pubspec.yaml")
@@ -2737,7 +2740,7 @@ class ImplementationAgent(BaseAgent):
             result = await self.execute_tool(
                 "flutter",
                 operation="create",
-                project_name=project_name,
+                project_name=flutter_package_name,
                 project_path=project_path,
                 description=project_data.get("description", ""),
                 org="com.flutterswarm"
@@ -2751,5 +2754,31 @@ class ImplementationAgent(BaseAgent):
             shared_state.update_project(project_id, project_path=project_path)
             
         return True
+
+    def _normalize_flutter_package_name(self, name: str) -> str:
+        """Convert any string to a valid Flutter package name."""
+        import re
+        
+        # Convert to lowercase
+        name = name.lower()
+        
+        # Replace non-alphanumeric characters with underscores
+        name = re.sub(r'[^a-z0-9_]', '_', name)
+        
+        # Remove consecutive underscores
+        name = re.sub(r'_+', '_', name)
+        
+        # Remove leading/trailing underscores
+        name = name.strip('_')
+        
+        # Ensure it doesn't start with a digit
+        if name and name[0].isdigit():
+            name = f"app_{name}"
+        
+        # Ensure it's not empty
+        if not name:
+            name = "flutter_app"
+            
+        return name
 
 

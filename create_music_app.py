@@ -45,7 +45,7 @@ async def create_music_app():
     
     # Create a comprehensive music app project
     project_id = swarm.create_project(
-        name="MusicStreamPro",
+        name="music_stream_pro",
         description="A comprehensive music streaming application with playlists, offline downloads, social features, and advanced audio controls",
         requirements=[
             "Music streaming from online sources",
