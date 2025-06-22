@@ -45,7 +45,7 @@ async def create_music_app():
     
     # Create a comprehensive music app project
     project_id = swarm.create_project(
-        name="MusicStreamPro",
+        name="music_stream_pro",
         description="A comprehensive music streaming application with playlists, offline downloads, social features, and advanced audio controls",
         requirements=[
             "Music streaming from online sources",
@@ -132,18 +132,20 @@ async def create_music_app():
                     "theming", "accessibility", "gesture_controls", "voice_commands",
                     "external_apis", "push_notifications"
                 ],
-                platforms=["android", "ios", "web", "desktop"],
-                ci_system="github_actions"
+                platforms=["android", "ios", "web", "desktop"]
             ),
-            timeout=900  # 15 minutes timeout for complex app
+            timeout=300  # 5 minutes
         )
-        
-        print("\n✅ Music app build completed!")
         await print_build_results_with_qa(result)
-        
+
     except asyncio.TimeoutError:
-        print("\n⏰ Build process timed out, but workflow may still be running...")
-        print("🔍 Build process exceeded 15 minute timeout for complex app")
+        print("\n⌛️ Build process timed out after 5 minutes.")
+        print("This could be due to a complex project or an unexpected issue.")
+        print("Please check the logs for more details.")
+        # Optionally, trigger a fallback or analysis
+        project_status = swarm.get_project_status(project_id)
+        if project_status:
+            await analyze_build_error(swarm, project_id, f"Timeout occurred at phase: {project_status.get('project', {}).get('current_phase', 'unknown')}")
         
     except Exception as e:
         print(f"\n❌ Error during build process: {e}")
