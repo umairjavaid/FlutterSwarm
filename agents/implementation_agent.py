@@ -183,13 +183,13 @@ class ImplementationAgent(BaseAgent):
             "files": [
                 {{
                     "path": "lib/main.dart",
-                    "content": "import 'package:flutter/material.dart';\\n\\nvoid main() {{\\n  runApp(MyApp());\\n}}\\n\\nclass MyApp extends StatelessWidget {{\\n  @override\\n  Widget build(BuildContext context) {{\\n    return MaterialApp(\\n      home: CounterPage(),\\n    );\\n  }}\\n}}",
+                    "content": "...",
                     "description": "Main app entry point"
                 }},
                 {{
-                    "path": "lib/features/counter/counter_page.dart", 
-                    "content": "import 'package:flutter/material.dart';\\n\\nclass CounterPage extends StatefulWidget {{\\n  @override\\n  _CounterPageState createState() => _CounterPageState();\\n}}\\n\\nclass _CounterPageState extends State<CounterPage> {{\\n  int _counter = 0;\\n\\n  void _incrementCounter() {{\\n    setState(() {{\\n      _counter++;\\n    }});\\n  }}\\n\\n  @override\\n  Widget build(BuildContext context) {{\\n    return Scaffold(\\n      appBar: AppBar(title: Text('Counter')),\\n      body: Center(\\n        child: Text('\\$_counter', style: TextStyle(fontSize: 24)),\\n      ),\\n      floatingActionButton: FloatingActionButton(\\n        onPressed: _incrementCounter,\\n        child: Icon(Icons.add),\\n      ),\\n    );\\n  }}\\n}}",
-                    "description": "Counter page implementation"
+                    "path": "lib/features/feature_name/feature_page.dart", 
+                    "content": "...",
+                    "description": "Page implementation for the feature"
                 }}
             ]
         }}
@@ -969,7 +969,7 @@ class ImplementationAgent(BaseAgent):
                 - Responsive design
                 - Material Design 3 components
                 - Proper navigation
-                - Error handling UI
+                - Error handling
                 - Loading states
                 - Accessibility support
                 - Proper imports
