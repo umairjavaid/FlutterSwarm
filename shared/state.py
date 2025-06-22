@@ -117,6 +117,8 @@ class ProjectState:
     performance_metrics: Dict[str, Any]
     documentation: Dict[str, str]
     deployment_config: Dict[str, Any]
+    # Flutter project path
+    project_path: Optional[str] = None
     # Supervision fields
     supervision_status: Optional[str] = None
     process_health_metrics: Dict[str, Any] = None
@@ -419,7 +421,8 @@ class SharedState:
                     security_findings=[],
                     performance_metrics={},
                     documentation={},
-                    deployment_config={}
+                    deployment_config={},
+                    project_path=None  # Will be set when Flutter project is created
                 )
                 self._current_project_id = project_id
                 
@@ -462,7 +465,8 @@ class SharedState:
                 security_findings=[],
                 performance_metrics={},
                 documentation={},
-                deployment_config={}
+                deployment_config={},
+                project_path=None  # Will be set when Flutter project is created
             )
             self._current_project_id = project_id
             

@@ -151,9 +151,10 @@ class ImplementationAgent(BaseAgent):
             await self._handle_qa_issue(change_data)
     
     async def _implement_feature(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement a specific feature using tools."""
+        """Implement a specific feature using LLM to generate all code."""
         feature_name = task_data.get("feature_name", "unknown")
-        feature_spec = task_data.get("feature_spec", {})
+        features = task_data.get("features", [])
+        requirements = task_data.get("requirements", [])
         project_id = task_data.get("project_id")
         
         self.logger.info(f"🔨 Implementing feature: {feature_name}")
@@ -169,33 +170,57 @@ class ImplementationAgent(BaseAgent):
                 "issues_found": 0
             }
         
-        # Create project directory structure first
-        await self._create_feature_structure(feature_name)
+        # Generate complete feature implementation using LLM
+        implementation_prompt = f"""
+        Generate a complete Flutter implementation for this feature:
         
-        # Generate feature files using tools
+        Feature: {feature_name}
+        Features to implement: {features}
+        Requirements: {requirements}
+        
+        Generate multiple Dart files with complete, working code. Return ONLY valid JSON in this format:
+        {{
+            "files": [
+                {{
+                    "path": "lib/main.dart",
+                    "content": "import 'package:flutter/material.dart';\\n\\nvoid main() {{\\n  runApp(MyApp());\\n}}\\n\\nclass MyApp extends StatelessWidget {{\\n  @override\\n  Widget build(BuildContext context) {{\\n    return MaterialApp(\\n      home: CounterPage(),\\n    );\\n  }}\\n}}",
+                    "description": "Main app entry point"
+                }},
+                {{
+                    "path": "lib/features/counter/counter_page.dart", 
+                    "content": "import 'package:flutter/material.dart';\\n\\nclass CounterPage extends StatefulWidget {{\\n  @override\\n  _CounterPageState createState() => _CounterPageState();\\n}}\\n\\nclass _CounterPageState extends State<CounterPage> {{\\n  int _counter = 0;\\n\\n  void _incrementCounter() {{\\n    setState(() {{\\n      _counter++;\\n    }});\\n  }}\\n\\n  @override\\n  Widget build(BuildContext context) {{\\n    return Scaffold(\\n      appBar: AppBar(title: Text('Counter')),\\n      body: Center(\\n        child: Text('\\$_counter', style: TextStyle(fontSize: 24)),\\n      ),\\n      floatingActionButton: FloatingActionButton(\\n        onPressed: _incrementCounter,\\n        child: Icon(Icons.add),\\n      ),\\n    );\\n  }}\\n}}",
+                    "description": "Counter page implementation"
+                }}
+            ]
+        }}
+        
+        Include all necessary files:
+        - Main app file
+        - Feature-specific pages/screens
+        - Models if needed
+        - State management if specified
+        - Proper imports and structure
+        
+        Ensure all Dart code is syntactically correct and follows Flutter best practices.
+        """
+        
+        # Get LLM to generate the implementation
+        implementation_result = await self.think(implementation_prompt, {
+            "task_data": task_data,
+            "project_id": project_id
+        })
+        
+        # Parse and create the generated files
         generated_files = []
+        try:
+            generated_files = await self._parse_and_create_files(project_id, implementation_result)
+            self.logger.info(f"✅ Generated {len(generated_files)} files for feature: {feature_name}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate files: {e}")
         
-        # Generate models if needed
-        if feature_spec.get("models"):
-            model_files = await self._generate_feature_models(feature_name, feature_spec["models"])
-            generated_files.extend(model_files)
-        
-        # Generate screens/UI
-        if feature_spec.get("screens"):
-            screen_files = await self._generate_feature_screens(feature_name, feature_spec["screens"])
-            generated_files.extend(screen_files)
-        
-        # Generate business logic
-        if feature_spec.get("business_logic"):
-            logic_files = await self._generate_business_logic(feature_name, feature_spec["business_logic"])
-            generated_files.extend(logic_files)
-        
-        # Update pubspec.yaml if dependencies are needed
-        if feature_spec.get("dependencies"):
-            await self._add_dependencies(feature_spec["dependencies"])
-        
-        # Format the generated code
-        await self.run_command("dart format .")
+        # Format the generated code if files were created
+        if generated_files:
+            await self.run_command("dart format .")
         
         # Analyze the code for issues
         analysis_result = await self.execute_tool("analysis", operation="dart_analyze")
@@ -203,7 +228,7 @@ class ImplementationAgent(BaseAgent):
         return {
             "feature_name": feature_name,
             "generated_files": generated_files,
-            "status": "completed",
+            "status": "completed" if generated_files else "failed",
             "analysis_result": analysis_result.data if analysis_result.data else {},
             "issues_found": analysis_result.data.get("total_issues", 0) if analysis_result.data else 0
         }
@@ -641,7 +666,14 @@ class ImplementationAgent(BaseAgent):
             
         # Get project state for file paths
         project_state = shared_state.get_project_state(project_id)
-        project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id}"
+        
+        # Determine project path - use project_path if available, otherwise construct from project_id
+        if project_state and hasattr(project_state, 'project_path') and project_state.project_path:
+            project_path = project_state.project_path
+        else:
+            # Fallback to constructing project path from project_id
+            project_name = project_state.name if project_state else "flutter_app"
+            project_path = f"flutter_projects/{project_name}_{project_id[:8]}"
         
         try:
             # Use LLM to parse code content into individual files
@@ -732,6 +764,13 @@ class ImplementationAgent(BaseAgent):
                         if file_result.status == ToolStatus.SUCCESS:
                             created_files.append(full_path)
                             self.logger.info(f"✅ Created file: {file_path}")
+                            
+                            # 🔥 FIX: Register file in shared state so other agents know about it
+                            try:
+                                shared_state.add_file_to_project(project_id, file_path, file_content)
+                                self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to register file in shared state: {e}")
                         else:
                             self.logger.error(f"❌ Failed to create file {file_path}: {file_result.error}")
             
@@ -789,6 +828,24 @@ class ImplementationAgent(BaseAgent):
             
             if file_result.status == ToolStatus.SUCCESS:
                 self.logger.info(f"✅ Created file: {file_path}")
+                
+                # 🔥 FIX: Register file in shared state so other agents know about it
+                project_id = getattr(self, '_current_project_id', None)
+                if not project_id:
+                    # Try to get project_id from shared state if not set
+                    current_project = shared_state.get_project_state()
+                    if current_project:
+                        project_id = current_project.project_id
+                
+                if project_id:
+                    try:
+                        shared_state.add_file_to_project(project_id, file_path, content)
+                        self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                else:
+                    self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
+                
                 return True
             else:
                 self.logger.error(f"❌ Failed to write file {file_path}: {file_result.error}")
@@ -2447,6 +2504,23 @@ class ImplementationAgent(BaseAgent):
                     if written_content == content:
                         self.logger.info(f"✅ Created file: {file_path} ({len(content)} chars) - VERIFIED")
                         
+                        # 🔥 FIX: Register file in shared state so other agents know about it
+                        project_id = getattr(self, '_current_project_id', None)
+                        if not project_id:
+                            # Try to get project_id from shared state if not set
+                            current_project = shared_state.get_project_state()
+                            if current_project:
+                                project_id = current_project.project_id
+                        
+                        if project_id:
+                            try:
+                                shared_state.add_file_to_project(project_id, file_path, content)
+                                self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                        else:
+                            self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
+                        
                         # Broadcast file creation activity (only for important files)
                         if any(pattern in file_path for pattern in ['.dart', 'pubspec.yaml', 'main.dart']):
                             await self.broadcast_activity(
@@ -2489,6 +2563,24 @@ class ImplementationAgent(BaseAgent):
                                 file_content = f.read()
                             if file_content and len(file_content.strip()) > 0:
                                 self.logger.info(f"✅ File verification passed: {file_path} ({len(file_content)} chars)")
+                                
+                                # 🔥 FIX: Register file in shared state so other agents know about it
+                                project_id = getattr(self, '_current_project_id', None)
+                                if not project_id:
+                                    # Try to get project_id from shared state if not set
+                                    current_project = shared_state.get_project_state()
+                                    if current_project:
+                                        project_id = current_project.project_id
+                                
+                                if project_id:
+                                    try:
+                                        shared_state.add_file_to_project(project_id, file_path, file_content)
+                                        self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                                    except Exception as e:
+                                        self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                                else:
+                                    self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
+                                
                                 # Broadcast file creation activity (only for important files)
                                 if any(pattern in file_path for pattern in ['.dart', 'pubspec.yaml', 'main.dart']):
                                     await self.broadcast_activity(
@@ -2604,6 +2696,24 @@ class ImplementationAgent(BaseAgent):
                     
                     if result.status == ToolStatus.SUCCESS:
                         created_files.append(full_path)
+                        self.logger.info(f"✅ Created file via fallback: {file_path}")
+                        
+                        # 🔥 FIX: Register file in shared state so other agents know about it
+                        project_id = getattr(self, '_current_project_id', None)
+                        if not project_id:
+                            # Try to get project_id from shared state if not set
+                            current_project = shared_state.get_project_state()
+                            if current_project:
+                                project_id = current_project.project_id
+                        
+                        if project_id:
+                            try:
+                                shared_state.add_file_to_project(project_id, file_path, file_content.strip())
+                                self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                        else:
+                            self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
             
         except Exception as e:
             self.logger.error(f"❌ Fallback file extraction failed: {e}")
