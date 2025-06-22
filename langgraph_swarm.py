@@ -1322,7 +1322,7 @@ class FlutterSwarmGovernance:
     # Fallback Coordination Node
     async def _fallback_coordination_node(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """
-        Enhanced fallback coordination node with circuit breaker support
+        Enhanced fallback coordination node with circuit breaker support and forced implementation if stuck.
         """
         print(f"🔄 Fallback Coordination Node: {state['name']}")
         
@@ -1359,6 +1359,37 @@ class FlutterSwarmGovernance:
         # Check for patterns indicating infinite loops
         if failure_patterns.get('infinite_loop_risk', False):
             coordination_needs.append('infinite_loop_detected')
+        
+        # --- PATCH: Force implementation agent if stuck in planning/architecture ---
+        stuck_phases = [
+            state.get('current_governance_phase'),
+            state.get('current_phase'),
+        ]
+        if any(phase in ['planning', 'architecture_approval', 'project_initiation'] for phase in stuck_phases):
+            print(f"⚠️ Project appears stuck in {stuck_phases}, forcing implementation agent to create Flutter project!")
+            implementation_agent = self.agent_registry.get_agent("implementation")
+            if implementation_agent:
+                try:
+                    # Use project_id, name, description from state
+                    project_id = state['project_id']
+                    task_data = {
+                        "project_id": project_id,
+                        "name": state["name"],
+                        "description": state["description"],
+                        "requirements": state["requirements"],
+                        "phase": "implementation",
+                        "task_type": "setup_project_structure"
+                    }
+                    result = await implementation_agent.execute_task("setup_project_structure", task_data)
+                    print(f"✅ Forced implementation agent result: {result.get('status', result)}")
+                    # Update shared state with project_path if available
+                    if result.get('project_path'):
+                        shared_state.update_project(project_id, project_path=result['project_path'])
+                except Exception as e:
+                    print(f"❌ Error forcing implementation agent: {e}")
+            else:
+                print("❌ Could not get implementation agent for forced project creation!")
+        # --- END PATCH ---
         
         # Implement enhanced coordination strategies
         coordination_actions = []
@@ -1426,7 +1457,7 @@ class FlutterSwarmGovernance:
             'collaboration_health': collaboration_health,
             'circuit_breaker_status': circuit_breaker,
             'failure_patterns': failure_patterns,
-            'notes': 'Enhanced fallback coordination node with circuit breaker support'
+            'notes': 'Enhanced fallback coordination node with circuit breaker support and forced implementation if stuck'
         })
         
         print(f"🔄 Enhanced fallback coordination completed: {len(coordination_actions)} actions taken")
