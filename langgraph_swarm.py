@@ -147,19 +147,19 @@ class FlutterSwarmGovernance:
         
         # Comprehensive circuit breaker system to prevent infinite loops
         self.gate_failure_counts = {}  # gate_name -> failure_count
-        self.max_gate_failures = 3  # Maximum failures before forcing pass
+        self.max_gate_failures = 1  # Maximum failures before forcing pass (AGGRESSIVE)
         self.total_routing_steps = 0  # Track total routing steps
-        self.max_routing_steps = 50  # Maximum routing steps before emergency exit
+        self.max_routing_steps = 10  # Maximum routing steps before emergency exit (AGGRESSIVE)
         
         # Global failure tracking
         self.consecutive_failures = 0  # Track consecutive gate failures
-        self.max_consecutive_failures = 5  # Maximum consecutive failures before emergency exit
+        self.max_consecutive_failures = 2  # Maximum consecutive failures before emergency exit (AGGRESSIVE)
         self.global_failure_count = 0  # Total failures across all gates
-        self.max_global_failures = 10  # Maximum total failures before emergency exit
+        self.max_global_failures = 3  # Maximum total failures before emergency exit (AGGRESSIVE)
         
         # Timeout mechanisms
         self.gate_start_times = {}  # gate_name -> start_time
-        self.max_gate_timeout = 300  # Maximum time (seconds) a gate can run
+        self.max_gate_timeout = 60  # Maximum time (seconds) a gate can run (AGGRESSIVE)
         
         # Graceful degradation flags
         self.emergency_mode = False  # When true, bypass complex validations
@@ -2025,3 +2025,51 @@ class FlutterSwarmGovernance:
                 "error": str(e),
                 "project_id": project_id
             }
+
+
+# Standalone function for running FlutterSwarm governance
+async def run_flutter_swarm_governance(
+    name: str,
+    description: str,
+    requirements: List[str],
+    features: Optional[List[str]] = None,
+    platforms: Optional[List[str]] = None,
+    ci_system: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Standalone function to run FlutterSwarm governance workflow.
+    
+    Args:
+        name: Project name
+        description: Project description
+        requirements: List of project requirements
+        features: Optional list of features to implement
+        platforms: Optional list of target platforms
+        ci_system: Optional CI/CD system to configure
+        
+    Returns:
+        Dictionary with build results
+    """
+    # Create a FlutterSwarm governance instance
+    governance = FlutterSwarmGovernance()
+    
+    # Create a new project
+    project_id = governance.create_project(
+        name=name,
+        description=description,
+        requirements=requirements,
+        features=features or []
+    )
+    
+    # Build the project using the governance workflow
+    result = await governance.build_project(
+        project_id=project_id,
+        name=name,
+        description=description,
+        requirements=requirements,
+        features=features or [],
+        platforms=platforms or ["android", "ios"],
+        ci_system=ci_system
+    )
+    
+    return result
