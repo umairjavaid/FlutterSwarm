@@ -652,26 +652,238 @@ class BaseAgent(ABC):
                 "provider": llm_config.get("provider", "anthropic")
             }
             
+    def _build_comprehensive_context(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Build comprehensive context with full project state and agent information."""
+        try:
+            # Start with base context
+            full_context = {
+                "agent_role": self.agent_id,
+                "agent_name": self.agent_config.get('name', self.agent_id),
+                "agent_capabilities": self.agent_config.get('capabilities', []),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Add project state
+            try:
+                project_state = self.get_project_state()
+                if project_state:
+                    full_context["project_state"] = project_state
+            except Exception as e:
+                self.logger.debug(f"Could not get project state: {e}")
+                full_context["project_state"] = {"status": "unknown"}
+            
+            # Add collaboration context
+            try:
+                collaboration_context = self.get_collaboration_context()
+                if collaboration_context:
+                    full_context["collaboration_context"] = collaboration_context
+            except Exception as e:
+                self.logger.debug(f"Could not get collaboration context: {e}")
+                full_context["collaboration_context"] = {}
+            
+            # Add other agents information
+            try:
+                other_agents = self.get_other_agents()
+                if other_agents:
+                    full_context["other_agents"] = other_agents
+            except Exception as e:
+                self.logger.debug(f"Could not get other agents: {e}")
+                full_context["other_agents"] = {}
+            
+            # Merge with provided context
+            if context:
+                full_context["task_context"] = context
+            
+            return full_context
+        except Exception as e:
+            self.logger.warning(f"Error building comprehensive context: {e}")
+            # Return minimal context if building fails
+            return {
+                "agent_role": self.agent_id,
+                "timestamp": datetime.now().isoformat(),
+                "task_context": context or {}
+            }
+    
+    def _create_detailed_prompt(self, prompt: str, full_context: Dict[str, Any]) -> str:
+        """Create a detailed prompt with complete context and instructions."""
+        try:
+            # Get project information
+            project_state = full_context.get("project_state", {})
+            project_name = project_state.get("name", "Flutter Project")
+            project_description = project_state.get("description", "A Flutter application")
+            project_requirements = project_state.get("requirements", [])
+            
+            # Format collaboration context
+            collaboration_info = self._format_collaboration_context(full_context)
+            
+            # Build detailed prompt
+            detailed_prompt = f"""
+You are the {full_context.get('agent_name', self.agent_id)} agent in the FlutterSwarm multi-agent system.
+
+AGENT ROLE & CAPABILITIES:
+- Agent ID: {self.agent_id}
+- Agent Name: {full_context.get('agent_name', self.agent_id)}
+- Capabilities: {', '.join(full_context.get('agent_capabilities', []))}
+
+PROJECT CONTEXT:
+- Project Name: {project_name}
+- Description: {project_description}
+- Requirements: {', '.join(project_requirements) if project_requirements else 'None specified'}
+- Current Status: {project_state.get('status', 'unknown')}
+
+COLLABORATION CONTEXT:
+{collaboration_info}
+
+TASK CONTEXT:
+{json.dumps(full_context.get('task_context', {}), indent=2)}
+
+CURRENT TASK:
+{prompt}
+
+INSTRUCTIONS:
+1. Provide a detailed, actionable response based on your role and capabilities
+2. For code generation, provide complete, working Flutter/Dart code with proper structure
+3. Include file paths and proper code organization
+4. Consider the project requirements and current state
+5. Collaborate effectively with other agents when needed
+6. Be specific and practical in your recommendations
+7. If generating code, ensure it follows Flutter best practices and conventions
+
+Please provide your response now:
+"""
+            return detailed_prompt
+            
+        except Exception as e:
+            self.logger.warning(f"Error creating detailed prompt: {e}")
+            # Fallback to simple prompt
+            return f"""
+You are the {self.agent_id} agent.
+
+Task: {prompt}
+
+Provide a detailed response with actionable recommendations and code if applicable.
+"""
+    
+    def _build_enhanced_system_prompt(self, full_context: Dict[str, Any]) -> str:
+        """Build comprehensive system prompt with role information and context."""
+        try:
+            agent_name = full_context.get('agent_name', self.agent_id)
+            capabilities = full_context.get('agent_capabilities', [])
+            project_state = full_context.get('project_state', {})
+            
+            system_prompt = f"""
+You are {agent_name}, a specialized agent in the FlutterSwarm multi-agent Flutter development system.
+
+YOUR ROLE:
+- Agent ID: {self.agent_id}
+- Specialization: {', '.join(capabilities) if capabilities else 'General Flutter Development'}
+- Responsibility: Provide expert assistance in your area of specialization
+
+SYSTEM CONTEXT:
+- You are part of a collaborative multi-agent system for Flutter app development
+- Work efficiently with other specialized agents in the system
+- Focus on your area of expertise while being aware of the overall project goals
+- Provide actionable, practical solutions that integrate well with the broader project
+
+PROJECT INFORMATION:
+- Project: {project_state.get('name', 'Flutter Application')}
+- Status: {project_state.get('status', 'In Development')}
+
+RESPONSE GUIDELINES:
+1. Be specific and technical in your responses
+2. Provide complete, working code when applicable
+3. Follow Flutter and Dart best practices
+4. Consider project architecture and maintainability
+5. Be ready to collaborate with other agents
+6. Include proper error handling and validation
+7. Provide clear file structure and organization recommendations
+
+Remember: You are an expert in your domain. Provide confident, detailed responses that demonstrate your expertise while being practical and implementable.
+"""
+            return system_prompt
+            
+        except Exception as e:
+            self.logger.warning(f"Error building system prompt: {e}")
+            return f"You are {self.agent_id}, a Flutter development agent. Provide detailed, technical responses."
+    
+    def _is_valid_response(self, response: str, original_prompt: str) -> bool:
+        """Validate that the LLM response is valid and meaningful."""
+        if not response or not response.strip():
+            return False
+        
+        # Check minimum length
+        if len(response.strip()) < 10:
+            return False
+        
+        # Check for common empty/error responses
+        empty_indicators = [
+            "i cannot",
+            "i'm unable to",
+            "i don't understand",
+            "please provide more",
+            "sorry, i can't",
+            "error:",
+            "null",
+            "undefined",
+            "empty response",
+            "no response"
+        ]
+        
+        response_lower = response.lower()
+        if any(indicator in response_lower for indicator in empty_indicators):
+            # Allow these if they're part of a longer, more detailed response
+            if len(response.strip()) < 50:
+                return False
+        
+        # Check for code-related prompts - should have some technical content
+        if any(keyword in original_prompt.lower() for keyword in ['code', 'implement', 'create', 'build', 'flutter', 'dart']):
+            # Should contain some technical content or code structure
+            technical_indicators = [
+                'class', 'function', 'void', 'string', 'widget', 'stateless', 'stateful',
+                'import', 'dart', 'flutter', '{', '}', '()', 'async', 'await', 'return'
+            ]
+            if not any(indicator in response_lower for indicator in technical_indicators):
+                if len(response.strip()) < 100:  # Allow longer explanatory responses
+                    return False
+        
+        return True
+    
+    def _enhance_prompt_for_retry(self, original_prompt: str, attempt_number: int) -> str:
+        """Enhance the prompt for retry attempts to get better responses."""
+        enhancements = [
+            "\n\nPlease provide a detailed, specific response with actionable recommendations.",
+            "\n\nBe very specific and include complete code examples if applicable.",
+            "\n\nProvide a comprehensive response with step-by-step instructions and complete implementation details."
+        ]
+        
+        enhancement_index = min(attempt_number - 1, len(enhancements) - 1)
+        return original_prompt + enhancements[enhancement_index]
+    
     def _format_collaboration_context(self, context: Dict[str, Any]) -> str:
         """Format collaboration context for the system prompt."""
-        # Check both old and new context structures for backward compatibility
-        collaboration_context = context.get("collaboration_context", {})
-        other_agents = context.get("other_agents", collaboration_context)
-        
-        if not other_agents:
+        try:
+            # Check both old and new context structures for backward compatibility
+            collaboration_context = context.get("collaboration_context", {})
+            other_agents = context.get("other_agents", collaboration_context)
+            
+            # Ensure other_agents is a dictionary
+            if not isinstance(other_agents, dict) or not other_agents:
+                return "No active collaborators at the moment."
+                
+            # Format information about other agents
+            agent_info = []
+            for agent_id, state in other_agents.items():
+                if isinstance(state, dict):
+                    status = state.get("status", "unknown")
+                    task = state.get("current_task", "none")
+                    capabilities = state.get("capabilities", [])
+                    
+                    capabilities_str = f" (Capabilities: {', '.join(capabilities)})" if capabilities else ""
+                    agent_info.append(f"- {agent_id}: Status: {status}, Current Task: {task}{capabilities_str}")
+                
+            return "\n".join(agent_info) if agent_info else "No active collaborators at the moment."
+        except Exception as e:
             return "No active collaborators at the moment."
-            
-        # Format information about other agents
-        agent_info = []
-        for agent_id, state in other_agents.items():
-            status = state.get("status", "unknown")
-            task = state.get("current_task", "none")
-            capabilities = state.get("capabilities", [])
-            
-            capabilities_str = f" (Capabilities: {', '.join(capabilities)})" if capabilities else ""
-            agent_info.append(f"- {agent_id}: Status: {status}, Current Task: {task}{capabilities_str}")
-            
-        return "\n".join(agent_info)
     
     def _extract_token_usage(self, response) -> Dict[str, int]:
         """Extract token usage information from LLM response."""
