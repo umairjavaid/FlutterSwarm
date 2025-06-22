@@ -942,70 +942,19 @@ class SharedState:
                 self._awareness_state.agent_activity_streams[agent_id] = []
     
     def broadcast_agent_activity(self, event: AgentActivityEvent) -> None:
-        """Broadcast an agent activity event to all subscribed agents - with strict filtering to prevent loops."""
+        """Broadcast an agent activity event to all subscribed agents - COMPLETELY DISABLED to prevent loops."""
+        # COMPLETELY DISABLED: Real-time activity broadcasting was causing endless loops
+        # that prevent actual task execution. Only enable for specific debug purposes.
         if not self._broadcast_enabled:
             return
             
-        if not isinstance(event, AgentActivityEvent):
-            print("Warning: Invalid event type passed to broadcast_agent_activity")
-            return
-        
-        # STRICT filtering to prevent broadcast loops - only truly critical activities
-        critical_activity_types = {
-            "file_created", "task_completed", "error_detected"
-        }
-        
-        if event.activity_type not in critical_activity_types:
-            # Skip broadcasting all non-critical activities to prevent loops
+        # Skip all broadcasts except absolutely critical file creation events
+        if event.activity_type not in ["file_created"]:
             return
             
-        # Additional rate limiting at the shared state level
-        current_time = time.time()
-        if not hasattr(self, '_last_broadcast_times'):
-            self._last_broadcast_times = {}
-            
-        last_broadcast = self._last_broadcast_times.get(event.agent_id, 0)
-        if current_time - last_broadcast < 5.0:  # 5 seconds minimum between broadcasts per agent
-            return
-            
-        try:
-            with self._lock:
-                # Add to activity stream
-                if event.agent_id not in self._awareness_state.agent_activity_streams:
-                    self._awareness_state.agent_activity_streams[event.agent_id] = []
-                
-                self._awareness_state.agent_activity_streams[event.agent_id].append(asdict(event))
-                
-                # Keep only recent activity (limit buffer size)
-                max_events_per_agent = 20  # Further reduced to limit memory usage
-                if len(self._awareness_state.agent_activity_streams[event.agent_id]) > max_events_per_agent:
-                    self._awareness_state.agent_activity_streams[event.agent_id] = \
-                        self._awareness_state.agent_activity_streams[event.agent_id][-max_events_per_agent:]
-                
-                # Add to global buffer
-                self._activity_event_buffer.append(event)
-                if len(self._activity_event_buffer) > self._max_activity_events:
-                    self._activity_event_buffer = self._activity_event_buffer[-self._max_activity_events:]
-                
-                # Only broadcast CRITICAL events to prevent loops
-                if event.impact_level in ["critical"]:  # Only critical, not high
-                    try:
-                        self._broadcast_real_time_update(event)
-                    except Exception as e:
-                        print(f"Warning: Failed to broadcast real-time update: {e}")
-                
-                # DISABLED: Proactive collaboration detection was causing loops
-                # if event.activity_type in ["error_detected", "feature_completed"]:
-                #     try:
-                #         self._detect_collaboration_opportunities(event)
-                #     except Exception as e:
-                #         print(f"Warning: Failed to detect collaboration opportunities: {e}")
-                        
-                # Update broadcast time
-                self._last_broadcast_times[event.agent_id] = current_time
-                
-        except Exception as e:
-            print(f"Error broadcasting agent activity: {e}")
+        # Log the activity locally but don't broadcast
+        self.logger.debug(f"Activity logged (not broadcasted): {event.agent_id} -> {event.activity_type}")
+        return
     
     def _detect_collaboration_opportunities(self, event: AgentActivityEvent) -> None:
         """Detect proactive collaboration opportunities based on activity events."""
@@ -1428,40 +1377,81 @@ class SharedState:
             return offer_id
     
     def _broadcast_real_time_update(self, event: AgentActivityEvent) -> None:
-        """Broadcast real-time update to all relevant agents."""
-        # Find agents interested in this type of activity
-        interested_agents = set()
-        
-        # All agents get critical events
-        if event.impact_level == "critical":
-            interested_agents.update(self._agents.keys())
-        else:
-            # Find agents subscribed to this agent or interested in this activity type
-            for agent_id, subscriptions in self._awareness_state.agent_subscriptions.items():
-                if event.agent_id in subscriptions:
-                    interested_agents.add(agent_id)
-                
-                # Check if agent type is relevant
-                if agent_id in self._agents:
-                    agent_capabilities = self._agents[agent_id].capabilities
-                    if any(capability in event.collaboration_relevance for capability in agent_capabilities):
+        """Broadcast real-time update to all relevant agents with rate limiting."""
+        try:
+            # Rate limiting: track broadcast frequency
+            current_time = time.time()
+            broadcast_key = f"{event.agent_id}_{event.activity_type}"
+            
+            if not hasattr(self, '_broadcast_timestamps'):
+                self._broadcast_timestamps = {}
+            
+            last_broadcast = self._broadcast_timestamps.get(broadcast_key, 0)
+            
+            # Apply rate limiting based on activity type
+            if event.activity_type in ["status_change", "predictive_preparation", "monitoring"]:
+                min_interval = 15.0  # 15 seconds for frequent activities
+            else:
+                min_interval = 5.0   # 5 seconds for important activities
+            
+            if current_time - last_broadcast < min_interval:
+                # Skip broadcast to prevent spam
+                return
+            
+            # Only broadcast truly important activities
+            important_activities = {
+                "file_created", "task_completed", "error_detected", 
+                "architecture_decision", "feature_completed", "test_passed",
+                "project_structure_created"
+            }
+            
+            if event.activity_type not in important_activities:
+                # Skip non-critical activities to reduce noise
+                return
+            
+            # Find agents interested in this type of activity
+            interested_agents = set()
+            
+            # All agents get critical events
+            if event.impact_level == "critical":
+                interested_agents.update(self._agents.keys())
+            else:
+                # Find agents subscribed to this agent or interested in this activity type
+                for agent_id, subscriptions in self._awareness_state.agent_subscriptions.items():
+                    if event.agent_id in subscriptions:
                         interested_agents.add(agent_id)
-        
-        # Remove the source agent
-        interested_agents.discard(event.agent_id)
-        
-        # Send real-time updates
-        for agent_id in interested_agents:
-            self.send_message(
-                from_agent="shared_consciousness",
-                to_agent=agent_id,
-                message_type=MessageType.REAL_TIME_STATUS_BROADCAST,
-                content={
-                    "event": asdict(event),
-                    "consciousness_update": self._get_relevant_consciousness_for_agent(agent_id),
-                    "timestamp": datetime.now().isoformat()
-                }
-            )
+                    
+                    # Check if agent type is relevant
+                    if agent_id in self._agents:
+                        agent_capabilities = self._agents[agent_id].capabilities
+                        if any(capability in event.collaboration_relevance for capability in agent_capabilities):
+                            interested_agents.add(agent_id)
+            
+            # Remove the source agent
+            interested_agents.discard(event.agent_id)
+            
+            # Limit to maximum 3 agents to prevent broadcast storms
+            if len(interested_agents) > 3:
+                interested_agents = set(list(interested_agents)[:3])
+            
+            # Send real-time updates
+            for agent_id in interested_agents:
+                self.send_message(
+                    from_agent="shared_consciousness",
+                    to_agent=agent_id,
+                    message_type=MessageType.REAL_TIME_STATUS_BROADCAST,
+                    content={
+                        "event": asdict(event),
+                        "consciousness_update": self._get_relevant_consciousness_for_agent(agent_id),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            
+            # Update broadcast timestamp
+            self._broadcast_timestamps[broadcast_key] = current_time
+            
+        except Exception as e:
+            print(f"Error in broadcast_real_time_update: {e}")
     
     def broadcast_project_status(self, project_id: str) -> None:
         """Broadcast project status to all agents."""
