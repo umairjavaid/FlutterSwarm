@@ -301,18 +301,7 @@ class ImplementationAgent(BaseAgent):
         - Optimize for performance (const widgets, etc.)
         - Follow Flutter widget composition patterns
         
-        // REMOVED: Example code removed to prevent hardcoded Flutter templates
-        // Use LLM-generated examples only
-                      // Screen content
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }}
-        }}
-        
-        Create complete, production-ready screen implementations.
+        Generate complete, production-ready screen implementations.
         """
         
         screens_code = await self.think(screens_prompt, {
@@ -348,7 +337,7 @@ class ImplementationAgent(BaseAgent):
         5. **Provider Setup**: Configure providers/injectors
         6. **Widget Integration**: Connect UI to state management
         
-        {self.flutter_templates.get(solution, "Use best practices for the chosen solution")}
+        Use best practices for the chosen solution: {solution}
         
         Ensure the implementation follows:
         - Separation of concerns
@@ -492,176 +481,77 @@ class ImplementationAgent(BaseAgent):
                     if dir_result.status == ToolStatus.SUCCESS:
                         files_created.append(full_path)
             
-            # Create essential files for a counter app
-            essential_files = []
+            # Generate all project files using LLM only - NO hardcoded Flutter code
+            self.logger.info(f"🤖 Generating project structure using LLM for {project_name}")
             
-            # Create basic main.dart
-            main_dart_content = '''import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'features/counter/presentation/providers/counter_provider.dart';
-import 'features/counter/presentation/pages/counter_page.dart';
-
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => CounterProvider(),
-      child: MaterialApp(
-        title: 'Simple Counter App',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-        ),
-        home: const CounterPage(),
-      ),
-    );
-  }
-}'''
+            # Generate project structure prompt
+            project_structure_prompt = f"""
+            Generate a complete Flutter project structure for "{project_name}" with {architecture_style} architecture.
             
-            if await self._create_file_with_content("lib/main.dart", main_dart_content):
-                essential_files.append("lib/main.dart")
+            Create the following files with complete, production-ready content:
             
-            # Create counter provider
-            counter_provider_content = '''import 'package:flutter/foundation.dart';
-
-class CounterProvider extends ChangeNotifier {
-  int _count = 0;
-
-  int get count => _count;
-
-  void increment() {
-    _count++;
-    notifyListeners();
-  }
-
-  void decrement() {
-    if (_count > 0) {
-      _count--;
-      notifyListeners();
-    }
-  }
-
-  void reset() {
-    _count = 0;
-    notifyListeners();
-  }
-}'''
+            1. **pubspec.yaml** - Project configuration with appropriate dependencies
+            2. **lib/main.dart** - Main application entry point
+            3. **Basic feature structure** - At least one sample feature to demonstrate the architecture
+            4. **Proper directory structure** - Following Flutter best practices
             
-            if await self._create_file_with_content("lib/features/counter/presentation/providers/counter_provider.dart", counter_provider_content):
-                essential_files.append("lib/features/counter/presentation/providers/counter_provider.dart")
+            Requirements:
+            - Use null safety and latest Dart/Flutter features
+            - Follow {architecture_style} architecture patterns
+            - Include proper error handling
+            - Use Material Design 3
+            - Include basic state management setup
+            - Add appropriate dependencies in pubspec.yaml
+            - Sanitized package name: {sanitized_project_name}
             
-            # Create counter page
-            counter_page_content = '''import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/counter_provider.dart';
-
-class CounterPage extends StatelessWidget {
-  const CounterPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Counter App'),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Consumer<CounterProvider>(
-              builder: (context, counter, child) {
-                return Text(
-                  '\${counter.count}',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.read<CounterProvider>().increment(),
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-}'''
-            
-            if await self._create_file_with_content("lib/features/counter/presentation/pages/counter_page.dart", counter_page_content):
-                essential_files.append("lib/features/counter/presentation/pages/counter_page.dart")
-            
-            # Create pubspec.yaml
-            pubspec_content = f'''name: {sanitized_project_name}
-description: A new Flutter project.
-
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-
-version: 1.0.0+1
-
-environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.10.0"
-
-dependencies:
-  flutter:
-    sdk: flutter
-  provider: ^6.0.5
-  cupertino_icons: ^1.0.2
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^2.0.0
-
-flutter:
-  uses-material-design: true
-'''
-            
-            if await self._create_file_with_content("pubspec.yaml", pubspec_content):
-                essential_files.append("pubspec.yaml")
-            
-            files_created.extend(essential_files)
-            
-            self.logger.info(f"✅ Essential counter app files created: {len(essential_files)} files")
-            
-            # Generate and create main.dart with proper structure
-            main_dart_prompt = f"""
-            Generate a Flutter main.dart file for {project_name} with:
-            - Proper imports for {architecture_style} architecture
-            - App widget setup
-            - Theme configuration
-            - Route configuration
-            - Error handling
-            - Material Design 3 support
+            Generate complete, compilable code for each file.
+            Format the response as JSON with this structure:
+            {{
+                "files": [
+                    {{
+                        "path": "relative/path/to/file.dart",
+                        "content": "complete file content here"
+                    }}
+                ]
+            }}
             """
             
-            # Skip LLM generation if we already created main.dart
-            if "lib/main.dart" not in essential_files:
-                main_dart_code = await self.think(main_dart_prompt, {
-                    "project_name": project_name,
-                    "architecture": architecture_style
-                })
-                
-                main_file_result = await self.execute_tool(
-                    "file",
-                    operation="write",
-                    file_path=f"{project_path}/lib/main.dart",
-                    content=main_dart_code
-                )
-                
-                if main_file_result.status == ToolStatus.SUCCESS:
-                    files_created.append(f"{project_path}/lib/main.dart")
+            # Generate project files using LLM
+            project_files_response = await self.think(project_structure_prompt, {
+                "project_name": project_name,
+                "architecture": architecture_style,
+                "sanitized_name": sanitized_project_name
+            })
+            
+            # Parse and create files from LLM response
+            generated_files = await self._parse_and_create_files(project_id, project_files_response)
+            files_created.extend(generated_files)
+            
+            self.logger.info(f"✅ LLM-generated project files created: {len(generated_files)} files")
+            
+            # Ensure all critical project files exist
+            critical_files_prompt = f"""
+            Verify and generate any missing critical Flutter project files:
+            
+            1. **lib/main.dart** - If not already created
+            2. **pubspec.yaml** - If not already created 
+            3. **README.md** - Project documentation
+            4. **analysis_options.yaml** - Dart analysis configuration
+            
+            Only generate files that are missing. Use {architecture_style} architecture patterns.
+            Project name: {project_name} (package: {sanitized_project_name})
+            """
+            
+            # Generate any missing critical files
+            critical_files_response = await self.think(critical_files_prompt, {
+                "existing_files": files_created,
+                "project_name": project_name,
+                "architecture": architecture_style
+            })
+            
+            # Parse and create any additional critical files
+            additional_files = await self._parse_and_create_files(project_id, critical_files_response)
+            files_created.extend(additional_files)
             
             # Update shared state
             if project_state:
