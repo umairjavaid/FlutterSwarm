@@ -8,6 +8,7 @@ import yaml
 import time
 import threading
 import random
+import json
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Callable, Awaitable
 from datetime import datetime
@@ -482,7 +483,7 @@ class BaseAgent(ABC):
     
     async def think(self, prompt: str, context: Dict[str, Any] = None, task_complexity: str = "normal") -> str:
         """
-        Use LLM to think/reason about a problem.
+        Enhanced think method with better context and retry logic for LLM interactions.
         
         Args:
             prompt: The prompt to send to the LLM
@@ -492,22 +493,28 @@ class BaseAgent(ABC):
         
         Returns:
             Generated response from the LLM
+            
+        Raises:
+            Exception: If all retry attempts fail to get a valid LLM response
         """
         # Import LLM logger
         from utils.llm_logger import llm_logger
         
-        # Create combined context with shared state for better reasoning
-        combined_context = self._build_combined_context(context)
+        # Build comprehensive context with full project state
+        full_context = self._build_comprehensive_context(context)
+        
+        # Create detailed prompt with complete context
+        detailed_prompt = self._create_detailed_prompt(prompt, full_context)
         
         # Select appropriate model based on task complexity
         model_config = self._select_model_config(task_complexity)
         
         # Build comprehensive system prompt with role information and context
-        system_prompt = self._build_system_prompt(combined_context)
+        system_prompt = self._build_enhanced_system_prompt(full_context)
         
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=prompt)
+            HumanMessage(content=detailed_prompt)
         ]
         
         # Get selected model config
@@ -522,112 +529,93 @@ class BaseAgent(ABC):
             model=model,
             provider=provider,
             request_type="think",
-            prompt=prompt,
-            context=combined_context,
+            prompt=detailed_prompt,
+            context=full_context,
             temperature=temperature,
             max_tokens=max_tokens
         )
         
         self.logger.debug(f"🧠 Sending {task_complexity} complexity '{prompt[:50]}...' to {model}")
         
-        # Use retry mechanism for resilience
+        # Enhanced retry logic for empty responses
+        max_retries = 3
         start_time = time.time()
         response = None
         error = None
         response_content = ""
         
-        try:
-            # Use safe_execute_with_retry for resilient LLM calls
-            async def _llm_call():
-                return await self.llm.ainvoke(messages)
-            
-            response = await self.safe_execute_with_retry(_llm_call, max_retries=3)
-            response_content = response.content
-            
-            # Validate response (simple check)
-            if not response_content or len(response_content.strip()) < 10:
-                self.logger.warning(f"⚠️ LLM returned unusually short response: '{response_content}'")
-            
-        except Exception as e:
-            error = str(e)
-            self.logger.error(f"❌ LLM request failed in {self.agent_id}: {error}")
-            # Return a fallback response if possible
-            response_content = self._generate_fallback_response(prompt, combined_context, error)
-            
-        finally:
-            duration = time.time() - start_time
-            
-            # Extract token usage if available
-            token_usage = self._extract_token_usage(response)
-            
-            # Log LLM response
-            llm_logger.log_llm_response(
-                interaction_id=interaction_id,
-                agent_id=self.agent_id,
-                model=model,
-                provider=provider,
-                request_type="think",
-                prompt=prompt,
-                response=response_content,
-                duration=duration,
-                context=combined_context,
-                token_usage=token_usage,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                error=error
-            )
-            
-            self.logger.debug(f"🧠 LLM response received in {duration:.2f}s")
+        for attempt in range(max_retries):
+            try:
+                # Use safe_execute_with_retry for resilient LLM calls
+                async def _llm_call():
+                    return await self.llm.ainvoke(messages)
+                
+                response = await self.safe_execute_with_retry(_llm_call, max_retries=2)
+                response_content = response.content if response else ""
+                
+                # Enhanced validation for empty or invalid responses
+                if self._is_valid_response(response_content, prompt):
+                    self.logger.debug(f"✅ Valid LLM response received on attempt {attempt + 1}")
+                    break
+                else:
+                    self.logger.warning(f"⚠️ Invalid/empty LLM response on attempt {attempt + 1}: '{response_content[:100]}...'")
+                    if attempt < max_retries - 1:
+                        # Modify prompt slightly for retry
+                        detailed_prompt = self._enhance_prompt_for_retry(detailed_prompt, attempt + 1)
+                        messages[1] = HumanMessage(content=detailed_prompt)
+                        await asyncio.sleep(1)  # Brief pause between retries
+                        continue
+                    else:
+                        # Last attempt, generate fallback
+                        error = f"Failed to get valid response after {max_retries} attempts"
+                        response_content = self._generate_fallback_response(prompt, full_context, error)
+                        
+            except Exception as e:
+                error = str(e)
+                self.logger.error(f"❌ LLM request failed on attempt {attempt + 1}: {error}")
+                
+                if attempt == max_retries - 1:
+                    # Final attempt failed, use fallback
+                    response_content = self._generate_fallback_response(prompt, full_context, error)
+                    break
+                else:
+                    # Wait before retry
+                    await asyncio.sleep(2 ** attempt)
+                    continue
         
-        # Post-process response if needed (filtering, formatting, etc.)
+        duration = time.time() - start_time
+        
+        # Extract token usage if available
+        token_usage = self._extract_token_usage(response)
+        
+        # Log LLM response
+        llm_logger.log_llm_response(
+            interaction_id=interaction_id,
+            agent_id=self.agent_id,
+            model=model,
+            provider=provider,
+            request_type="think",
+            prompt=detailed_prompt,
+            response=response_content,
+            duration=duration,
+            context=full_context,
+            token_usage=token_usage,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            error=error
+        )
+        
+        self.logger.debug(f"🧠 LLM response received in {duration:.2f}s")
+        
+        # Post-process response with enhanced validation
         processed_response = self._post_process_response(response_content)
+        
+        # Final validation - raise exception if we still don't have a valid response
+        if not self._is_valid_response(processed_response, prompt):
+            raise Exception(f"Failed to get valid LLM response after {max_retries} attempts. Last response: '{processed_response[:200]}...'")
         
         return processed_response
         
-    def _build_combined_context(self, user_context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Build a combined context with shared state and user context."""
-        # Start with a basic context
-        combined = {
-            "agent_id": self.agent_id,
-            "agent_role": self.agent_config.get("role", ""),
-            "agent_capabilities": self.agent_config.get("capabilities", []),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Add project state if available
-        try:
-            project_state = shared_state.get_project_state()
-            if project_state:
-                combined["project_state"] = {
-                    "id": project_state.get("id", ""),
-                    "name": project_state.get("name", ""),
-                    "current_phase": project_state.get("current_phase", ""),
-                    "files_created": len(project_state.get("files_created", [])),
-                }
-        except Exception:
-            # Skip if project state can't be accessed
-            pass
-            
-        # Add information about other agents
-        try:
-            other_agents = self.get_other_agents()
-            if other_agents:
-                combined["other_agents"] = {
-                    agent_id: {
-                        "status": state.get("status", "unknown"),
-                        "current_task": state.get("current_task", None)
-                    } for agent_id, state in other_agents.items()
-                }
-        except Exception:
-            # Skip if agent info can't be accessed
-            pass
-            
-        # Add user-provided context (overrides any conflicts)
-        if user_context:
-            combined.update(user_context)
-            
-        return combined
-    
     def _select_model_config(self, task_complexity: str) -> Dict[str, Any]:
         """Select appropriate model configuration based on task complexity."""
         # Get agent-specific LLM config
@@ -664,69 +652,11 @@ class BaseAgent(ABC):
                 "provider": llm_config.get("provider", "anthropic")
             }
             
-    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
-        """Build comprehensive system prompt with role information and context."""
-        # Get agent-specific information
-        agent_name = self.agent_config.get('name', self.agent_id)
-        agent_role = self.agent_config.get('role', 'Generic Agent')
-        agent_capabilities = self.agent_config.get('capabilities', [])
-        agent_description = self.agent_config.get('description', '')
-        
-        # Format capabilities for better readability
-        capabilities_formatted = '\n'.join([f"- {cap}" for cap in agent_capabilities])
-        
-        # Get project context
-        project_id = shared_state.get_current_project_id() or "Unknown"
-        project_state = context.get("project_state", {})
-        project_name = project_state.get("name", "Unknown Project")
-        current_phase = project_state.get("current_phase", "planning")
-        
-        # Build comprehensive system prompt
-        system_prompt = f"""
-You are {agent_name}, an AI agent specializing in Flutter application development.
-
-ROLE AND RESPONSIBILITIES:
-{agent_role}
-
-CAPABILITIES:
-{capabilities_formatted}
-
-AGENT DESCRIPTION:
-{agent_description}
-
-PROJECT CONTEXT:
-- Project Name: {project_name}
-- Project ID: {project_id}
-- Current Phase: {current_phase}
-- You are part of a multi-agent system collaboratively building a Flutter application
-- You can access shared state and collaborate with other specialized agents
-
-GENERAL GUIDELINES:
-1. Provide clear, actionable responses focused on Flutter development
-2. When generating code, ensure it follows modern Flutter best practices
-3. Consider potential edge cases and error handling
-4. Think step-by-step when solving complex problems
-5. Your responses should be helpful for building production-ready Flutter applications
-6. Consider platform compatibility (iOS, Android, web) in your solutions
-
-COLLABORATION CONTEXT:
-You are collaborating with specialized agents, each with their own expertise.
-Current collaboration state:
-{self._format_collaboration_context(context)}
-
-RESPONSE REQUIREMENTS:
-- Be precise and specific in your responses
-- Prioritize code quality and maintainability
-- Consider performance implications of your recommendations
-- When uncertain, acknowledge limitations rather than providing incorrect information
-- Always consider the overall architecture and project requirements
-"""
-        
-        return system_prompt
-        
     def _format_collaboration_context(self, context: Dict[str, Any]) -> str:
         """Format collaboration context for the system prompt."""
-        other_agents = context.get("other_agents", {})
+        # Check both old and new context structures for backward compatibility
+        collaboration_context = context.get("collaboration_context", {})
+        other_agents = context.get("other_agents", collaboration_context)
         
         if not other_agents:
             return "No active collaborators at the moment."
@@ -736,7 +666,10 @@ RESPONSE REQUIREMENTS:
         for agent_id, state in other_agents.items():
             status = state.get("status", "unknown")
             task = state.get("current_task", "none")
-            agent_info.append(f"- {agent_id}: Status: {status}, Current Task: {task}")
+            capabilities = state.get("capabilities", [])
+            
+            capabilities_str = f" (Capabilities: {', '.join(capabilities)})" if capabilities else ""
+            agent_info.append(f"- {agent_id}: Status: {status}, Current Task: {task}{capabilities_str}")
             
         return "\n".join(agent_info)
     
