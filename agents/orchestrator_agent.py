@@ -208,22 +208,8 @@ class OrchestratorAgent(BaseAgent):
         # Update project with planning results
         shared_state.update_project(project_id, current_phase="architecture")
         
-        # FIRST: Create the actual Flutter project structure
-        structure_task_id = str(uuid.uuid4())
-        self.send_message_to_agent(
-            to_agent="implementation",
-            message_type=MessageType.TASK_REQUEST,
-            content={
-                "task_id": structure_task_id,
-                "task_description": "setup_project_structure",
-                "task_data": {
-                    "project_id": project_id,
-                    "architecture_style": "clean_architecture",
-                    "planning_output": plan
-                }
-            },
-            priority=10  # High priority to create structure first
-        )
+        # FIRST: Create the actual Flutter project structure using detailed setup task
+        structure_task_id = await self._assign_project_setup_task(project_id, plan)
         
         # WAIT for project structure to be created before proceeding
         self.logger.info(f"⏳ Waiting for project structure setup to complete...")
@@ -342,29 +328,45 @@ class OrchestratorAgent(BaseAgent):
         """Execute a coordination plan by assigning tasks to agents."""
         # This is a simplified implementation
         # In a real scenario, you'd parse the plan and extract specific tasks
-        import uuid
         if "architecture" in phase.lower():
+            # Assign detailed architecture task with full context
             task_id = str(uuid.uuid4())
+            project = shared_state.get_project_state(project_id)
+            
             self.send_message_to_agent(
                 to_agent="architecture",
                 message_type=MessageType.TASK_REQUEST,
                 content={
                     "task_id": task_id,
-                    "task_description": f"handle_{phase}_phase",
-                    "task_data": {"project_id": project_id, "plan": plan}
-                }
+                    "task_description": "design_flutter_architecture_with_context",
+                    "task_data": {
+                        "project_id": project_id,
+                        "project_name": project.name if project else "",
+                        "description": project.description if project else "",
+                        "requirements": project.requirements if project else [],
+                        "planning_output": plan,
+                        "architecture_goals": [
+                            "scalable_architecture",
+                            "maintainable_code_structure", 
+                            "flutter_best_practices",
+                            "clean_architecture_principles"
+                        ]
+                    }
+                },
+                priority=5
             )
         elif "implementation" in phase.lower():
-            task_id = str(uuid.uuid4())
-            self.send_message_to_agent(
-                to_agent="implementation",
-                message_type=MessageType.TASK_REQUEST,
-                content={
-                    "task_id": task_id,
-                    "task_description": f"handle_{phase}_phase",
-                    "task_data": {"project_id": project_id, "plan": plan}
-                }
-            )
+            # Use the new detailed implementation task assignment
+            await self._assign_implementation_task(project_id, {"phase": phase, "plan": plan})
+        elif "testing" in phase.lower():
+            # Assign detailed testing task
+            await self._assign_testing_task(project_id, {"phase": phase, "plan": plan})
+        elif "security" in phase.lower():
+            # Assign detailed security review task
+            await self._assign_security_task(project_id, {"phase": phase, "plan": plan})
+        elif "performance" in phase.lower():
+            # Assign detailed performance optimization task
+            await self._assign_performance_task(project_id, {"phase": phase, "plan": plan})
         # Add more phase-specific logic as needed
     
     async def _make_decision(self, decision_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -573,3 +575,104 @@ class OrchestratorAgent(BaseAgent):
         # Circuit breaker triggered
         self.logger.error(f"🚨 Task waiting stopped by circuit breaker for {task_id}")
         return False
+    
+    async def _assign_implementation_task(self, project_id: str, phase_data: Dict[str, Any]) -> None:
+        """Assign specific implementation task with full context."""
+        project = shared_state.get_project_state(project_id)
+        
+        # Get architecture decisions from architecture agent
+        architecture_decisions = project.architecture_decisions if project else []
+        
+        # Create specific implementation task
+        implementation_task = {
+            "task_type": "implement_features",
+            "project_id": project_id,
+            "project_name": project.name,
+            "description": project.description,
+            "requirements": project.requirements,
+            "architecture_decisions": architecture_decisions,
+            "specific_features": [
+                {
+                    "name": "project_setup",
+                    "description": "Initialize Flutter project with proper structure",
+                    "files_to_create": ["lib/main.dart", "pubspec.yaml"]
+                },
+                {
+                    "name": "core_models",
+                    "description": "Create data models based on requirements",
+                    "files_to_create": ["lib/models/", "lib/data/"]
+                },
+                {
+                    "name": "ui_screens",
+                    "description": "Implement UI screens for each requirement",
+                    "files_to_create": ["lib/screens/", "lib/widgets/"]
+                }
+            ]
+        }
+        
+        # Send to implementation agent
+        await shared_state.send_message(
+            sender_id=self.agent_id,
+            receiver_id="implementation",
+            message_type=MessageType.TASK_ASSIGNMENT,
+            content={
+                "task": "implement_features_with_context",
+                "data": implementation_task
+            }
+        )
+    
+    async def _assign_project_setup_task(self, project_id: str, plan: str) -> str:
+        """Assign project setup task with detailed context."""
+        project = shared_state.get_project_state(project_id)
+        
+        # Create detailed project setup task
+        setup_task = {
+            "task_type": "setup_project_structure",
+            "project_id": project_id,
+            "project_name": project.name,
+            "description": project.description,
+            "requirements": project.requirements,
+            "architecture_style": "clean_architecture",
+            "planning_output": plan,
+            "specific_setup_actions": [
+                {
+                    "name": "flutter_init",
+                    "description": "Initialize Flutter project with proper configuration",
+                    "files_to_create": ["pubspec.yaml", "analysis_options.yaml"]
+                },
+                {
+                    "name": "folder_structure",
+                    "description": "Create clean architecture folder structure",
+                    "files_to_create": [
+                        "lib/core/",
+                        "lib/features/",
+                        "lib/shared/",
+                        "test/"
+                    ]
+                },
+                {
+                    "name": "basic_files",
+                    "description": "Create essential Flutter files",
+                    "files_to_create": [
+                        "lib/main.dart",
+                        "lib/app.dart",
+                        "lib/core/themes/app_theme.dart",
+                        "lib/core/constants/app_constants.dart"
+                    ]
+                }
+            ]
+        }
+        
+        task_id = str(uuid.uuid4())
+        self.send_message_to_agent(
+            to_agent="implementation",
+            message_type=MessageType.TASK_REQUEST,
+            content={
+                "task_id": task_id,
+                "task_description": "setup_project_structure_with_context",
+                "task_data": setup_task
+            },
+            priority=10  # High priority to create structure first
+        )
+        
+        return task_id

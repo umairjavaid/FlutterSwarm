@@ -55,9 +55,12 @@ class BaseAgent(ABC):
         self._monitoring_task = None
         self._async_lock = asyncio.Lock()  # Use async lock instead of threading lock
         
-        # Real-time awareness control (DISABLED by default to prevent loops)
+        # Disable continuous monitoring to prevent awareness loops
         self._monitoring_enabled = False
-        self._real_time_enabled = False
+        self._real_time_awareness_enabled = False
+        
+        # Only enable monitoring for specific tasks
+        self._task_monitoring_enabled = True
         
         # Rate limiting for broadcasts to prevent message storms
         self._last_broadcast_time = {}

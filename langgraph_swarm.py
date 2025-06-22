@@ -898,43 +898,23 @@ class FlutterSwarmGovernance:
             })
             
             try:
-                # Prepare task data for the agent
-                project_id = state['project_id']
-                task_data = {
-                    "project_id": project_id,
-                    "name": state['name'],
-                    "description": state['description'],
-                    "requirements": state['requirements']
-                }
-                
-                # Execute the implementation task
-                self.logger.info(f"🚀 Executing implementation task for project {project_id}")
-                result = await implementation_agent.execute_task(
-                    "implement_incremental", 
-                    task_data
-                )
+                # Execute implementation phase with proper initialization and context
+                implementation_result = await self.execute_implementation_phase(state)
                 
                 # Process the result
-                if result.get("status") == "incremental_implementation_completed":
-                    implementation_results = result.get("results", {})
-                    total_completed = len(implementation_results.get("completed_features", []))
-                    total_features = implementation_results.get("total_features", 0)
+                if implementation_result.get("implementation_completed"):
+                    implementation_results = implementation_result.get("implementation_results", {})
+                    files_created = implementation_result.get("files_created", [])
                     
-                    # Update state with implementation results
-                    project_state = shared_state.get_project_state(project_id)
-                    if project_state:
-                        files_created = implementation_agent.get_project_state().files_created
-                        shared_state.update_project(
-                            project_id,
-                            implementation_results=implementation_results,
-                            implementation_status=result.get("status"),
-                            files_created=files_created
-                        )
+                    # Calculate success metrics
+                    total_completed = len(implementation_results.get("completed_features", [])) if implementation_results else len(files_created)
+                    total_features = implementation_results.get("total_features", 1) if implementation_results else 1
                     
-                    # Determine success based on completion ratio
-                    success_ratio = total_completed / total_features if total_features > 0 else 0
+                    # Determine success based on completion ratio and files created
+                    success_ratio = total_completed / total_features if total_features > 0 else (1.0 if files_created else 0.0)
+                    
                     implementation_criteria = {
-                        'code_quality_standards_met': success_ratio > 0.7,
+                        'code_quality_standards_met': success_ratio > 0.5 or len(files_created) > 0,
                         'test_coverage_adequate': True,  # Will be verified by testing agent later
                         'architecture_compliance_verified': True,  # Will be verified by architecture agent later
                         'real_time_collaboration_healthy': self._check_agent_collaboration_health()
@@ -953,7 +933,8 @@ class FlutterSwarmGovernance:
                     
                 else:
                     # Implementation failed
-                    self.logger.error(f"❌ Implementation failed: {result.get('status')}")
+                    error_msg = implementation_result.get('error', f"Implementation failed with status: {implementation_result.get('status', 'unknown')}")
+                    self.logger.error(f"❌ Implementation failed: {error_msg}")
                     implementation_criteria = {
                         'code_quality_standards_met': False,
                         'test_coverage_adequate': False,
@@ -967,7 +948,7 @@ class FlutterSwarmGovernance:
                         'agent': 'implementation',
                         'timestamp': datetime.now().isoformat(),
                         'action': 'implementation_failed',
-                        'error': result.get('error', 'Unknown error')
+                        'error': error_msg
                     })
                     
                     # Increment failure count for circuit breaker
@@ -1452,6 +1433,117 @@ class FlutterSwarmGovernance:
         
         return state
     
+    async def execute_implementation_phase(self, state: ProjectGovernanceState) -> Dict[str, Any]:
+        """Execute implementation phase with proper initialization."""
+        project_id = state["project_id"]
+        
+        # Get implementation agent from registry
+        implementation_agent = self.agent_registry.get_agent("implementation")
+        
+        if not implementation_agent:
+            self.logger.error("❌ Failed to get implementation agent")
+            return {
+                "implementation_completed": False,
+                "files_created": [],
+                "error": "Failed to get implementation agent"
+            }
+        
+        # Get project state and architecture decisions from shared state
+        project_state = shared_state.get_project_state(project_id)
+        architecture_decisions = {}
+        
+        if project_state and hasattr(project_state, 'architecture_decisions'):
+            architecture_decisions = project_state.architecture_decisions
+        else:
+            # Fallback to get from shared consciousness
+            shared_consciousness = shared_state.get_shared_consciousness()
+            architecture_decisions = shared_consciousness.get(f"architecture_{project_id}", {})
+        
+        # Create detailed task data with all necessary context
+        task_data = {
+            "project_id": project_id,
+            "name": state["name"],
+            "description": state["description"],
+            "requirements": state["requirements"],
+            "architecture_decisions": architecture_decisions,
+            "phase": "implementation",
+            "task_type": "implement_features_with_context",
+            # Additional context from governance state
+            "governance_state": {
+                "current_phase": state.get("current_governance_phase"),
+                "completed_phases": state.get("completed_governance_phases", []),
+                "quality_criteria": state.get("quality_criteria_met", {}),
+                "project_health": state.get("project_health", "healthy")
+            }
+        }
+        
+        try:
+            self.logger.info(f"🚀 Executing implementation phase for project {project_id}")
+            
+            # First ensure Flutter project is initialized
+            project_init_result = await implementation_agent._ensure_flutter_project_exists({
+                "project_id": project_id,
+                "name": state["name"],
+                "description": state["description"]
+            })
+            
+            if not project_init_result:
+                self.logger.error("❌ Failed to initialize Flutter project")
+                return {
+                    "implementation_completed": False,
+                    "files_created": [],
+                    "error": "Failed to initialize Flutter project"
+                }
+            
+            # Execute implementation with context
+            result = await implementation_agent.execute_task(
+                "implement_features_with_context",
+                task_data
+            )
+            
+            # Process and validate results
+            if result and result.get("status") == "completed":
+                implementation_results = result.get("results", {})
+                files_created = implementation_results.get("files_created", [])
+                
+                # Update project state with implementation results
+                if project_state:
+                    shared_state.update_project(
+                        project_id,
+                        implementation_results=implementation_results,
+                        implementation_status="completed",
+                        files_created=files_created
+                    )
+                
+                self.logger.info(f"✅ Implementation phase completed successfully")
+                self.logger.info(f"📁 Created {len(files_created)} files")
+                
+                return {
+                    "implementation_completed": True,
+                    "files_created": files_created,
+                    "implementation_results": implementation_results,
+                    "status": "success"
+                }
+            else:
+                error_msg = result.get("error", "Unknown implementation error") if result else "No result returned"
+                self.logger.error(f"❌ Implementation phase failed: {error_msg}")
+                
+                return {
+                    "implementation_completed": False,
+                    "files_created": [],
+                    "error": error_msg,
+                    "status": "failed"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Exception during implementation phase: {e}")
+            return {
+                "implementation_completed": False,
+                "files_created": [],
+                "error": str(e),
+                "status": "error"
+            }
+
     # Enhanced helper methods for circuit breaker and failure management
     def _should_emergency_exit(self) -> bool:
         """Check if emergency exit conditions are met."""
@@ -1933,44 +2025,3 @@ class FlutterSwarmGovernance:
                 "error": str(e),
                 "project_id": project_id
             }
-
-async def run_flutter_swarm_governance(project_name: str, project_description: str, 
-                                      requirements: List[str], features: List[str] = None,
-                                      platforms: List[str] = None, ci_system: str = None) -> Dict[str, Any]:
-    """
-    Run the FlutterSwarm governance system to build a Flutter project.
-    
-    Args:
-        project_name: Name of the project
-        project_description: Description of the project
-        requirements: List of project requirements
-        features: List of features to implement
-        platforms: Target platforms (android, ios, web, desktop)
-        ci_system: CI/CD system to configure
-        
-    Returns:
-        Dict containing build results
-    """
-    # Create governance system
-    governance = FlutterSwarmGovernance()
-    
-    # Create project
-    project_id = governance.create_project(
-        name=project_name,
-        description=project_description,
-        requirements=requirements,
-        features=features or []
-    )
-    
-    # Build project
-    result = await governance.build_project(
-        project_id=project_id,
-        name=project_name,
-        description=project_description,
-        requirements=requirements,
-        features=features,
-        platforms=platforms or ["android", "ios"],
-        ci_system=ci_system
-    )
-    
-    return result

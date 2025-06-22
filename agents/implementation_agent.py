@@ -3,7 +3,10 @@ Implementation Agent - Generates Flutter/Dart code based on architectural decisi
 """
 
 import asyncio
+import json
 import os
+import re
+import traceback
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -77,11 +80,11 @@ class ImplementationAgent(BaseAgent):
                 )
             elif "implement_incremental_features" in task_description:
                 result = await self.safe_execute_with_retry(
-                    lambda: self._implement_incremental_features(task_data)
+                    lambda: self._implement_features_with_context(task_data)
                 )
             elif "implement_incremental" in task_description:
                 result = await self.safe_execute_with_retry(
-                    lambda: self._implement_incremental_features(task_data)
+                    lambda: self._implement_features_with_context(task_data)
                 )
             elif "validate_feature" in task_description:
                 result = await self.safe_execute_with_retry(
@@ -154,6 +157,17 @@ class ImplementationAgent(BaseAgent):
         project_id = task_data.get("project_id")
         
         self.logger.info(f"🔨 Implementing feature: {feature_name}")
+        
+        # Ensure Flutter project exists before implementing feature
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "feature_name": feature_name,
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "generated_files": [],
+                "issues_found": 0
+            }
         
         # Create project directory structure first
         await self._create_feature_structure(feature_name)
@@ -234,6 +248,16 @@ class ImplementationAgent(BaseAgent):
         project_id = task_data["project_id"]
         entities = task_data.get("entities", [])
         
+        # Ensure Flutter project exists before generating models
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "models_generated": [],
+                "files_created": []
+            }
+        
         models_prompt = f"""
         Generate Flutter/Dart models for the following entities:
         {entities}
@@ -279,6 +303,16 @@ class ImplementationAgent(BaseAgent):
         screens = task_data.get("screens", [])
         design_system = task_data.get("design_system", {})
         
+        # Ensure Flutter project exists before creating screens
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "screens_created": [],
+                "files_created": []
+            }
+        
         screens_prompt = f"""
         Create Flutter UI screens for:
         Screens: {screens}
@@ -323,6 +357,17 @@ class ImplementationAgent(BaseAgent):
         project_id = task_data["project_id"]
         solution = task_data.get("solution", "bloc")
         features = task_data.get("features", [])
+        
+        # Ensure Flutter project exists before implementing state management
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "state_management": solution,
+                "features": [],
+                "files_created": []
+            }
         
         state_management_prompt = f"""
         Implement {solution} state management for these features:
@@ -374,6 +419,16 @@ class ImplementationAgent(BaseAgent):
         sanitized_project_name = self._sanitize_dart_package_name(project_name)
         
         self.logger.info(f"🏗️ Setting up project structure for {project_name} (sanitized: {sanitized_project_name})")
+        
+        # Ensure Flutter project exists before generating custom code
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "files_created": [],
+                "project_path": ""
+            }
         
         # Get project state for context
         project_state = shared_state.get_project_state(project_id)
@@ -785,6 +840,10 @@ class ImplementationAgent(BaseAgent):
             if not models:
                 return []
             
+            # Ensure Flutter project exists (lightweight check since higher-level methods should have done this)
+            project_data = {"project_id": project_id, "name": feature_name}
+            await self._ensure_flutter_project_exists(project_data)
+            
             created_files = []
             
             for model in models:
@@ -832,6 +891,10 @@ class ImplementationAgent(BaseAgent):
             feature_name = feature.get("name", "unknown")
             screens = feature.get("screens", [])
             widgets = feature.get("widgets", [])
+            
+            # Ensure Flutter project exists (lightweight check since higher-level methods should have done this)
+            project_data = {"project_id": project_id, "name": feature_name}
+            await self._ensure_flutter_project_exists(project_data)
             
             created_files = []
             
@@ -910,6 +973,10 @@ class ImplementationAgent(BaseAgent):
             feature_name = feature.get("name", "unknown")
             use_cases = feature.get("use_cases", [])
             repositories = feature.get("repositories", [])
+            
+            # Ensure Flutter project exists (lightweight check since higher-level methods should have done this)
+            project_data = {"project_id": project_id, "name": feature_name}
+            await self._ensure_flutter_project_exists(project_data)
             
             created_files = []
             
@@ -1389,64 +1456,88 @@ class ImplementationAgent(BaseAgent):
             self.logger.error(f"❌ Error generating BLoC files: {e}")
             return []
 
-    async def _implement_incremental_features(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Implement features incrementally with validation at each step."""
+    async def _implement_features_with_context(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Implement features with full context and specific file generation."""
         project_id = task_data["project_id"]
-        requirements = task_data.get("requirements", [])
-        project_name = task_data.get("name", "flutter_app")
         
-        self.logger.info(f"🔄 Starting incremental feature implementation for project {project_id}")
+        # Ensure Flutter project exists first
+        if not await self._ensure_flutter_project_exists(task_data):
+            return {"status": "failed", "error": "Could not initialize Flutter project"}
         
-        try:
-            # For simple counter app, just create the basic structure and files
-            if not requirements or any("counter" in req.lower() for req in requirements):
-                self.logger.info("🔧 Creating simple counter app structure...")
-                
-                # Create basic counter app files directly
-                setup_result = await self._setup_project_structure({
-                    "project_id": project_id,
-                    "name": project_name,
-                    "architecture_style": "clean"
-                })
-                
-                implementation_results = {
-                    "project_id": project_id,
-                    "total_features": 3,
-                    "completed_features": ["counter_functionality", "ui_components", "material_theme"],
-                    "failed_features": [],
-                    "feature_results": {
-                        "counter_functionality": {
-                            "status": "success",
-                            "files_created": setup_result.get("files_created", [])
-                        },
-                        "ui_components": {
-                            "status": "success", 
-                            "description": "Basic UI with increment button created"
-                        },
-                        "material_theme": {
-                            "status": "success",
-                            "description": "Material Design theme applied"
-                        }
-                    },
-                    "overall_status": "completed",
-                    "files_created": setup_result.get("files_created", [])
-                }
-                
-                self.logger.info(f"✅ Counter app implementation completed with {len(setup_result.get('files_created', []))} files")
-                return implementation_results
+        results = {
+            "project_id": project_id,
+            "completed_features": [],
+            "failed_features": [],
+            "files_created": []
+        }
+        
+        # Process each specific feature
+        for feature in task_data.get("specific_features", []):
+            feature_name = feature["name"]
+            self.logger.info(f"� Implementing feature: {feature_name}")
             
-            # For complex apps, use the original complex implementation
-            return await self._implement_complex_features(task_data)
+            # Generate implementation plan using LLM
+            implementation_prompt = f"""
+            Generate Flutter implementation for feature: {feature_name}
+            Description: {feature['description']}
+            Project: {task_data['project_name']}
+            Requirements: {task_data['requirements']}
+            Architecture: {task_data.get('architecture_decisions', [])}
             
-        except Exception as e:
-            self.logger.error(f"❌ Error in incremental implementation: {e}")
-            return {
-                "project_id": project_id,
-                "overall_status": "failed",
-                "error": str(e),
-                "completed_features": [],
-                "failed_features": ["all"]
-            }
+            Generate complete, working Flutter/Dart code for the required files.
+            Include proper imports, class definitions, and implementations.
+            """
+            
+            # Get LLM to generate code
+            generated_code = await self.think(implementation_prompt, {
+                "feature": feature,
+                "project_data": task_data
+            })
+            
+            # Parse and create files from generated code
+            if generated_code and generated_code.strip():
+                files_created = await self._create_files_from_generated_code(
+                    generated_code, 
+                    feature, 
+                    task_data
+                )
+                results["files_created"].extend(files_created)
+                results["completed_features"].append(feature_name)
+            else:
+                results["failed_features"].append(feature_name)
+        
+        return {
+            "status": "completed",
+            "results": results
+        }
+
+    async def _create_files_from_generated_code(self, generated_code: str, feature: Dict, task_data: Dict) -> List[str]:
+        """Parse LLM output and create actual files."""
+        files_created = []
+        project_path = shared_state.get_project_state(task_data["project_id"]).project_path
+        
+        # Parse code blocks from LLM response
+        # Expected format: ```dart:filepath\ncode\n```
+        import re
+        code_blocks = re.findall(r'```(?:dart|yaml):(.+?)\n(.*?)```', generated_code, re.DOTALL)
+        
+        for filepath, code in code_blocks:
+            filepath = filepath.strip()
+            full_path = os.path.join(project_path, filepath)
+            
+            # Create directory if needed
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            
+            # Write file
+            try:
+                with open(full_path, 'w') as f:
+                    f.write(code.strip())
+                files_created.append(filepath)
+                self.logger.info(f"✅ Created file: {filepath}")
+            except Exception as e:
+                self.logger.error(f"Failed to create {filepath}: {e}")
+        
+        return files_created
     
     async def _implement_complex_features(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement complex features incrementally with full validation."""
@@ -1455,6 +1546,16 @@ class ImplementationAgent(BaseAgent):
         features = task_data.get("features", [])
         
         self.logger.info(f"🔄 Starting incremental feature implementation for project {project_id}")
+        
+        # Ensure Flutter project exists before implementing complex features
+        project_exists = await self._ensure_flutter_project_exists(task_data)
+        if not project_exists:
+            return {
+                "status": "failed",
+                "error": "Failed to ensure Flutter project foundation exists",
+                "completed_features": [],
+                "failed_features": ["all"]
+            }
         
         # Register with supervision
         await self._register_incremental_process(project_id)
@@ -2508,5 +2609,37 @@ class ImplementationAgent(BaseAgent):
             self.logger.error(f"❌ Fallback file extraction failed: {e}")
         
         return created_files
+
+    async def _ensure_flutter_project_exists(self, project_data: Dict[str, Any]) -> bool:
+        """Ensure Flutter project is initialized before generating custom code."""
+        project_id = project_data.get("project_id")
+        project_name = project_data.get("name", "flutter_app")
+        
+        # Determine project path
+        project_path = os.path.join("flutter_projects", f"{project_name}_{project_id[:8]}")
+        
+        # Check if Flutter project exists
+        pubspec_path = os.path.join(project_path, "pubspec.yaml")
+        if not os.path.exists(pubspec_path):
+            self.logger.info(f"🎯 Initializing Flutter project at {project_path}")
+            
+            # Create Flutter project using tool
+            result = await self.execute_tool(
+                "flutter",
+                operation="create",
+                project_name=project_name,
+                project_path=project_path,
+                description=project_data.get("description", ""),
+                org="com.flutterswarm"
+            )
+            
+            if result.status != ToolStatus.SUCCESS:
+                self.logger.error(f"Failed to create Flutter project: {result.error}")
+                return False
+            
+            # Update project state with path
+            shared_state.update_project(project_id, project_path=project_path)
+            
+        return True
 
 
