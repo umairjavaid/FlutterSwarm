@@ -221,7 +221,12 @@ class FlutterTool(BaseTool):
     async def _analyze_code(self, **kwargs) -> ToolResult:
         """Analyze Dart code for issues."""
         command = "flutter analyze"
-        result = await self.terminal.execute(command)
+        project_path = kwargs.get("project_path")
+        
+        if project_path:
+            result = await self.terminal.execute(command, working_dir=project_path)
+        else:
+            result = await self.terminal.execute(command)
         
         # Parse analysis results
         if result.status == ToolStatus.SUCCESS:
@@ -247,7 +252,14 @@ class FlutterTool(BaseTool):
     async def _pub_get(self, **kwargs) -> ToolResult:
         """Get Flutter dependencies."""
         command = "flutter pub get"
-        return await self.terminal.execute(command)
+        project_path = kwargs.get("project_path")
+        
+        if project_path:
+            # Use the specified project path as working directory
+            return await self.terminal.execute(command, working_dir=project_path)
+        else:
+            # Use current working directory
+            return await self.terminal.execute(command)
     
     async def _pub_add(self, packages: List[str], dev: bool = False, **kwargs) -> ToolResult:
         """Add Flutter packages."""
@@ -263,7 +275,12 @@ class FlutterTool(BaseTool):
             command += " --dev"
         command += " " + " ".join(packages)
         
-        result = await self.terminal.execute(command)
+        project_path = kwargs.get("project_path")
+        
+        if project_path:
+            result = await self.terminal.execute(command, working_dir=project_path)
+        else:
+            result = await self.terminal.execute(command)
         
         if result.status == ToolStatus.SUCCESS:
             result.data = {
@@ -276,7 +293,12 @@ class FlutterTool(BaseTool):
     async def _clean_project(self, **kwargs) -> ToolResult:
         """Clean Flutter project."""
         command = "flutter clean"
-        return await self.terminal.execute(command)
+        project_path = kwargs.get("project_path")
+        
+        if project_path:
+            return await self.terminal.execute(command, working_dir=project_path)
+        else:
+            return await self.terminal.execute(command)
     
     async def _flutter_doctor(self, verbose: bool = False, **kwargs) -> ToolResult:
         """Run Flutter doctor to check environment."""
