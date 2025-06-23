@@ -33,6 +33,8 @@ class ProjectGovernanceState(TypedDict):
     name: str
     description: str
     requirements: List[str]
+    features: List[str]
+    platforms: List[str]
     
     # Governance phases (high-level)
     current_governance_phase: str
@@ -1531,10 +1533,11 @@ class FlutterSwarmGovernance:
             "description": state["description"],
             "requirements": state["requirements"],
             "architecture_decisions": architecture_decisions,
+            "specific_features": state.get("features", []),
             "phase": "implementation",
             "task_type": "implement_features_with_context",
-            # Additional context from governance state
-            "governance_state": {
+            "context": {
+                # Additional context from governance state
                 "current_phase": state.get("current_governance_phase"),
                 "completed_phases": state.get("completed_governance_phases", []),
                 "quality_criteria": state.get("quality_criteria_met", {}),
@@ -2004,6 +2007,8 @@ class FlutterSwarmGovernance:
             name=name,
             description=description,
             requirements=requirements,
+            features=features or [],
+            platforms=platforms or ["android", "ios"],
             
             # Governance phases
             current_governance_phase="project_initiation",

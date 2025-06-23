@@ -174,36 +174,43 @@ class ImplementationAgent(BaseAgent):
         
         # Generate complete feature implementation using LLM
         implementation_prompt = f"""
-        Generate a complete Flutter implementation for this feature:
-        
+        🚨 CRITICAL: You are a CODE GENERATOR, NOT an architectural consultant!
+
+        TASK: Generate COMPLETE, PRODUCTION-READY Flutter files that can be directly written to disk and compiled.
+
         Feature: {feature_name}
-        Features to implement: {features}
         Requirements: {requirements}
-        
-        Generate multiple Dart files with complete, working code. Return ONLY valid JSON in this format:
+        Features: {features}
+
+        🚫 FORBIDDEN RESPONSES:
+        - "Here's how you can implement..."
+        - "I recommend using..."
+        - "The architecture should be..."
+        - Any explanatory text
+        - TODO comments
+        - Placeholder code
+
+        ✅ REQUIRED OUTPUT FORMAT - Return ONLY this JSON structure:
         {{
             "files": [
                 {{
                     "path": "lib/main.dart",
-                    "content": "...",
-                    "description": "Main app entry point"
-                }},
-                {{
-                    "path": "lib/features/feature_name/feature_page.dart", 
-                    "content": "...",
-                    "description": "Page implementation for the feature"
+                    "content": "import 'package:flutter/material.dart';\\n\\nvoid main() {{\\n  runApp(MyApp());\\n}}\\n\\nclass MyApp extends StatelessWidget {{\\n  @override\\n  Widget build(BuildContext context) {{\\n    return MaterialApp(\\n      title: 'Flutter App',\\n      theme: ThemeData(primarySwatch: Colors.blue),\\n      home: HomePage(),\\n    );\\n  }}\\n}}\\n\\nclass HomePage extends StatelessWidget {{\\n  @override\\n  Widget build(BuildContext context) {{\\n    return Scaffold(\\n      appBar: AppBar(title: Text('Home')),\\n      body: Center(child: Text('Hello World')),\\n    );\\n  }}\\n}}",
+                    "description": "Complete main app entry point"
                 }}
             ]
         }}
-        
-        Include all necessary files:
-        - Main app file
-        - Feature-specific pages/screens
-        - Models if needed
-        - State management if specified
-        - Proper imports and structure
-        
-        Ensure all Dart code is syntactically correct and follows Flutter best practices.
+
+        STRICT REQUIREMENTS:
+        1. Generate COMPLETE files with ALL imports, classes, and implementations
+        2. Each file must be 100% ready to compile without modifications  
+        3. Include ALL necessary code - no placeholders, no "TODO" comments
+        4. Use proper null safety and latest Flutter/Dart syntax
+        5. Return ONLY the JSON - no other text or explanations
+        6. Each file content must be complete, working Dart code
+        7. All imports must be included at the top of each file
+
+        Generate the complete implementation now as JSON ONLY:
         """
         
         # Get LLM to generate the implementation
@@ -217,6 +224,8 @@ class ImplementationAgent(BaseAgent):
         try:
             generated_files = await self._parse_and_create_files(project_id, implementation_result)
             self.logger.info(f"✅ Generated {len(generated_files)} files for feature: {feature_name}")
+            if not generated_files:
+                self.logger.error("❌ No files were generated - forcing retry")
         except Exception as e:
             self.logger.error(f"❌ Failed to generate files: {e}")
         
@@ -712,31 +721,9 @@ class ImplementationAgent(BaseAgent):
             created_files = []
             
             try:
-                import json
-                # Clean the response to extract only JSON
-                json_str = parsed_result.strip()
-                # Remove common LLM prefixes if present
-                if json_str.startswith("Here's the JSON"):
-                    # Find the start of actual JSON
-                    start_idx = json_str.find('{')
-                    if start_idx != -1:
-                        json_str = json_str[start_idx:]
-                # Remove any trailing text after JSON ends
-                if json_str.count('{') > 0:
-                    brace_count = 0
-                    end_idx = len(json_str)
-                    for i, char in enumerate(json_str):
-                        if char == '{':
-                            brace_count += 1
-                        elif char == '}':
-                            brace_count -= 1
-                            if brace_count == 0:
-                                end_idx = i + 1
-                                break
-                    json_str = json_str[:end_idx]
-                
-                files_data = json.loads(json_str)
-                files_list = files_data.get("files", [])
+                # Use robust JSON extraction
+                files_data = await self._extract_json_from_response(parsed_result)
+                files_list = files_data.get("files", []) if files_data else []
                 
                 for file_info in files_list:
                     file_path = file_info.get("path", "")
@@ -795,6 +782,116 @@ class ImplementationAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"❌ Error parsing and creating files: {e}")
             return []
+
+    async def _extract_json_from_response(self, response: str) -> dict:
+        """Robust JSON extraction from LLM responses with multiple fallback strategies."""
+        import json
+        import re
+        
+        if not response or not response.strip():
+            return None
+        
+        response = response.strip()
+        
+        # Strategy 1: Try direct JSON parsing first
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            pass
+        
+        # Strategy 2: Extract JSON from code blocks
+        json_block_patterns = [
+            r'```json\s*\n(.*?)\n```',
+            r'```\s*\n(\{.*?\})\s*\n```',
+            r'`(\{.*?\})`'
+        ]
+        
+        for pattern in json_block_patterns:
+            match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
+            if match:
+                try:
+                    return json.loads(match.group(1).strip())
+                except json.JSONDecodeError:
+                    continue
+        
+        # Strategy 3: Find JSON object boundaries
+        # Look for the first { and find its matching }
+        start_idx = response.find('{')
+        if start_idx != -1:
+            brace_count = 0
+            end_idx = len(response)
+            
+            for i in range(start_idx, len(response)):
+                char = response[i]
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i + 1
+                        break
+            
+            json_str = response[start_idx:end_idx]
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+        
+        # Strategy 4: Clean common prefixes and try again
+        clean_prefixes = [
+            "Here's the JSON:",
+            "Here is the JSON:",
+            "The JSON structure is:",
+            "JSON:",
+            "Response:",
+            "Here's the implementation:",
+            "The implementation is:"
+        ]
+        
+        for prefix in clean_prefixes:
+            if response.lower().startswith(prefix.lower()):
+                cleaned = response[len(prefix):].strip()
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    # Try finding JSON in cleaned response
+                    start_idx = cleaned.find('{')
+                    if start_idx != -1:
+                        brace_count = 0
+                        end_idx = len(cleaned)
+                        
+                        for i in range(start_idx, len(cleaned)):
+                            char = cleaned[i]
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end_idx = i + 1
+                                    break
+                        
+                        json_str = cleaned[start_idx:end_idx]
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            continue
+        
+        # Strategy 5: Look for array patterns in case it's just a files array
+        array_patterns = [
+            r'\[\s*\{.*?\}\s*\]',
+        ]
+        
+        for pattern in array_patterns:
+            match = re.search(pattern, response, re.DOTALL)
+            if match:
+                try:
+                    files_array = json.loads(match.group(0))
+                    return {"files": files_array}
+                except json.JSONDecodeError:
+                    continue
+        
+        self.logger.error(f"❌ Failed to extract JSON from response. First 200 chars: {response[:200]}")
+        return None
 
     async def _create_actual_file(self, project_path: str, file_path: str, content: str, project_id: str = None) -> bool:
         """Create actual file with enhanced error handling."""
