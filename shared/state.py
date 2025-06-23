@@ -139,6 +139,11 @@ class ProjectState:
             self.e2e_test_results = {}
         if self.incremental_progress is None:
             self.incremental_progress = {}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert ProjectState to dictionary for JSON serialization."""
+        from dataclasses import asdict
+        return asdict(self)
 
 @dataclass
 class IssueReport:

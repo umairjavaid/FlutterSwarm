@@ -703,14 +703,20 @@ class BaseAgent(ABC):
     def _create_detailed_prompt(self, prompt: str, full_context: Dict[str, Any]) -> str:
         """Create a detailed prompt with complete context and instructions."""
         try:
-            # Get project information
-            project_state = full_context.get("project_state", {})
-            project_name = project_state.get("name", "Flutter Project")
-            project_description = project_state.get("description", "A Flutter application")
-            project_requirements = project_state.get("requirements", [])
+            # Get project information safely
+            project_state = full_context.get("project_state")
+            project_info = self._extract_project_info(project_state)
             
             # Format collaboration context
             collaboration_info = self._format_collaboration_context(full_context)
+            
+            # Prepare task context for JSON serialization
+            task_context = full_context.get('task_context', {})
+            try:
+                task_context_json = json.dumps(task_context, indent=2, default=str)
+            except (TypeError, ValueError):
+                # Fallback if JSON serialization fails
+                task_context_json = str(task_context)
             
             # Build detailed prompt
             detailed_prompt = f"""
@@ -722,16 +728,17 @@ AGENT ROLE & CAPABILITIES:
 - Capabilities: {', '.join(full_context.get('agent_capabilities', []))}
 
 PROJECT CONTEXT:
-- Project Name: {project_name}
-- Description: {project_description}
-- Requirements: {', '.join(project_requirements) if project_requirements else 'None specified'}
-- Current Status: {project_state.get('status', 'unknown')}
+- Project Name: {project_info['name']}
+- Description: {project_info['description']}
+- Requirements: {', '.join(project_info['requirements']) if project_info['requirements'] else 'None specified'}
+- Current Status: {project_info['status']}
+- Progress: {project_info['progress']*100:.1f}%
 
 COLLABORATION CONTEXT:
 {collaboration_info}
 
 TASK CONTEXT:
-{json.dumps(full_context.get('task_context', {}), indent=2)}
+{task_context_json}
 
 CURRENT TASK:
 {prompt}
@@ -765,7 +772,10 @@ Provide a detailed response with actionable recommendations and code if applicab
         try:
             agent_name = full_context.get('agent_name', self.agent_id)
             capabilities = full_context.get('agent_capabilities', [])
-            project_state = full_context.get('project_state', {})
+            
+            # Get project information safely
+            project_state = full_context.get('project_state')
+            project_info = self._extract_project_info(project_state)
             
             system_prompt = f"""
 You are {agent_name}, a specialized agent in the FlutterSwarm multi-agent Flutter development system.
@@ -782,8 +792,8 @@ SYSTEM CONTEXT:
 - Provide actionable, practical solutions that integrate well with the broader project
 
 PROJECT INFORMATION:
-- Project: {project_state.get('name', 'Flutter Application')}
-- Status: {project_state.get('status', 'In Development')}
+- Project: {project_info['name']}
+- Status: {project_info['status']}
 
 RESPONSE GUIDELINES:
 1. Be specific and technical in your responses
@@ -1730,3 +1740,44 @@ class AgentToolbox:
         """Check if a specific tool is available to this agent."""
         available_tools = self.list_available_tools()
         return tool_name in available_tools
+
+    def _extract_project_info(self, project_state) -> Dict[str, Any]:
+        """Safely extract project information from ProjectState dataclass or dict."""
+        if project_state is None:
+            return {
+                'name': 'Flutter Project',
+                'description': 'A Flutter application',
+                'requirements': [],
+                'status': 'unknown'
+            }
+        
+        # Handle ProjectState dataclass
+        if hasattr(project_state, 'name'):
+            return {
+                'name': getattr(project_state, 'name', 'Flutter Project'),
+                'description': getattr(project_state, 'description', 'A Flutter application'),
+                'requirements': getattr(project_state, 'requirements', []),
+                'status': getattr(project_state, 'current_phase', 'unknown'),
+                'progress': getattr(project_state, 'progress', 0.0),
+                'project_id': getattr(project_state, 'project_id', 'unknown')
+            }
+        
+        # Handle dictionary
+        elif isinstance(project_state, dict):
+            return {
+                'name': project_state.get('name', 'Flutter Project'),
+                'description': project_state.get('description', 'A Flutter application'),
+                'requirements': project_state.get('requirements', []),
+                'status': project_state.get('status', project_state.get('current_phase', 'unknown')),
+                'progress': project_state.get('progress', 0.0),
+                'project_id': project_state.get('project_id', 'unknown')
+            }
+        
+        # Fallback for other types
+        else:
+            return {
+                'name': 'Flutter Project',
+                'description': 'A Flutter application',
+                'requirements': [],
+                'status': 'unknown'
+            }
