@@ -10,6 +10,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from .base_tool import BaseTool, ToolResult, ToolStatus
+from utils.function_logger import track_function
 
 class FileTool(BaseTool):
     """
@@ -24,6 +25,7 @@ class FileTool(BaseTool):
         )
         self.base_directory = base_directory or os.getcwd()
     
+    @track_function(log_args=True, log_return=True)
     async def execute(self, operation: str, **kwargs) -> ToolResult:
         """
         Execute file operation.

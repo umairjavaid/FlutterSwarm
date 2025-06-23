@@ -12,6 +12,9 @@ from pathlib import Path
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging, log_startup_banner, generate_final_report
+
 from flutter_swarm import FlutterSwarm
 from monitoring import build_monitor, live_display, agent_logger
 from rich.console import Console
@@ -192,11 +195,21 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Initialize logging at startup
+    setup_comprehensive_logging()
+    log_startup_banner()
+    
     # Run the demo
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         console.print("\n👋 [blue]Demo finished![/blue]")
     except Exception as e:
+        console.print(f"\n❌ [red]Demo failed: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Generate comprehensive final report
+        generate_final_report()
         console.print(f"\n❌ [red]Demo failed: {e}[/red]")
         sys.exit(1)

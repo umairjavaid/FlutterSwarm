@@ -118,7 +118,7 @@ class AgentLogger:
                       input_data: Optional[Dict[str, Any]] = None,
                       output_data: Optional[Dict[str, Any]] = None,
                       error: Optional[str] = None):
-        """Log tool usage by an agent."""
+        """Log tool usage by an agent with complete input/output details."""
         message = f"Agent {agent_id} used {tool_name}.{operation} - Status: {status}"
         if execution_time:
             message += f" ({execution_time:.2f}s)"
@@ -142,13 +142,82 @@ class AgentLogger:
         
         self._add_log_entry(entry)
         
-        # Log to console with appropriate level
+        # Log to console with COMPLETE details for debugging
         if status == "success":
             self.logger.debug(f"🔧 {message}")
+            # Log complete input/output for debugging
+            if input_data:
+                sanitized_input = self._sanitize_for_logging(input_data)
+                self.logger.debug(f"   Input: {sanitized_input}")
+            if output_data:
+                sanitized_output = self._sanitize_for_logging(output_data)
+                self.logger.debug(f"   Output: {sanitized_output}")
         else:
             self.logger.warning(f"⚠️ {message}")
             if error:
                 self.logger.warning(f"   Error: {error}")
+            if input_data:
+                sanitized_input = self._sanitize_for_logging(input_data)
+                self.logger.warning(f"   Input: {sanitized_input}")
+        
+        # Also log to function logger if available
+        try:
+            from utils.function_logger import function_logger, ToolUsage
+            function_logger.log_tool_usage(ToolUsage(
+                usage_id=f"{agent_id}_{tool_name}_{int(datetime.now().timestamp() * 1000)}",
+                timestamp=datetime.now().isoformat(),
+                agent_id=agent_id,
+                tool_name=tool_name,
+                operation=operation,
+                input_params=input_data or {},
+                output_result=output_data,
+                status=status,
+                duration_seconds=execution_time or 0.0,
+                error=error
+            ))
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log to function logger: {e}")
+    
+    def _sanitize_for_logging(self, data: Any, max_length: int = 1000) -> str:
+        """Sanitize data for safe logging with comprehensive details."""
+        try:
+            if data is None:
+                return "None"
+            elif isinstance(data, (str, int, float, bool)):
+                str_data = str(data)
+                if len(str_data) > max_length:
+                    return str_data[:max_length] + f"... [truncated, full length: {len(str_data)}]"
+                return str_data
+            elif isinstance(data, (list, tuple)):
+                if len(data) > 20:
+                    return f"[{type(data).__name__} with {len(data)} items] {str(data[:5])}... [showing first 5 items]"
+                return str(data)[:max_length] + ("..." if len(str(data)) > max_length else "")
+            elif isinstance(data, dict):
+                if len(data) > 50:
+                    keys = list(data.keys())[:10]
+                    return f"{{Dict with {len(data)} keys: {keys}... [showing first 10 keys]}}"
+                
+                # For smaller dicts, show full content but truncate values
+                truncated_dict = {}
+                for k, v in data.items():
+                    if isinstance(v, str) and len(v) > 200:
+                        truncated_dict[k] = v[:200] + "..."
+                    else:
+                        truncated_dict[k] = v
+                
+                dict_str = str(truncated_dict)
+                if len(dict_str) > max_length:
+                    return dict_str[:max_length] + f"... [truncated, full size: {len(data)} keys]"
+                return dict_str
+            else:
+                obj_str = str(data)
+                if len(obj_str) > max_length:
+                    return f"<{type(data).__name__}: {obj_str[:max_length]}... [truncated]>"
+                return f"<{type(data).__name__}: {obj_str}>"
+        except Exception as e:
+            return f"<{type(data).__name__}: [serialization error: {e}]>"
     
     def log_agent_collaboration(self, from_agent: str, to_agent: str,
                                collaboration_type: str, data: Dict[str, Any],
@@ -218,8 +287,14 @@ class AgentLogger:
     
     def log_error(self, agent_id: str, error_type: str, error_message: str,
                   context: Optional[Dict[str, Any]] = None, exception: Optional[Exception] = None):
-        """Log errors and exceptions."""
+        """Log errors and exceptions with comprehensive details."""
         message = f"Error in {agent_id}: {error_type} - {error_message}"
+        
+        # Get full stack trace if exception is provided
+        stack_trace = None
+        if exception:
+            import traceback
+            stack_trace = traceback.format_exception(type(exception), exception, exception.__traceback__)
         
         entry = LogEntry(
             timestamp=datetime.now(),
@@ -231,15 +306,61 @@ class AgentLogger:
                 "error_type": error_type,
                 "error_message": error_message,
                 "context": context or {},
-                "exception": str(exception) if exception else None
+                "exception": str(exception) if exception else None,
+                "stack_trace": stack_trace,
+                "exception_type": type(exception).__name__ if exception else None
             }
         )
         
         self._add_log_entry(entry)
-        self.logger.error(f"❌ {message}")
         
-        if exception and self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.exception(f"Exception details for {agent_id}")
+        # Log comprehensive error details
+        self.logger.error(f"❌ === COMPREHENSIVE ERROR LOG ===")
+        self.logger.error(f"   Agent: {agent_id}")
+        self.logger.error(f"   Error Type: {error_type}")
+        self.logger.error(f"   Error Message: {error_message}")
+        
+        if exception:
+            self.logger.error(f"   Exception Type: {type(exception).__name__}")
+            self.logger.error(f"   Exception Details: {str(exception)}")
+        
+        if context:
+            self.logger.error(f"   Context: {self._sanitize_for_logging(context)}")
+        
+        if stack_trace:
+            self.logger.error(f"   FULL STACK TRACE:")
+            for line in stack_trace:
+                self.logger.error(f"     {line.rstrip()}")
+        
+        self.logger.error(f"   === END ERROR LOG ===")
+        
+        # Also log to function logger if available
+        try:
+            from utils.function_logger import function_logger, FunctionCall
+            import uuid
+            
+            function_logger.log_function_call(FunctionCall(
+                call_id=str(uuid.uuid4()),
+                timestamp=datetime.now().isoformat(),
+                agent_id=agent_id,
+                module="error_handler",
+                function_name=error_type,
+                class_name=None,
+                args=[error_message],
+                kwargs=context or {},
+                return_value=None,
+                exception=str(exception) if exception else error_message,
+                duration_seconds=0.0,
+                stack_trace=stack_trace,
+                file_path="",
+                line_number=0,
+                is_async=False,
+                success=False
+            ))
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log error to function logger: {e}")
     
     def log_message(self, from_agent: str, to_agent: str, message_type: MessageType,
                    content: Any, priority: int = 1):
@@ -386,3 +507,6 @@ class AgentLogger:
             base_summary["llm_metrics"] = llm_summary
         
         return base_summary
+
+# Global agent logger instance
+agent_logger = AgentLogger()

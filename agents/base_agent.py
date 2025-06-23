@@ -22,6 +22,7 @@ from utils.exception_handler import with_exception_handling, log_and_suppress_ex
 import os
 from dotenv import load_dotenv
 import logging
+from utils.function_logger import track_function
 
 load_dotenv()
 
@@ -484,6 +485,7 @@ class BaseAgent(ABC):
         all_agents = shared_state.get_agent_states()
         return {aid: state for aid, state in all_agents.items() if aid != self.agent_id}
     
+    @track_function(log_args=True, log_return=True)
     async def think(self, prompt: str, context: Dict[str, Any] = None, task_complexity: str = "normal") -> str:
         """
         Enhanced think method with better context and retry logic for LLM interactions.
@@ -1291,6 +1293,7 @@ Please contact the system administrator if this problem continues.
         """Execute a specific task. Must be implemented by subclasses."""
         pass
     
+    @track_function(log_args=True, log_return=True)
     async def collaborate(self, collaboration_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle collaboration requests. Override in subclasses."""
         return {"status": "not_implemented", "message": "Collaboration not implemented"}
@@ -1719,6 +1722,7 @@ class AgentToolbox:
         self.tool_manager = tool_manager
         self.agent_id = agent_id
         
+    @track_function(log_args=True, log_return=True)
     async def execute(self, tool_name, **kwargs):
         """Execute a tool with the given parameters."""
         return await self.tool_manager.execute_tool(tool_name, **kwargs)

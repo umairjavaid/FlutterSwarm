@@ -3,6 +3,9 @@ FlutterSwarm - Multi-Agent Flutter Development System
 Now powered by LangGraph for better orchestration and state management.
 """
 
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging, log_startup_banner
+
 # Import the new LangGraph-based implementation
 from langgraph_swarm import FlutterSwarmGovernance, run_flutter_swarm_governance
 

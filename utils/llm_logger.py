@@ -129,10 +129,9 @@ class LLMLogger:
                         duration: float, context: Dict[str, Any] = None,
                         token_usage: Dict[str, Any] = None, temperature: float = 0.7,
                         max_tokens: int = 4000, error: str = None) -> None:
-        """Log the completion of an LLM request."""
+        """Log the completion of an LLM request with FULL response details."""
         
         success = error is None
-        response_preview = response[:200] + "..." if response and len(response) > 200 else response
         
         # Create interaction record
         interaction = LLMInteraction(
@@ -161,25 +160,61 @@ class LLMLogger:
             if error:
                 self.error_count += 1
         
-        # Log response with full details
+        # Log response with COMPLETE details
         if success:
             self.logger.info(f"✅ LLM Response [{interaction_id}] - {duration:.2f}s")
             
-            # Log FULL response for visibility
-            self.logger.info(f"   FULL RESPONSE:")
-            self.logger.info(f"   {'-'*60}")
-            self.logger.info(f"{response}")
-            self.logger.info(f"   {'-'*60}")
+            # Log COMPLETE RESPONSE for debugging
+            self.logger.info(f"   === COMPLETE LLM RESPONSE ===")
+            self.logger.info(f"   Agent: {agent_id}")
+            self.logger.info(f"   Model: {model} ({provider})")
+            self.logger.info(f"   Request Type: {request_type}")
+            self.logger.info(f"   Duration: {duration:.4f}s")
+            self.logger.info(f"   Temperature: {temperature}")
+            self.logger.info(f"   Max Tokens: {max_tokens}")
             
             if token_usage:
-                self.logger.info(f"   Tokens: {token_usage}")
+                self.logger.info(f"   Token Usage: {json.dumps(token_usage, indent=2)}")
+            
+            if context:
+                self.logger.info(f"   Context: {json.dumps(context, default=str, indent=2)}")
+            
+            self.logger.info(f"   FULL PROMPT:")
+            self.logger.info(f"   {'-'*80}")
+            self.logger.info(f"{prompt}")
+            self.logger.info(f"   {'-'*80}")
+            
+            self.logger.info(f"   FULL RESPONSE:")
+            self.logger.info(f"   {'-'*80}")
+            self.logger.info(f"{response}")
+            self.logger.info(f"   {'-'*80}")
+            self.logger.info(f"   === END LLM RESPONSE ===")
+            
         else:
             self.logger.error(f"❌ LLM Error [{interaction_id}] - {duration:.2f}s")
+            self.logger.error(f"   === LLM ERROR DETAILS ===")
+            self.logger.error(f"   Agent: {agent_id}")
+            self.logger.error(f"   Model: {model} ({provider})")
+            self.logger.error(f"   Request Type: {request_type}")
+            self.logger.error(f"   Duration: {duration:.4f}s")
             self.logger.error(f"   Error: {error}")
+            
+            if context:
+                self.logger.error(f"   Context: {json.dumps(context, default=str, indent=2)}")
+            
+            self.logger.error(f"   FAILED PROMPT:")
+            self.logger.error(f"   {'-'*80}")
+            self.logger.error(f"{prompt}")
+            self.logger.error(f"   {'-'*80}")
             
             # Still log partial response if available
             if response:
-                self.logger.error(f"   Partial Response: {response[:500]}...")
+                self.logger.error(f"   PARTIAL RESPONSE:")
+                self.logger.error(f"   {'-'*80}")
+                self.logger.error(f"{response}")
+                self.logger.error(f"   {'-'*80}")
+            
+            self.logger.error(f"   === END LLM ERROR ===")
         
         # Log to monitoring system if available
         try:
@@ -188,14 +223,53 @@ class LLMLogger:
                 agent_id, "llm", request_type, 
                 "success" if success else "error",
                 duration, 
-                {"prompt_length": len(prompt), "model": model},
-                {"response_length": len(response) if response else 0, "tokens": token_usage},
+                {
+                    "prompt_length": len(prompt), 
+                    "model": model,
+                    "provider": provider,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "context": context
+                },
+                {
+                    "response_length": len(response) if response else 0, 
+                    "tokens": token_usage,
+                    "response": response[:500] + "..." if response and len(response) > 500 else response
+                },
                 error
             )
         except ImportError:
             pass
         except Exception as e:
             self.logger.debug(f"Failed to log to monitoring: {e}")
+        
+        # Also log to function logger if available
+        try:
+            from utils.function_logger import function_logger, ToolUsage
+            function_logger.log_tool_usage(ToolUsage(
+                usage_id=interaction_id,
+                timestamp=datetime.now().isoformat(),
+                agent_id=agent_id,
+                tool_name="llm",
+                operation=request_type,
+                input_params={
+                    "prompt": prompt,
+                    "model": model,
+                    "provider": provider,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "context": context
+                },
+                output_result=response,
+                status="success" if success else "error",
+                duration_seconds=duration,
+                error=error,
+                metadata={"token_usage": token_usage}
+            ))
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log to function logger: {e}")
     
     def get_session_summary(self) -> Dict[str, Any]:
         """Get a summary of the current LLM session."""

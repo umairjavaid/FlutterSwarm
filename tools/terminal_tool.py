@@ -7,6 +7,7 @@ import os
 import time
 from typing import Dict, Any, Optional, List
 from .base_tool import BaseTool, ToolResult, ToolStatus
+from utils.function_logger import track_function
 
 class TerminalTool(BaseTool):
     """
@@ -21,6 +22,7 @@ class TerminalTool(BaseTool):
         )
         self.working_directory = working_directory or os.getcwd()
     
+    @track_function(log_args=True, log_return=True)
     async def execute(self, command: str = None, **kwargs) -> ToolResult:
         """
         Execute a shell command or handle specific operations.

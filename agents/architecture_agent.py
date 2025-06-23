@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 import time
+from utils.function_logger import track_function
 class ArchitectureAgent(BaseAgent):
     """
     The Architecture Agent specializes in system design and architectural decisions.
@@ -23,6 +24,7 @@ class ArchitectureAgent(BaseAgent):
             "Clean Architecture", "Layered Architecture", "Hexagonal Architecture", "MVVM"
         ]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute architecture-related tasks."""
         try:

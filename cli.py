@@ -3,6 +3,9 @@
 FlutterSwarm CLI - Command line interface for the FlutterSwarm system.
 """
 
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging
+
 import argparse
 import asyncio
 import json

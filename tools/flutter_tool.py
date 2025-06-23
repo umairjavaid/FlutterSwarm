@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from .terminal_tool import TerminalTool
 from utils.path_utils import get_absolute_project_path
+from utils.function_logger import track_function
 
 class FlutterTool(BaseTool):
     """
@@ -24,6 +25,7 @@ class FlutterTool(BaseTool):
         self.project_directory = project_directory or os.getcwd()
         self.terminal = TerminalTool(self.project_directory)
     
+    @track_function(log_args=True, log_return=True)
     async def execute(self, operation: str, **kwargs) -> ToolResult:
         """
         Execute Flutter operation.
