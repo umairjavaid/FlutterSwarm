@@ -29,7 +29,7 @@ class FlutterTool(BaseTool):
         Execute Flutter operation.
         
         Args:
-            operation: Type of operation (create, build, test, analyze, etc.)
+            operation: Type of operation (build, test, analyze, etc.)
             **kwargs: Operation-specific parameters
             
         Returns:
@@ -40,9 +40,8 @@ class FlutterTool(BaseTool):
         start_time = time.time()
         
         try:
-            if operation == "create":
-                return await self._create_project(**kwargs)
-            elif operation == "build":
+            # Removed 'create' operation for agent-driven workflow
+            if operation == "build":
                 return await self._build_project(**kwargs)
             elif operation == "test":
                 return await self._run_tests(**kwargs)
@@ -470,9 +469,6 @@ class FlutterTool(BaseTool):
     # Public methods for test and agent compatibility
     async def doctor(self, **kwargs):
         return await self.execute("doctor", **kwargs)
-
-    async def create_project(self, **kwargs):
-        return await self.execute("create", **kwargs)
 
     async def build(self, **kwargs):
         return await self.execute("build", **kwargs)

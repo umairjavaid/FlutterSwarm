@@ -51,21 +51,21 @@ class MonitoringDemo:
             self.swarm = FlutterSwarm(enable_monitoring=True)
             await self.swarm.start()
             
-            # Create a demo project
-            console.print("🏗️ [bold green]Creating demo Flutter project...[/bold green]")
-            project_id = self.swarm.create_project(
+            # Create a demo project and build it in one step
+            console.print("🏗️ [bold green]Creating and building demo Flutter project...[/bold green]")
+            result = await self.swarm.build_project(
                 name="MonitoringDemo",
                 description="A demo Flutter app to showcase live monitoring",
                 requirements=["user authentication", "data persistence", "offline mode"],
-                features=["auth", "database", "offline"]
+                features=["auth", "database", "offline"],
+                platforms=["android", "ios"]
             )
-            self.current_project_id = project_id
-            
-            console.print(f"✅ Project created: {project_id[:8]}...")
+            self.current_project_id = result.get('project_id', None)
+            console.print(f"✅ Project created: {self.current_project_id[:8]}..." if self.current_project_id else "✅ Project created.")
             console.print("\n🔍 [bold yellow]Starting live monitoring...[/bold yellow]")
             
             # Start the build process with live monitoring
-            await self._run_monitored_build(project_id)
+            await self._run_monitored_build(self.current_project_id)
             
         except KeyboardInterrupt:
             console.print("\n⏸️ [yellow]Demo interrupted by user[/yellow]")

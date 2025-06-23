@@ -42,11 +42,8 @@ class OrchestratorAgent(BaseAgent):
             
             # Execute appropriate task with retry mechanism
             result = None
-            if "create_project" in task_description.lower():
-                result = await self.safe_execute_with_retry(
-                    lambda: self._create_flutter_project(task_data)
-                )
-            elif "initiate_project_workflow" in task_description.lower():
+            # Removed create_project handling; only use build_project in workflow
+            if "initiate_project_workflow" in task_description.lower():
                 result = await self.safe_execute_with_retry(
                     lambda: self._initiate_project_workflow_task(task_data)
                 )

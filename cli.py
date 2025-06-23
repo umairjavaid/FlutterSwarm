@@ -379,8 +379,15 @@ class FlutterSwarmCLI:
         
         name = parts[1]
         description = parts[2] if len(parts) > 2 else f"Flutter application: {name}"
-        
-        project_id = self.swarm.create_project(name, description)
+        # Use build_project instead of create_project
+        result = await self.swarm.build_project(
+            name=name,
+            description=description,
+            requirements=[],
+            features=[],
+            platforms=["android", "ios"]
+        )
+        project_id = result.get('project_id', 'unknown')
         console.print(f"✅ Created project '{name}' with ID: {project_id}")
     
     async def handle_interactive_status(self, command):

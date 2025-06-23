@@ -396,59 +396,6 @@ class SharedState:
                 }
             )
     
-    def create_project(self, name: str, description: str, requirements: List[str]) -> str:
-        """Create a new project and return its ID."""
-        if not name or not isinstance(name, str):
-            raise ValueError("Project name must be a non-empty string")
-        if not isinstance(description, str):
-            raise ValueError("Project description must be a string")
-        if not isinstance(requirements, list):
-            raise ValueError("Requirements must be a list")
-            
-        with self._lock:
-            project_id = str(uuid.uuid4())
-            try:
-                self._projects[project_id] = ProjectState(
-                    project_id=project_id,
-                    name=name,
-                    description=description,
-                    requirements=requirements,
-                    current_phase="planning",
-                    progress=0.0,
-                    files_created={},
-                    architecture_decisions=[],
-                    test_results={},
-                    security_findings=[],
-                    performance_metrics={},
-                    documentation={},
-                    deployment_config={},
-                    project_path=None  # Will be set when Flutter project is created
-                )
-                self._current_project_id = project_id
-                
-                # Notify all agents about new project
-                try:
-                    self._broadcast_message(
-                        from_agent="system",
-                        message_type=MessageType.STATE_SYNC,
-                        content={
-                            "event": "project_created",
-                            "project_id": project_id,
-                            "project": asdict(self._projects[project_id])
-                        }
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to broadcast project creation: {e}")
-                
-                return project_id
-            except Exception as e:
-                # Cleanup on failure
-                if project_id in self._projects:
-                    del self._projects[project_id]
-                if self._current_project_id == project_id:
-                    self._current_project_id = None
-                raise RuntimeError(f"Failed to create project: {e}") from e
-    
     def create_project_with_id(self, project_id: str, name: str, description: str, requirements: List[str]) -> None:
         """Create a new project with a specific ID."""
         with self._lock:
