@@ -794,31 +794,16 @@ class ImplementationAgent(BaseAgent):
             self.logger.error(f"❌ Error parsing and creating files: {e}")
             return []
 
-    async def _create_actual_file(self, project_path: str, file_path: str, content: str) -> bool:
-        """Create actual file using LLM-generated content only."""
+    async def _create_actual_file(self, project_path: str, file_path: str, content: str, project_id: str = None) -> bool:
+        """Create actual file with enhanced error handling."""
         try:
-            # Ensure content is not empty
-            if not content or not content.strip():
-                self.logger.error(f"❌ Cannot create file {file_path}: empty content")
-                return False
-            
-            # Create full path
-            import os
             full_path = os.path.join(project_path, file_path)
             
-            # Create directory if it doesn't exist
+            # Ensure directory exists
             dir_path = os.path.dirname(full_path)
-            dir_result = await self.execute_tool(
-                "file",
-                operation="create_directory", 
-                directory=dir_path
-            )
+            os.makedirs(dir_path, exist_ok=True)
             
-            if dir_result.status != ToolStatus.SUCCESS:
-                self.logger.error(f"❌ Failed to create directory {dir_path}: {dir_result.error}")
-                return False
-            
-            # Write the file content
+            # Write file using tool for consistency
             file_result = await self.execute_tool(
                 "file",
                 operation="write",
@@ -827,32 +812,39 @@ class ImplementationAgent(BaseAgent):
             )
             
             if file_result.status == ToolStatus.SUCCESS:
-                self.logger.info(f"✅ Created file: {file_path}")
-                
-                # 🔥 FIX: Register file in shared state so other agents know about it
-                project_id = getattr(self, '_current_project_id', None)
-                if not project_id:
-                    # Try to get project_id from shared state if not set
-                    current_project = shared_state.get_project_state()
-                    if current_project:
-                        project_id = current_project.project_id
-                
-                if project_id:
+                # Verify file was actually created
+                if os.path.exists(full_path):
                     try:
-                        shared_state.add_file_to_project(project_id, file_path, content)
-                        self.logger.info(f"📋 Registered file in shared state: {file_path}")
-                    except Exception as e:
-                        self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                        # Verify content
+                        with open(full_path, 'r') as f:
+                            written_content = f.read()
+                        if written_content.strip():
+                            self.logger.info(f"✅ Successfully created and verified: {file_path}")
+                            
+                            # Register in shared state if project_id provided
+                            if project_id:
+                                try:
+                                    shared_state.add_file_to_project(project_id, file_path, content)
+                                    self.logger.debug(f"📋 Registered {file_path} in shared state")
+                                except Exception as e:
+                                    self.logger.warning(f"⚠️ Could not register file in shared state: {e}")
+                            
+                            return True
+                        else:
+                            self.logger.error(f"❌ File created but empty: {file_path}")
+                            return False
+                    except Exception as read_error:
+                        self.logger.error(f"❌ Could not verify file content: {read_error}")
+                        return False
                 else:
-                    self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
-                
-                return True
+                    self.logger.error(f"❌ File tool claimed success but file doesn't exist: {full_path}")
+                    return False
             else:
                 self.logger.error(f"❌ Failed to write file {file_path}: {file_result.error}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Error creating file {file_path}: {e}")
+            self.logger.error(f"❌ Exception creating file {file_path}: {e}")
             return False
     
     # Template methods removed - all code generated via LLM
@@ -1573,8 +1565,7 @@ class ImplementationAgent(BaseAgent):
         files_created = []
         project_path = shared_state.get_project_state(task_data["project_id"]).project_path
         
-        # Parse code blocks from LLM response
-        # Expected format: ```dart:filepath\ncode\n```
+        # FIXED: Complete regex pattern with proper flags
         import re
         code_blocks = re.findall(r'```(?:dart|yaml):(.+?)\n(.*?)```', generated_code, re.DOTALL)
         
@@ -1591,10 +1582,63 @@ class ImplementationAgent(BaseAgent):
                     f.write(code.strip())
                 files_created.append(filepath)
                 self.logger.info(f"✅ Created file: {filepath}")
+                
+                # Register in shared state
+                try:
+                    project_id = task_data["project_id"]
+                    shared_state.add_file_to_project(project_id, filepath, code.strip())
+                    self.logger.info(f"📋 Registered file in shared state: {filepath}")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to register file in shared state: {e}")
+                    
             except Exception as e:
                 self.logger.error(f"Failed to create {filepath}: {e}")
         
+        # If no code blocks found, try JSON format
+        if not files_created:
+            files_created = await self._parse_json_format(generated_code, project_path, task_data["project_id"])
+        
+        # If still nothing, try fallback extraction
+        if not files_created:
+            files_created = await self._fallback_file_extraction(project_path, generated_code)
+        
         return files_created
+    
+    async def _parse_json_format(self, generated_code: str, project_path: str, project_id: str) -> List[str]:
+        """Parse JSON format responses from LLM."""
+        created_files = []
+        
+        try:
+            # Try to find JSON in the response
+            import json
+            import re
+            
+            # Look for JSON blocks
+            json_pattern = r'```json\s*(.*?)\s*```'
+            json_matches = re.findall(json_pattern, generated_code, re.DOTALL)
+            
+            for json_str in json_matches:
+                try:
+                    files_data = json.loads(json_str)
+                    files_list = files_data.get("files", [])
+                    
+                    for file_info in files_list:
+                        file_path = file_info.get("path", "")
+                        file_content = file_info.get("content", "")
+                        
+                        if file_path and file_content:
+                            success = await self._create_actual_file(project_path, file_path, file_content, project_id)
+                            if success:
+                                created_files.append(file_path)
+                                
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Invalid JSON in response: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.error(f"Error parsing JSON format: {e}")
+        
+        return created_files
     
     async def _implement_complex_features(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Implement complex features incrementally with full validation."""
@@ -2628,132 +2672,107 @@ class ImplementationAgent(BaseAgent):
             return False
     
     def _sanitize_dart_package_name(self, name: str) -> str:
-        """
-        Sanitize a project name to be a valid Dart package name.
-        
-        Dart package names must:
-        - Be lowercase
-        - Use underscores instead of spaces or dashes
-        - Start with a letter
-        - Only contain letters, numbers, and underscores
-        """
-        import re
-        
-        # Convert camelCase to snake_case first (before lowercasing)
-        # Handle sequences like "SimpleTestApp" -> "Simple_Test_App"
-        name = re.sub(r'([a-z])([A-Z])', r'\1_\2', name)
-        
-        # Convert to lowercase
-        name = name.lower()
-        
-        # Replace spaces, dashes, and other non-alphanumeric chars with underscores
-        name = re.sub(r'[^a-z0-9_]', '_', name)
-        
-        # Remove consecutive underscores
-        name = re.sub(r'_+', '_', name)
-        
-        # Remove leading/trailing underscores
-        name = name.strip('_')
-        
-        # Ensure it starts with a letter
-        if name and not name[0].isalpha():
-            name = 'app_' + name
-        
-        # Ensure it's not empty
-        if not name:
-            name = 'flutter_app'
-        
-        return name
+        """Wrapper for _normalize_flutter_package_name for backward compatibility."""
+        return self._normalize_flutter_package_name(name)
     
     async def _fallback_file_extraction(self, project_path: str, code_content: str) -> List[str]:
-        """Fallback method to extract files from code content when JSON parsing fails."""
+        """Enhanced fallback method to extract files from code content."""
         created_files = []
         
         try:
-            # Simple pattern matching for Dart files
             import re
             
-            # Look for file patterns like "// lib/path/file.dart" followed by code
-            file_pattern = r'(?://\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=//\s*lib/|$)'
-            matches = re.findall(file_pattern, code_content, re.MULTILINE | re.DOTALL)
+            # Multiple patterns to try
+            patterns = [
+                # Pattern 1: // lib/path/file.dart followed by code
+                r'(?://\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=//\s*lib/|$)',
+                # Pattern 2: File: lib/path/file.dart followed by code  
+                r'(?:File:\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=File:\s*lib/|$)',
+                # Pattern 3: **lib/path/file.dart** followed by code
+                r'(?:\*\*)(lib/[^\n]+\.dart)(?:\*\*)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=\*\*lib/|$)',
+            ]
             
-            for file_path, file_content in matches:
-                if file_content.strip():
-                    full_path = f"{project_path}/{file_path}"
-                    
-                    # Create directory
-                    import os
-                    dir_path = os.path.dirname(full_path)
-                    await self.execute_tool("file", operation="create_directory", directory=dir_path)
-                    
-                    # Write file
-                    result = await self.execute_tool(
-                        "file",
-                        operation="write", 
-                        file_path=full_path,
-                        content=file_content.strip()
-                    )
-                    
-                    if result.status == ToolStatus.SUCCESS:
-                        created_files.append(full_path)
-                        self.logger.info(f"✅ Created file via fallback: {file_path}")
-                        
-                        # 🔥 FIX: Register file in shared state so other agents know about it
-                        project_id = getattr(self, '_current_project_id', None)
-                        if not project_id:
-                            # Try to get project_id from shared state if not set
-                            current_project = shared_state.get_project_state()
-                            if current_project:
-                                project_id = current_project.project_id
-                        
-                        if project_id:
-                            try:
-                                shared_state.add_file_to_project(project_id, file_path, file_content.strip())
-                                self.logger.info(f"📋 Registered file in shared state: {file_path}")
-                            except Exception as e:
-                                self.logger.error(f"❌ Failed to register file in shared state: {e}")
-                        else:
-                            self.logger.warning(f"⚠️ Could not register file in shared state - no project_id available: {file_path}")
-            
+            for pattern in patterns:
+                matches = re.findall(pattern, code_content, re.MULTILINE | re.DOTALL)
+                
+                for file_path, file_content in matches:
+                    if file_content.strip():
+                        success = await self._create_actual_file(project_path, file_path, file_content.strip(), None)
+                        if success:
+                            created_files.append(file_path)
+                            self.logger.info(f"✅ Created file via fallback: {file_path}")
+                
+                if created_files:  # If we found files with this pattern, stop trying others
+                    break
+                            
         except Exception as e:
             self.logger.error(f"❌ Fallback file extraction failed: {e}")
         
         return created_files
 
     async def _ensure_flutter_project_exists(self, project_data: Dict[str, Any]) -> bool:
-        """Ensure Flutter project is initialized before generating custom code."""
-        project_id = project_data.get("project_id")
-        project_name = project_data.get("name", "flutter_app")
-        
-        # Convert project name to valid Flutter package name (lowercase, underscores)
-        flutter_package_name = self._normalize_flutter_package_name(project_name)
-        
-        # Determine project path
-        project_path = os.path.join("flutter_projects", f"{flutter_package_name}")
-        
-        # Check if Flutter project exists
-        pubspec_path = os.path.join(project_path, "pubspec.yaml")
-        if not os.path.exists(pubspec_path):
-            self.logger.info(f"🎯 Initializing Flutter project at {project_path}")
+        """Enhanced Flutter project initialization with better error handling."""
+        try:
+            project_id = project_data.get("project_id")
+            project_name = project_data.get("name", "flutter_app")
             
-            # Create Flutter project using tool
-            result = await self.execute_tool(
-                "flutter",
-                operation="create",
-                project_name=flutter_package_name,
-                project_path=project_path,
-                description=project_data.get("description", ""),
-                org="com.flutterswarm"
-            )
+            # Convert project name to valid Flutter package name
+            flutter_package_name = self._normalize_flutter_package_name(project_name)
             
-            if result.status != ToolStatus.SUCCESS:
-                self.logger.error(f"Failed to create Flutter project: {result.error}")
-                return False
+            # Determine project path
+            project_path = os.path.join("flutter_projects", flutter_package_name)
             
-            # Update project state with path
-            shared_state.update_project(project_id, project_path=project_path)
+            # Check if Flutter project exists
+            pubspec_path = os.path.join(project_path, "pubspec.yaml")
+            if not os.path.exists(pubspec_path):
+                self.logger.info(f"🎯 Initializing Flutter project at {project_path}")
+                
+                # Ensure flutter_projects directory exists
+                os.makedirs("flutter_projects", exist_ok=True)
+                
+                # Create Flutter project using tool
+                result = await self.execute_tool(
+                    "flutter",
+                    operation="create",
+                    project_name=flutter_package_name,
+                    project_path=project_path,
+                    description=project_data.get("description", "A Flutter application"),
+                    org="com.flutterswarm"
+                )
+                
+                if result.status != ToolStatus.SUCCESS:
+                    self.logger.error(f"❌ Failed to create Flutter project: {result.error}")
+                    # Try alternative creation method
+                    try:
+                        # Direct flutter create command
+                        cmd_result = await self.run_command(f"flutter create {flutter_package_name}", working_dir="flutter_projects")
+                        if cmd_result.status != ToolStatus.SUCCESS:
+                            self.logger.error(f"❌ Alternative flutter create also failed: {cmd_result.error}")
+                            return False
+                        else:
+                            self.logger.info(f"✅ Flutter project created using direct command")
+                    except Exception as e:
+                        self.logger.error(f"❌ Alternative creation method failed: {e}")
+                        return False
+                
+                # Verify project was created
+                if not os.path.exists(pubspec_path):
+                    self.logger.error(f"❌ pubspec.yaml not found after creation: {pubspec_path}")
+                    return False
+                
+                # Update project state with path
+                shared_state.update_project(project_id, project_path=project_path)
+                self.logger.info(f"✅ Flutter project initialized successfully at {project_path}")
+            else:
+                self.logger.info(f"📁 Flutter project already exists at {project_path}")
             
-        return True
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Exception in _ensure_flutter_project_exists: {e}")
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            return False
 
     def _normalize_flutter_package_name(self, name: str) -> str:
         """Convert any string to a valid Flutter package name."""
@@ -2780,5 +2799,25 @@ class ImplementationAgent(BaseAgent):
             name = "flutter_app"
             
         return name
+    
+    def _debug_llm_response(self, response: str, context: str = "") -> None:
+        """Debug helper to log LLM response format for troubleshooting."""
+        self.logger.debug(f"🔍 LLM Response Debug ({context}):")
+        self.logger.debug(f"Length: {len(response)} characters")
+        self.logger.debug(f"First 200 chars: {response[:200]}...")
+        
+        # Check for common patterns
+        import re
+        
+        code_blocks = re.findall(r'```(?:dart|yaml)', response)
+        json_blocks = re.findall(r'```json', response)
+        file_comments = re.findall(r'//\s*lib/', response)
+        
+        self.logger.debug(f"Found {len(code_blocks)} code blocks")
+        self.logger.debug(f"Found {len(json_blocks)} JSON blocks") 
+        self.logger.debug(f"Found {len(file_comments)} file comments")
+        
+        if not code_blocks and not json_blocks and not file_comments:
+            self.logger.warning(f"⚠️ No recognizable patterns found in LLM response")
 
 
