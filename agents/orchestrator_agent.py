@@ -146,9 +146,11 @@ class OrchestratorAgent(BaseAgent):
         
         if not project_id:
             # Project doesn't exist, create it
+            import uuid
             description = project_data["description"]
             requirements = project_data.get("requirements", [])
-            project_id = shared_state.create_project(name, description, requirements)
+            project_id = str(uuid.uuid4())
+            shared_state.create_project_with_id(project_id, name, description, requirements)
         
         # Start the workflow
         await self._initiate_project_workflow(project_id)

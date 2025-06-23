@@ -42,8 +42,9 @@ class FlutterTool(BaseTool):
         start_time = time.time()
         
         try:
-            # Removed 'create' operation for agent-driven workflow
-            if operation == "build":
+            if operation == "create":
+                return await self._create_project(**kwargs)
+            elif operation == "build":
                 return await self._build_project(**kwargs)
             elif operation == "test":
                 return await self._run_tests(**kwargs)
