@@ -5,9 +5,15 @@ agents to collaborate autonomously through the real-time awareness system.
 """
 from typing import Dict, List, Any, Optional, TypedDict, Type
 from datetime import datetime
-import logging
 import asyncio
 import uuid
+
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging, log_startup_banner
+from utils.function_logger import track_function, track_tool
+from utils.llm_logger import llm_logger
+from monitoring.agent_logger import agent_logger
+from utils.comprehensive_logging import get_logger
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
@@ -72,16 +78,23 @@ class AgentRegistry:
     Provides a factory pattern for creating and retrieving agents.
     """
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def __init__(self):
         self._agents: Dict[str, Any] = {}
         self._agent_classes: Dict[str, Type] = {}
-        self.logger = logging.getLogger("FlutterSwarm.AgentRegistry")
+        self.logger = get_logger("FlutterSwarm.AgentRegistry")
+        agent_logger.log_agent_status_change("system", AgentStatus.IDLE, AgentStatus.INITIALIZING, 
+                                            "AgentRegistry initialization")
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def register_agent_class(self, agent_type: str, agent_class: Type) -> None:
         """Register an agent class with the registry."""
         self._agent_classes[agent_type] = agent_class
         self.logger.info(f"Registered agent class: {agent_type}")
+        agent_logger.log_project_event("system", "agent_registration", 
+                                     f"Registered agent class: {agent_type}")
     
+    @track_function(agent_id="system", log_args=True, log_return=True)
     def get_agent(self, agent_type: str) -> Any:
         """Get or create an agent instance of the specified type."""
         # If agent already exists, return it
@@ -103,6 +116,7 @@ class AgentRegistry:
             self.logger.error(f"Unknown agent type: {agent_type}")
             return None
     
+    @track_function(agent_id="system", log_args=True, log_return=True)
     def get_all_agents(self) -> Dict[str, Any]:
         """Get all registered agent instances."""
         # Initialize any agents that haven't been created yet
@@ -121,9 +135,16 @@ class FlutterSwarmGovernance:
     Role: Project governance, quality assurance, and fallback coordination
     """
     
+    @track_function(agent_id="governance", log_args=True, log_return=False)
     def __init__(self, enable_monitoring: bool = True):
-        # Setup logging
-        self.logger = logging.getLogger(f"FlutterSwarm.Governance")
+        # Setup comprehensive logging first
+        try:
+            setup_info = setup_comprehensive_logging()
+            self.logger = get_logger(f"FlutterSwarm.Governance")
+            self.logger.info(f"🚀 Governance system initialized with comprehensive logging - Session: {setup_info['session_id']}")
+        except Exception as e:
+            self.logger = get_logger(f"FlutterSwarm.Governance")
+            self.logger.warning(f"Failed to initialize comprehensive logging: {e}")
         
         # Initialize agent registry
         self.agent_registry = AgentRegistry()
@@ -136,6 +157,9 @@ class FlutterSwarmGovernance:
         if initialized_count < 7:  # Expected number of agents
             self.logger.warning(f"⚠️ Only {initialized_count} agents initialized. Some agents may not be available.")
     
+        # Log governance system startup
+        agent_logger.log_agent_status_change("governance", AgentStatus.IDLE, AgentStatus.INITIALIZING, 
+                                            "FlutterSwarmGovernance initialization")
         
         # Note: Monitoring can be enabled if needed in the future
         self.enable_monitoring = enable_monitoring
@@ -632,10 +656,15 @@ class FlutterSwarmGovernance:
         return "implementation_oversight"
     
     # Governance Gate Implementations
+    @track_function(agent_id="governance", log_args=True, log_return=True)
     async def _project_initiation_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Project initiation governance gate - verify project setup and readiness."""
         gate_name = 'project_initiation'
         print(f"🏛️ Project Initiation Gate: {state['name']}")
+        
+        # Log governance gate entry
+        agent_logger.log_project_event(state['project_id'], "governance_gate", 
+                                     f"Entering {gate_name} gate", {"state": state.get('current_governance_phase')})
         
         # Reset gate timer
         self._reset_gate_timer(gate_name)
@@ -703,11 +732,16 @@ class FlutterSwarmGovernance:
         print(f"✅ Project initiation gate {'PASSED' if all_criteria_met else 'FAILED'}")
         return state
     
+    @track_function(agent_id="governance", log_args=True, log_return=True)
     async def _architecture_approval_gate(self, state: ProjectGovernanceState) -> ProjectGovernanceState:
         """Architecture approval governance gate - verify architecture quality and completeness."""
         print(f"🏗️ Architecture Approval Gate: {state['name']}")
         
         gate_name = 'architecture_approval'
+        
+        # Log governance gate entry
+        agent_logger.log_project_event(state['project_id'], "governance_gate", 
+                                     f"Entering {gate_name} gate", {"state": state.get('current_governance_phase')})
         
         # Circuit breaker check
         if self._check_circuit_breaker(gate_name):
@@ -1940,9 +1974,19 @@ class FlutterSwarmGovernance:
         self.logger.info(f"Created new project: {name} (ID: {project_id})")
         return project_id
 
+    @track_function(agent_id="governance", log_args=True, log_return=True)
     async def build_project(self, name: str, description: str, requirements: List[str], features: List[str] = None,
                            platforms: List[str] = None, ci_system: str = None, project_id: str = None) -> Dict[str, Any]:
         """Build the Flutter project. If the project does not exist, create it. Returns build result."""
+        # Log project build start
+        agent_logger.log_project_event("system", "project_build_start", 
+                                     f"Starting project build: {name}", {
+                                         "description": description,
+                                         "requirements": requirements,
+                                         "features": features,
+                                         "platforms": platforms
+                                     })
+        
         # Try to find existing project by name
         if not project_id:
             # Search shared_state for a project with this name
@@ -2050,6 +2094,7 @@ class FlutterSwarmGovernance:
 
 
 # Standalone function for running FlutterSwarm governance
+@track_function(agent_id="system", log_args=True, log_return=True)
 async def run_flutter_swarm_governance(
     name: str,
     description: str,
@@ -2061,6 +2106,10 @@ async def run_flutter_swarm_governance(
     """
     Standalone function to run FlutterSwarm governance workflow.
     """
+    # Log governance workflow start
+    agent_logger.log_project_event("system", "governance_workflow_start", 
+                                 f"Starting governance workflow for: {name}")
+    
     governance = FlutterSwarmGovernance()
     # Only call build_project (no create_project)
     result = await governance.build_project(

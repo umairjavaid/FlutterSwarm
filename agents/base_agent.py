@@ -21,7 +21,7 @@ from utils.path_utils import safe_join, ensure_absolute_path, get_absolute_proje
 from utils.exception_handler import with_exception_handling, log_and_suppress_exception, ensure_exception_handler_set
 import os
 from dotenv import load_dotenv
-import logging
+from utils.comprehensive_logging import get_logger
 from utils.function_logger import track_function
 
 load_dotenv()
@@ -87,22 +87,13 @@ class BaseAgent(ABC):
         self.logger.info(f"🤖 {self.agent_config.get('name', agent_id)} initialized with {len(self.tools.list_available_tools())} tools")
     
     def _setup_logging(self) -> None:
-        """Setup agent-specific logging."""
-        log_config = self._config_manager.get_log_config()
-        self.logger = logging.getLogger(f"flutterswarm.{self.agent_id}")
+        """Setup agent-specific logging using comprehensive logging system."""
+        # Use the comprehensive logging system instead of creating separate loggers
+        self.logger = get_logger(f"FlutterSwarm.Agent.{self.agent_id}")
         
-        if not self.logger.handlers:
-            # Create console handler if enabled
-            if log_config.get('console', True):
-                console_handler = logging.StreamHandler()
-                formatter = logging.Formatter(log_config.get('format', 
-                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-                console_handler.setFormatter(formatter)
-                self.logger.addHandler(console_handler)
-            
-            # Set log level
-            level = getattr(logging, log_config.get('level', 'INFO').upper())
-            self.logger.setLevel(level)
+        # The comprehensive logging system will handle all formatting and handlers
+        # No need to set up individual handlers here as they're managed centrally
+        self.logger.info(f"🤖 Agent {self.agent_id} logging initialized via comprehensive system")
     
     def _initialize_llm(self) -> ChatAnthropic:
         """Initialize the LangChain LLM with agent-specific configuration."""

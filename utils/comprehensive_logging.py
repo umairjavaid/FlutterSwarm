@@ -249,6 +249,19 @@ def generate_final_report():
     logger.info("=" * 80)
     logger.info("✅ COMPREHENSIVE LOGGING COMPLETE - All execution details preserved")
 
+def get_logger(name: str = "FlutterSwarm"):
+    """
+    Get a logger instance for the specified name.
+    This function provides a centralized way to get loggers in the comprehensive logging system.
+    
+    Args:
+        name: Logger name (defaults to "FlutterSwarm")
+        
+    Returns:
+        logging.Logger: Configured logger instance
+    """
+    return logging.getLogger(name)
+
 # Auto-initialization when module is imported
 if __name__ != "__main__":
     try:

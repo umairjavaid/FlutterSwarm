@@ -3,17 +3,22 @@ Global exception handling utilities for FlutterSwarm.
 """
 
 import asyncio
-import logging
 import traceback
 import sys
+import logging
 from typing import Optional, Callable, Any
 from datetime import datetime
 
+# Use comprehensive logging system with function tracking
+from utils.function_logger import track_function
+from monitoring.agent_logger import agent_logger
+from utils.comprehensive_logging import get_logger
 
 # Global logger for exception handling
-exception_logger = logging.getLogger('FlutterSwarm.Exceptions')
+exception_logger = get_logger('FlutterSwarm.Exceptions')
 
 
+@track_function(agent_id="system", log_args=True, log_return=False)
 def setup_global_exception_handler(logger: Optional[logging.Logger] = None) -> None:
     """
     Setup global exception handlers for both sync and async exceptions.
@@ -24,6 +29,10 @@ def setup_global_exception_handler(logger: Optional[logging.Logger] = None) -> N
     global exception_logger
     if logger:
         exception_logger = logger
+    
+    # Log the setup
+    agent_logger.log_project_event("system", "exception_handler_setup", 
+                                 "Global exception handlers configured")
     
     # Setup sync exception handler
     def handle_exception(exc_type, exc_value, exc_traceback):

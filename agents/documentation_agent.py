@@ -3,9 +3,11 @@ Documentation Agent - Generates comprehensive documentation for Flutter applicat
 """
 
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from utils.function_logger import track_function
 
 class DocumentationAgent(BaseAgent):
     """
@@ -20,6 +22,7 @@ class DocumentationAgent(BaseAgent):
             "architecture_docs", "deployment_guides", "testing_docs"
         ]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute documentation tasks."""
         try:

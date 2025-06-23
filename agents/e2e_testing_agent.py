@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from utils.function_logger import track_function
 
 
 class E2ETestingAgent(BaseAgent):

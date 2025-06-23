@@ -3,10 +3,12 @@ Security Agent - Analyzes and implements security best practices for Flutter app
 """
 
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 from tools import ToolResult, ToolStatus
+from utils.function_logger import track_function
 
 class SecurityAgent(BaseAgent):
     """
@@ -26,6 +28,7 @@ class SecurityAgent(BaseAgent):
             "improper_auth", "data_exposure", "man_in_middle"
         ]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute security tasks."""
         try:

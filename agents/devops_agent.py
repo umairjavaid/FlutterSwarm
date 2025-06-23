@@ -3,9 +3,11 @@ DevOps Agent - Manages deployment and CI/CD pipelines for Flutter applications.
 """
 
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from utils.function_logger import track_function
 
 class DevOpsAgent(BaseAgent):
     """
@@ -19,6 +21,7 @@ class DevOpsAgent(BaseAgent):
         self.ci_systems = ["github_actions", "gitlab_ci", "azure_pipelines", "bitbucket"]
         self.deployment_targets = ["app_store", "play_store", "firebase_hosting", "web_hosting"]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute DevOps tasks."""
         try:

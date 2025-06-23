@@ -56,6 +56,7 @@ class CircuitBreaker:
 
 class AgentStatus(Enum):
     IDLE = "idle"
+    INITIALIZING = "initializing" 
     WORKING = "working"
     WAITING = "waiting"
     COMPLETED = "completed"

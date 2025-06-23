@@ -11,9 +11,13 @@ from typing import Dict, Any, Optional, List, Union
 from pathlib import Path
 from dataclasses import dataclass
 from copy import deepcopy
-import logging
 
-logger = logging.getLogger(__name__)
+# Use comprehensive logging system with function tracking
+from utils.function_logger import track_function
+from utils.comprehensive_logging import get_logger
+
+# Use comprehensive logging system
+logger = get_logger("FlutterSwarm.Config")
 
 
 @dataclass
@@ -36,6 +40,7 @@ class ConfigManager:
     Handles loading, merging, and accessing configuration from multiple sources.
     """
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def __init__(self, 
                  config_dir: str = "config",
                  environment: Optional[str] = None,
@@ -63,6 +68,7 @@ class ConfigManager:
         # Load configurations
         self.reload()
     
+    @track_function(agent_id="system", log_args=False, log_return=False)
     def reload(self) -> None:
         """Reload all configuration files."""
         try:

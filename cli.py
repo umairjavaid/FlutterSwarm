@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import json
 import sys
-import logging
 import signal
 import atexit
 from datetime import datetime
@@ -25,13 +24,6 @@ from config.config_manager import get_config
 
 # Import task management utilities
 from utils.task_manager import task_manager, shutdown_all_tasks
-
-# Reduce log spam - only show INFO and above for agents
-logging.getLogger('flutterswarm').setLevel(logging.INFO)
-logging.getLogger('flutterswarm.security').setLevel(logging.WARNING)
-logging.getLogger('flutterswarm.performance').setLevel(logging.WARNING)
-logging.getLogger('flutterswarm.documentation').setLevel(logging.WARNING)
-logging.getLogger('flutterswarm.devops').setLevel(logging.WARNING)
 
 # Initialize configuration-aware console
 config = get_config()
@@ -620,6 +612,13 @@ class FlutterSwarmCLI:
 
 def main():
     """Main CLI entry point."""
+    # Initialize comprehensive logging first
+    try:
+        setup_info = setup_comprehensive_logging()
+        print(f"✅ Comprehensive logging initialized - Session ID: {setup_info['session_id']}")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not initialize comprehensive logging: {e}")
+    
     parser = argparse.ArgumentParser(
         description="FlutterSwarm - Multi-Agent Flutter Development System",
         formatter_class=argparse.RawDescriptionHelpFormatter,

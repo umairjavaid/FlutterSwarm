@@ -3,9 +3,11 @@ Performance Agent - Optimizes code and monitors performance for Flutter applicat
 """
 
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from utils.function_logger import track_function
 
 class PerformanceAgent(BaseAgent):
     """
@@ -25,6 +27,7 @@ class PerformanceAgent(BaseAgent):
             "app_size", "startup_time", "battery_usage"
         ]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute performance tasks."""
         try:

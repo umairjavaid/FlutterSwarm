@@ -5,6 +5,11 @@ Tool manager for organizing and executing tools for FlutterSwarm agents.
 import asyncio
 import os
 from typing import Dict, List, Any, Optional, Type
+
+# Import comprehensive logging support
+from utils.function_logger import track_function, track_tool
+from monitoring.agent_logger import agent_logger
+
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from .terminal_tool import TerminalTool
 from .file_tool import FileTool
@@ -22,11 +27,17 @@ class ToolManager:
     Provides a centralized way to register, discover, and execute tools.
     """
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def __init__(self, project_directory: Optional[str] = None):
         self.project_directory = project_directory
         self.tools: Dict[str, BaseTool] = {}
         self._initialize_default_tools()
+        
+        # Log tool manager initialization
+        agent_logger.log_project_event("system", "tool_manager_init", 
+                                     f"ToolManager initialized with {len(self.tools)} tools")
     
+    @track_function(agent_id="system", log_args=False, log_return=False)
     def _initialize_default_tools(self):
         """Initialize default tools available to all agents."""
         self.tools = {
@@ -66,9 +77,10 @@ class ToolManager:
             }
         return None
     
+    @track_function(agent_id="system", log_args=True, log_return=True)
     async def execute_tool(self, tool_name: str, operation: str = None, **kwargs) -> ToolResult:
         """
-        Execute a tool operation.
+        Execute a tool operation with comprehensive logging.
         
         Args:
             tool_name: Name of the tool to execute
@@ -81,21 +93,42 @@ class ToolManager:
         tool = self.tools.get(tool_name)
         
         if not tool:
+            error_msg = f"Tool '{tool_name}' not found"
+            agent_logger.log_tool_usage("system", tool_name, operation or "unknown", "error", 
+                                       error=error_msg)
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",
-                error=f"Tool '{tool_name}' not found"
+                error=error_msg
             )
         
+        import time
+        start_time = time.time()
+        
         try:
+            # Log tool usage start
+            agent_logger.log_tool_usage("system", tool_name, operation or "execute", "started",
+                                       input_data=kwargs)
+            
             if operation:
                 result = await tool.execute_with_timeout(operation=operation, **kwargs)
             else:
                 result = await tool.execute_with_timeout(**kwargs)
             
+            # Log tool usage completion
+            execution_time = time.time() - start_time
+            agent_logger.log_tool_usage("system", tool_name, operation or "execute", 
+                                       result.status.value, execution_time=execution_time,
+                                       input_data=kwargs, output_data={"output": result.output})
+            
             return result
             
         except Exception as e:
+            execution_time = time.time() - start_time
+            error_msg = str(e)
+            agent_logger.log_tool_usage("system", tool_name, operation or "execute", "error",
+                                       execution_time=execution_time, input_data=kwargs, 
+                                       error=error_msg)
             return ToolResult(
                 status=ToolStatus.ERROR,
                 output="",

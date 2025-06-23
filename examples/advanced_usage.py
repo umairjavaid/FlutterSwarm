@@ -4,6 +4,10 @@ Advanced FlutterSwarm examples demonstrating complex scenarios.
 """
 
 import asyncio
+
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging, log_startup_banner
+
 from flutter_swarm import FlutterSwarm
 
 async def example_enterprise_app():
@@ -311,6 +315,14 @@ async def example_performance_optimization():
 
 async def main():
     """Run advanced examples."""
+    # Initialize comprehensive logging
+    try:
+        setup_info = setup_comprehensive_logging()
+        log_startup_banner()
+        print(f"✅ Comprehensive logging initialized - Session ID: {setup_info['session_id']}")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not initialize comprehensive logging: {e}")
+    
     print("🚀 FlutterSwarm Advanced Examples")
     print("These examples demonstrate complex, real-world scenarios.\n")
     

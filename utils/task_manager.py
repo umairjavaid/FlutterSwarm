@@ -7,7 +7,11 @@ import asyncio
 import time
 from typing import Dict, Any, Callable, Awaitable, Optional
 from datetime import datetime, timedelta
-import logging
+
+# Use comprehensive logging system with function tracking
+from utils.function_logger import track_function
+from monitoring.agent_logger import agent_logger
+from utils.comprehensive_logging import get_logger
 
 class TaskManager:
     """
@@ -15,10 +19,11 @@ class TaskManager:
     Prevents infinite loops and long-running operations from blocking the system.
     """
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def __init__(self):
         self.running_tasks: Dict[str, asyncio.Task] = {}
         self.task_history: Dict[str, Dict[str, Any]] = {}
-        self.logger = logging.getLogger("FlutterSwarm.TaskManager")
+        self.logger = get_logger("FlutterSwarm.TaskManager")
         
         # Task timeouts by type (in seconds)
         self.task_timeouts = {
@@ -39,6 +44,11 @@ class TaskManager:
         self.max_retries = 3
         self.retry_delay = 2  # seconds
         
+        # Log task manager initialization
+        agent_logger.log_project_event("system", "task_manager_init", 
+                                     "TaskManager initialized with timeout handling")
+        
+    @track_function(agent_id="system", log_args=True, log_return=True)
     async def run_task_with_timeout(self, task_name: str, coro: Awaitable, 
                                    timeout: Optional[int] = None,
                                    task_type: str = 'default') -> Any:

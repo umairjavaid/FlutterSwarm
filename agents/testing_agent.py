@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
+from utils.function_logger import track_function
 
 # Import Timer safely
 try:
@@ -31,6 +32,7 @@ class TestingAgent(BaseAgent):
         self.test_types = ["unit", "widget", "integration", "golden"]
         self.testing_frameworks = ["flutter_test", "mockito", "bloc_test", "patrol"]
         
+    @track_function(log_args=True, log_return=True)
     async def execute_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute testing tasks."""
         try:

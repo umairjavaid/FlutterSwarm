@@ -8,12 +8,17 @@ import time
 import threading
 from datetime import datetime
 from typing import Dict, List, Any
-import logging
+
+# Use comprehensive logging system with function tracking
+from utils.function_logger import track_function
+from monitoring.agent_logger import agent_logger
+from utils.comprehensive_logging import get_logger
 
 
 class FileCreationMonitor:
     """Monitor and track file creation during FlutterSwarm execution."""
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def __init__(self, watch_directory: str = "flutter_projects"):
         self.watch_directory = watch_directory
         self.created_files: List[Dict[str, Any]] = []
@@ -22,13 +27,16 @@ class FileCreationMonitor:
         self.monitoring = False
         
         # Setup logging
-        self.logger = logging.getLogger('FlutterSwarm.FileMonitor')
+        self.logger = get_logger('FlutterSwarm.FileMonitor')
         
         # Ensure watch directory exists
         os.makedirs(watch_directory, exist_ok=True)
         
         self.logger.info(f"📂 File monitor initialized for: {watch_directory}")
+        agent_logger.log_project_event("system", "file_monitor_init", 
+                                     f"File monitor initialized for: {watch_directory}")
     
+    @track_function(agent_id="system", log_args=True, log_return=False)
     def record_file_creation(self, file_path: str, content_length: int = 0):
         """Manually record a file creation."""
         if os.path.exists(file_path):

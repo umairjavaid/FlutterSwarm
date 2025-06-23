@@ -24,6 +24,14 @@ if __name__ == "__main__":
     import asyncio
     
     async def main():
+        # Initialize comprehensive logging
+        try:
+            setup_info = setup_comprehensive_logging()
+            log_startup_banner()
+            print(f"✅ Comprehensive logging initialized - Session ID: {setup_info['session_id']}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not initialize comprehensive logging: {e}")
+        
         # Create LangGraph FlutterSwarm instance
         swarm = FlutterSwarm()
         

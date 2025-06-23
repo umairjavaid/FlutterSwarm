@@ -10,6 +10,9 @@ import os
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Initialize comprehensive logging first
+from utils.comprehensive_logging import setup_comprehensive_logging, log_startup_banner
+
 from flutter_swarm import FlutterSwarm as Swarm
 from config.config_manager import get_config
 
@@ -169,6 +172,14 @@ def print_project_status(status):
 
 async def main():
     """Main function to run the music app creation."""
+    # Initialize comprehensive logging
+    try:
+        setup_info = setup_comprehensive_logging()
+        log_startup_banner()
+        print(f"✅ Comprehensive logging initialized - Session ID: {setup_info['session_id']}")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not initialize comprehensive logging: {e}")
+    
     print("🎵 Welcome to Swarm Music App Creator!")
     print("This will create a comprehensive music streaming application using AI agents with quality assurance.\n")
     
