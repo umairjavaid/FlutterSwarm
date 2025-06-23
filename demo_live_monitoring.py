@@ -82,7 +82,11 @@ class MonitoringDemo:
         try:
             # Build the project (this will trigger all agent activities)
             result = await self.swarm.build_project(
-                project_id, 
+                project_id=project_id,
+                name="MonitoringDemo",
+                description="A demo Flutter app to showcase live monitoring",
+                requirements=["user authentication", "data persistence", "offline mode"],
+                features=["auth", "database", "offline"],
                 platforms=["android", "ios"]
             )
             

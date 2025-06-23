@@ -1927,42 +1927,33 @@ class FlutterSwarmGovernance:
         return unblocking_actions
     
     # Add new methods for project creation and building
-    def create_project(self, name: str, description: str, requirements: List[str], features: List[str] = None) -> str:
-        """Create a new Flutter project with the given details."""
+    def _create_project(self, name: str, description: str, requirements: List[str], features: List[str] = None) -> str:
+        """(INTERNAL) Create a new Flutter project with the given details. Use only inside build_project if needed."""
         import uuid
-        
-        # Generate a unique project ID
         project_id = str(uuid.uuid4())
-        
-        # Create initial project state
-        project_state = {
-            "project_id": project_id,
-            "name": name,
-            "description": description,
-            "requirements": requirements,
-            "features": features or [],
-            "current_phase": "initiation",
-            "progress": 0.0,
-            "files_created": 0
-        }
-        
-        # Initialize project in shared state
         shared_state.create_project_with_id(
             project_id,
             name,
             description,
             requirements
         )
-        
         self.logger.info(f"Created new project: {name} (ID: {project_id})")
         return project_id
-    
-    async def build_project(self, project_id: str, name: str, description: str, 
-                           requirements: List[str], features: List[str] = None,
-                           platforms: List[str] = None, ci_system: str = None) -> Dict[str, Any]:
-        """Build the Flutter project using the governance system."""
+
+    async def build_project(self, name: str, description: str, requirements: List[str], features: List[str] = None,
+                           platforms: List[str] = None, ci_system: str = None, project_id: str = None) -> Dict[str, Any]:
+        """Build the Flutter project. If the project does not exist, create it. Returns build result."""
+        # Try to find existing project by name
+        if not project_id:
+            # Search shared_state for a project with this name
+            for pid, project in getattr(shared_state, '_projects', {}).items():
+                if getattr(project, 'name', None) == name:
+                    project_id = pid
+                    break
+        if not project_id:
+            project_id = self._create_project(name, description, requirements, features)
+
         self.logger.info(f"Starting build for project: {name} (ID: {project_id})")
-        
         # Initialize project governance state
         governance_state = ProjectGovernanceState(
             project_id=project_id,
@@ -2069,32 +2060,10 @@ async def run_flutter_swarm_governance(
 ) -> Dict[str, Any]:
     """
     Standalone function to run FlutterSwarm governance workflow.
-    
-    Args:
-        name: Project name
-        description: Project description
-        requirements: List of project requirements
-        features: Optional list of features to implement
-        platforms: Optional list of target platforms
-        ci_system: Optional CI/CD system to configure
-        
-    Returns:
-        Dictionary with build results
     """
-    # Create a FlutterSwarm governance instance
     governance = FlutterSwarmGovernance()
-    
-    # Create a new project
-    project_id = governance.create_project(
-        name=name,
-        description=description,
-        requirements=requirements,
-        features=features or []
-    )
-    
-    # Build the project using the governance workflow
+    # Only call build_project (no create_project)
     result = await governance.build_project(
-        project_id=project_id,
         name=name,
         description=description,
         requirements=requirements,
@@ -2102,5 +2071,4 @@ async def run_flutter_swarm_governance(
         platforms=platforms or ["android", "ios"],
         ci_system=ci_system
     )
-    
     return result

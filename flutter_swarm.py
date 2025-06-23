@@ -24,29 +24,14 @@ if __name__ == "__main__":
         # Create LangGraph FlutterSwarm instance
         swarm = FlutterSwarm()
         
-        # Create a sample project
-        project_id = swarm.create_project(
+        # Build a sample project (creation is handled automatically)
+        result = await swarm.build_project(
             name="TodoApp",
             description="A Flutter todo application with user authentication",
             requirements=[
                 "User authentication",
                 "Todo CRUD operations", 
                 "Offline synchronization",
-                "Push notifications",
-                "Dark mode support"
-            ],
-            features=["auth", "crud", "offline_sync", "notifications"]
-        )
-        
-        # Build the project using LangGraph workflow
-        result = await swarm.build_project(
-            project_id=project_id,
-            name="TodoApp",
-            description="A Flutter todo application with user authentication",
-            requirements=[
-                "User authentication",
-                "Todo CRUD operations", 
-                "Offline synchronization", 
                 "Push notifications",
                 "Dark mode support"
             ],

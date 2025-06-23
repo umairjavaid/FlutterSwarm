@@ -43,62 +43,11 @@ async def create_music_app():
     max_playlist_size = music_config.get('max_playlist_size', 1000)
     offline_storage = music_config.get('offline_storage_limit', '10GB')
     
-    # Create a comprehensive music app project
-    project_id = swarm.create_project(
-        name="music_stream_pro",
-        description="A comprehensive music streaming application with playlists, offline downloads, social features, and advanced audio controls",
-        requirements=[
-            "Music streaming from online sources",
-            "Local music library management", 
-            "Playlist creation and management",
-            "Offline music downloads and caching",
-            "Audio controls with equalizer",
-            "User authentication and profiles",
-            "Social features - sharing and following",
-            "Music discovery and recommendations",
-            "Search functionality with filters",
-            "Background playback support",
-            "Lyrics display integration",
-            "Podcast support",
-            "Sleep timer and alarm integration",
-            "Cross-device synchronization",
-            f"High-quality audio streaming ({', '.join(streaming_quality)})",
-            "Dark/light theme with custom colors",
-            "Accessibility features for visually impaired",
-            "Gesture controls and voice commands",
-            "Integration with external services (Spotify, Apple Music APIs)",
-            "Push notifications for new releases and recommendations",
-            f"Playlist size limit: {max_playlist_size} songs",
-            f"Offline storage limit: {offline_storage}"
-        ],
-        features=[
-            "music_streaming", "playlist_management", "offline_downloads", 
-            "audio_controls", "user_authentication", "social_features",
-            "music_discovery", "search", "background_playback", "lyrics",
-            "podcasts", "sleep_timer", "sync", "high_quality_audio",
-            "theming", "accessibility", "gesture_controls", "voice_commands",
-            "external_apis", "push_notifications"
-        ]
-    )
-    
-    print(f"\n📋 Music app project created with ID: {project_id}")
-    
-    # Start the swarm system with QA monitoring
-    print("\n🚀 Starting Swarm agent system with Quality Assurance...")
-    
-    # Start building the project with continuous QA monitoring
-    print("\n🏗️  Starting music app build process with quality monitoring...")
-    print("📱 Target platforms: Android, iOS, Web, Desktop")
-    
+    # Build the music app project (creation is handled automatically)
     try:
-        # Build the project with QA validation
-        print("🔍 Quality Assurance will monitor all outputs throughout the build...")
-        
-        # Build the project with extended timeout for complex music app
         result = await asyncio.wait_for(
             swarm.build_project(
-                project_id=project_id,
-                name="MusicStreamPro",
+                name="music_stream_pro",
                 description="A comprehensive music streaming application with playlists, offline downloads, social features, and advanced audio controls",
                 requirements=[
                     "Music streaming from online sources",
@@ -136,21 +85,19 @@ async def create_music_app():
             ),
             timeout=300  # 5 minutes
         )
+        print(f"\n🎉 Build completed successfully! Project ID: {result.get('project_id', 'unknown')}")
         await print_build_results_with_qa(result)
-
     except asyncio.TimeoutError:
         print("\n⌛️ Build process timed out after 5 minutes.")
         print("This could be due to a complex project or an unexpected issue.")
         print("Please check the logs for more details.")
         # Optionally, trigger a fallback or analysis
-        project_status = swarm.get_project_status(project_id)
-        if project_status:
-            await analyze_build_error(swarm, project_id, f"Timeout occurred at phase: {project_status.get('project', {}).get('current_phase', 'unknown')}")
-        
+        # project_status = swarm.get_project_status(project_id)  # Not needed anymore
+        # if project_status:
+        #     await analyze_build_error(swarm, project_id, f"Timeout occurred at phase: {project_status.get('project', {}).get('current_phase', 'unknown')}")
     except Exception as e:
         print(f"\n❌ Error during build process: {e}")
-        await analyze_build_error(swarm, project_id, str(e))
-    
+        # await analyze_build_error(swarm, project_id, str(e))
     finally:
         print("\n✅ Music app build process completed")
         print("📋 Check the flutter_projects directory for generated files")

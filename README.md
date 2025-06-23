@@ -63,15 +63,16 @@ from flutter_swarm import FlutterSwarm
 # Initialize the swarm
 swarm = FlutterSwarm()
 
-# Create a new Flutter project (100% LLM-generated code)
-project = swarm.create_project(
+# Build a new Flutter project (100% LLM-generated code)
+result = await swarm.build_project(
     name="my_flutter_app",
     description="A todo app with user authentication",
+    requirements=["User authentication", "Todo CRUD operations", "Offline sync"],
     features=["auth", "crud", "offline_sync"]
 )
 
-# Let the agents collaborate to build the project using LLMs
-result = await swarm.build_project(project)
+# The result contains the project_id and build status
+print(result)
 ```
 
 ## Validation

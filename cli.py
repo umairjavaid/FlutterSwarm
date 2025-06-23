@@ -82,59 +82,62 @@ class FlutterSwarmCLI:
         self.display_config = self.config.get_display_config()
         self.messages = self.config.get_messages_config()
         
-    async def create_project(self, args):
-        """Create a new Flutter project."""
-        create_msg = self.messages.get('project_creating', '� Creating new Flutter project...')
-        console.print(f"🐝 [bold blue]{create_msg}[/bold blue]")
-        
+    async def build_project(self, args):
+        """Build a new Flutter project (creation is handled automatically)."""
+        build_msg = self.messages.get('building', '🔨 Starting build process...')
+        console.print(f"\n🏗️  [bold blue]{build_msg}[/bold blue]")
         # Parse requirements if provided
         requirements = []
         if args.requirements:
             requirements = [req.strip() for req in args.requirements.split(',')]
-        
-        # Parse features if provided
         features = []
         if args.features:
             features = [feat.strip() for feat in args.features.split(',')]
-        
         self.swarm = FlutterSwarm()
-        
-        project_id = self.swarm.create_project(
+        result = await self.swarm.build_project(
             name=args.name,
             description=args.description,
             requirements=requirements,
-            features=features
+            features=features,
+            platforms=args.platforms.split(',') if args.platforms else ["android", "ios"]
         )
-        
-        success_msg = self.messages.get('build_complete', '✅ Project created successfully!')
+        success_msg = self.messages.get('build_complete', '✅ Project built successfully!')
         console.print(f"[green]{success_msg}[/green]")
-        
-        # Use configurable ID length for display
         id_length = self.display_config.get('project_id_length', 8)
-        displayed_id = project_id[:id_length] + '...' if len(project_id) > id_length else project_id
+        displayed_id = result.get('project_id', 'unknown')[:id_length]
         console.print(f"📋 Project ID: [bold]{displayed_id}[/bold]")
-        
-        if args.build:
-            building_msg = self.messages.get('building', '🔨 Starting build process...')
-            console.print(f"\n🏗️  [bold blue]{building_msg}[/bold blue]")
-            await self.build_project_with_progress(project_id, args.platforms.split(',') if args.platforms else None)
+        self.display_build_results(result)
     
     async def build_project_with_progress(self, project_id: str, platforms=None):
         """Build project with live progress display and monitoring."""
         # Import monitoring here to avoid circular imports
         from monitoring import live_display
+        from shared.state import shared_state
         
         console.print("\n🔍 [bold green]Starting live monitoring...[/bold green]")
         console.print("📊 You can see real-time agent activities below:")
         console.print("💡 [dim]Press Ctrl+C to stop (monitoring will continue in background)[/dim]\n")
         
+        # Get project details from shared state
+        project_state = shared_state.get_project_state(project_id)
+        if not project_state:
+            console.print("[red]❌ Project not found. Cannot build.[/red]")
+            return
+        
         try:
             # Start live display in parallel with build
             live_display.start()
             
-            # Start build
+            # Start build with correct parameters
             build_task = asyncio.create_task(
-                self.swarm.build_project(project_id, platforms)
+                self.swarm.build_project(
+                    project_id=project_id,
+                    name=project_state.name,
+                    description=project_state.description,
+                    requirements=project_state.requirements,
+                    features=[],  # Features not stored in current ProjectState
+                    platforms=platforms
+                )
             )
             
             # Wait for build to complete or user interruption
@@ -612,7 +615,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  flutter-swarm create MyApp "A todo application" --build
+  flutter-swarm build MyApp "A todo application"
   flutter-swarm status --project-id abc-123
   flutter-swarm interactive
         """
@@ -620,14 +623,13 @@ Examples:
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    # Create command
-    create_parser = subparsers.add_parser('create', help='Create a new Flutter project')
-    create_parser.add_argument('name', help='Project name')
-    create_parser.add_argument('description', help='Project description')
-    create_parser.add_argument('--requirements', help='Comma-separated list of requirements')
-    create_parser.add_argument('--features', help='Comma-separated list of features')
-    create_parser.add_argument('--platforms', default='android,ios', help='Target platforms')
-    create_parser.add_argument('--build', action='store_true', help='Build project after creation')
+    # Build command (unified)
+    build_parser = subparsers.add_parser('build', help='Build a new Flutter project (creation is automatic)')
+    build_parser.add_argument('name', help='Project name')
+    build_parser.add_argument('description', help='Project description')
+    build_parser.add_argument('--requirements', help='Comma-separated list of requirements')
+    build_parser.add_argument('--features', help='Comma-separated list of features')
+    build_parser.add_argument('--platforms', default='android,ios', help='Target platforms')
     
     # Status command
     status_parser = subparsers.add_parser('status', help='Show project or agent status')
@@ -657,8 +659,8 @@ Examples:
     cli = FlutterSwarmCLI()
     
     try:
-        if args.command == 'create':
-            asyncio.run(cli.create_project(args))
+        if args.command == 'build':
+            asyncio.run(cli.build_project(args))
         elif args.command == 'status':
             asyncio.run(cli.status(args))
         elif args.command == 'interactive':
