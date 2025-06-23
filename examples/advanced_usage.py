@@ -14,7 +14,7 @@ async def example_enterprise_app():
     swarm = FlutterSwarm()
     
     # Complex enterprise app
-    project_id = swarm.create_project(
+    result = await swarm.build_project(
         name="EnterpriseHub",
         description="Enterprise-grade application with microservices architecture, advanced security, and scalability",
         requirements=[
@@ -39,9 +39,10 @@ async def example_enterprise_app():
             "encryption", "audit", "multitenancy", "analytics", 
             "rate_limiting", "cicd", "monitoring", "disaster_recovery",
             "i18n", "accessibility"
-        ]
+        ],
+        platforms=["android", "ios", "web"]
     )
-    
+    project_id = result.get('project_id', 'unknown')
     print(f"📋 Enterprise project created: {project_id}")
     
     # Start swarm
@@ -86,7 +87,7 @@ async def example_gaming_app():
     
     swarm = FlutterSwarm()
     
-    project_id = swarm.create_project(
+    result = await swarm.build_project(
         name="MultiplayerArena",
         description="Real-time multiplayer gaming application with advanced graphics and social features",
         requirements=[
@@ -111,9 +112,10 @@ async def example_gaming_app():
             "physics", "iap", "matchmaking", "leaderboards", "chat",
             "voice", "replay", "anticheat", "cloud_save", "social",
             "tournaments"
-        ]
+        ],
+        platforms=["android", "ios", "web"]
     )
-    
+    project_id = result.get('project_id', 'unknown')
     print(f"🎮 Gaming project created: {project_id}")
     
     # Demonstrate agent specialization
@@ -161,7 +163,7 @@ async def example_healthcare_app():
     
     swarm = FlutterSwarm()
     
-    project_id = swarm.create_project(
+    result = await swarm.build_project(
         name="HealthVault",
         description="HIPAA-compliant healthcare application with telemedicine and patient management features",
         requirements=[
@@ -186,9 +188,10 @@ async def example_healthcare_app():
             "scheduling", "patient_portal", "provider_dashboard", 
             "medical_devices", "clinical_support", "billing", 
             "reporting", "backup", "emergency_access"
-        ]
+        ],
+        platforms=["android", "ios", "web"]
     )
-    
+    project_id = result.get('project_id', 'unknown')
     print(f"🏥 Healthcare project created: {project_id}")
     
     # Focus on security and compliance
@@ -231,7 +234,7 @@ async def example_performance_optimization():
     swarm = FlutterSwarm()
     
     # Create a performance-critical app
-    project_id = swarm.create_project(
+    result = await swarm.build_project(
         name="HighPerformanceApp",
         description="Performance-critical application requiring 60fps, low memory usage, and fast startup",
         requirements=[
@@ -252,9 +255,10 @@ async def example_performance_optimization():
             "performance", "optimization", "animations", "image_caching",
             "list_optimization", "background_processing", "battery_optimization",
             "network_optimization", "code_splitting", "asset_optimization"
-        ]
+        ],
+        platforms=["android", "ios", "web"]
     )
-    
+    project_id = result.get('project_id', 'unknown')
     print(f"⚡ Performance-focused project created: {project_id}")
     
     swarm_task = asyncio.create_task(swarm.start())
