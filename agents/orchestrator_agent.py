@@ -180,13 +180,18 @@ class OrchestratorAgent(BaseAgent):
         if not project:
             return
         
+        # Defensively access project attributes
+        project_name = getattr(project, 'name', 'Unknown Project')
+        project_description = getattr(project, 'description', 'No description available')
+        project_requirements = getattr(project, 'requirements', [])
+        
         # Start with planning phase
         planning_prompt = f"""
         Analyze the project requirements and create a comprehensive plan:
         
-        Project: {project.name}
-        Description: {project.description}
-        Requirements: {project.requirements}
+        Project: {project_name}
+        Description: {project_description}
+        Requirements: {project_requirements}
         
         Create a detailed project plan including:
         1. Architecture decisions needed
@@ -227,7 +232,7 @@ class OrchestratorAgent(BaseAgent):
                     "task_description": "design_flutter_architecture",
                     "task_data": {
                         "project_id": project_id,
-                        "requirements": project.requirements,
+                        "requirements": getattr(project, 'requirements', []),
                         "planning_output": plan
                     }
                 },
@@ -236,7 +241,8 @@ class OrchestratorAgent(BaseAgent):
         else:
             self.logger.error(f"❌ Project structure setup failed or timed out. Skipping architecture design.")
         
-        print(f"🎯 Orchestrator: Initiated workflow for project {project.name}")
+        print(f"🎯 Orchestrator: Initiated workflow for project {getattr(project, 'name', 'Unknown Project')}")
+    
     
     async def _coordinate_phase(self, phase_data: Dict[str, Any]) -> Dict[str, Any]:
         """Coordinate a specific development phase."""

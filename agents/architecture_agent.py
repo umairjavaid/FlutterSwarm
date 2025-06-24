@@ -119,43 +119,105 @@ class ArchitectureAgent(BaseAgent):
             project_name = task_data.get("name", "Unknown Project")
             project_description = task_data.get("description", "No description available")
         else:
-            project_name = project.name
-            project_description = project.description
+            # Defensively access project state, with fallbacks to task_data
+            project_name = getattr(project, 'name', task_data.get('name', 'Unknown Project'))
+            project_description = getattr(project, 'description', task_data.get('description', 'No description available'))
             self.logger.info(f"[ARCH] Project found: {project_name} - {project_description}")
-            self.logger.info(f"[ARCH] Existing architecture decisions: {getattr(project, 'architecture_decisions', None)}")
+            self.logger.info(f"[ARCH] Existing architecture decisions: {getattr(project, 'architecture_decisions', [])}")
 
         architecture_prompt = f"""
-        Design a comprehensive Flutter application architecture for:
+        Design a comprehensive Flutter application architecture specifically for:
+        
+        ===== PROJECT DETAILS =====
         Project: {project_name}
         Description: {project_description}
-        Requirements: {requirements}
-        Planning Context: {planning_output}
-        Create a detailed architecture that includes:
-        1. **Overall Architecture Style**: Choose and justify (Clean, Layered, Hexagonal, etc.)
-        2. **State Management**: Recommend the best solution (BLoC, Provider, Riverpod, etc.)
-           - Justify your choice based on app complexity and team requirements
-        3. **Project Structure**: Define folder organization
-           - lib/
-             - core/
-             - features/
-             - shared/
-             - etc.
-        4. **Data Layer Architecture**:
-           - Repository pattern implementation
-           - Data sources (remote, local)
-           - Models and DTOs
-           - Caching strategy
-        5. **Dependency Injection**: Choose DI approach (get_it, injectable, etc.)
-        6. **Navigation**: Routing strategy (GoRouter, Navigator 2.0, etc.)
-        7. **Error Handling**: Global error handling strategy
-        8. **Networking**: HTTP client setup and configuration
-        9. **Local Storage**: Database choice (Hive, SQLite, Isar, etc.)
-        10. **Testing Strategy**: Unit, widget, and integration test architecture
-        11. **Performance Considerations**: Lazy loading, caching, optimization
-        12. **Security Architecture**: Authentication, data protection, secure storage
-        Provide specific package recommendations and code structure examples.
-        Consider scalability, maintainability, and testability.
-        """
+        
+        ===== UNIQUE REQUIREMENTS =====
+        {chr(10).join([f"• {req}" for req in requirements])}
+        
+        ===== PLANNING CONTEXT =====
+        {planning_output}
+        
+        ===== ARCHITECTURE DESIGN TASK =====
+        Create a UNIQUE and TAILORED architecture that specifically addresses the above requirements.
+        Do NOT create a generic Flutter app - this must be customized for the specific project needs.
+        
+        Your architecture must include:
+        
+        1. **Domain-Specific Architecture Style**: 
+           - Choose based on the specific project requirements (not just Clean Architecture by default)
+           - Justify your choice based on the unique needs of THIS specific project
+           - Consider: Clean, Layered, Hexagonal, Event-Driven, Microservices-inspired, etc.
+        
+        2. **Requirement-Driven State Management**: 
+           - Analyze the specific requirements to choose the best state management solution
+           - Consider complexity, real-time needs, offline requirements, performance needs
+           - Options: BLoC, Provider, Riverpod, GetX, MobX, Redux
+           - JUSTIFY your choice based on the specific project requirements
+        
+        3. **Custom Project Structure** for {project_name}:
+           - Design folder organization specifically for this project's domain
+           - Include domain-specific feature folders
+           - Consider the specific requirements when organizing code
+           ```
+           lib/
+           ├── core/
+           │   ├── constants/
+           │   ├── errors/
+           │   ├── utils/
+           │   └── themes/
+           ├── features/
+           │   ├── [specific feature 1]/
+           │   ├── [specific feature 2]/
+           │   └── [specific feature 3]/
+           ├── shared/
+           │   ├── data/
+           │   ├── domain/
+           │   └── presentation/
+           └── main.dart
+           ```
+        
+        4. **Requirement-Specific Data Architecture**:
+           - Repository patterns that match the data needs
+           - Data sources (remote APIs, local databases, caching) based on requirements
+           - Models and DTOs specific to this project's domain
+           - Caching strategy based on offline/online requirements
+        
+        5. **Technology Stack Selection** based on specific needs:
+           - Dependency Injection: get_it, injectable, provider-based
+           - Navigation: GoRouter, Navigator 2.0, Auto Route (based on complexity)
+           - Networking: Dio, http, GraphQL (based on API requirements)
+           - Local Storage: Hive, SQLite, Isar, Shared Preferences (based on data needs)
+           - Authentication: Firebase Auth, OAuth, custom JWT (based on auth requirements)
+        
+        6. **Domain-Specific Integration Patterns**:
+           - Third-party service integrations based on requirements
+           - Platform-specific implementations if needed
+           - Real-time communication patterns if required
+           - Background processing if needed
+        
+        7. **Project-Specific Security Architecture**:
+           - Data protection strategies based on the type of data
+           - Authentication and authorization patterns
+           - Secure storage requirements
+           - Privacy compliance (GDPR, CCPA) if applicable
+        
+        8. **Performance Architecture** tailored to requirements:
+           - Lazy loading strategies
+           - Caching approaches
+           - Memory management
+           - Network optimization
+        
+        ===== OUTPUT REQUIREMENTS =====
+        Provide a detailed, implementation-ready architecture document that:
+        - Is SPECIFICALLY designed for {project_name}
+        - Addresses each unique requirement listed above
+        - Includes specific package recommendations with versions
+        - Provides code structure examples
+        - Explains architectural decisions and trade-offs
+        - Considers scalability and maintainability for this specific project
+        
+        Remember: This architecture should be so specific to {project_name} that it wouldn't be suitable for a different type of app."""
 
         # Import LLM logger
         from utils.llm_logger import llm_logger
@@ -232,7 +294,7 @@ class ArchitectureAgent(BaseAgent):
             )
             self.logger.warning(f"[ARCH] LLM returned no architecture design for project {project_id}, using fallback.")
 
-        existing_decisions = project.architecture_decisions if project else []
+        existing_decisions = getattr(project, 'architecture_decisions', []) if project else []
         architecture_decision = {
             "decision_id": f"arch_{project_id}_{len(existing_decisions) + 1}",
             "title": "Flutter Application Architecture Design",
@@ -247,9 +309,11 @@ class ArchitectureAgent(BaseAgent):
 
         # Add to project state if project exists
         if project:
-            project.architecture_decisions.append(architecture_decision)
-            shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
-            self.logger.info(f"[ARCH] Updated project.architecture_decisions: {project.architecture_decisions}")
+            # Defensively get existing decisions and add new one
+            current_decisions = getattr(project, 'architecture_decisions', [])
+            current_decisions.append(architecture_decision)
+            shared_state.update_project(project_id, architecture_decisions=current_decisions)
+            self.logger.info(f"[ARCH] Updated project.architecture_decisions: {current_decisions}")
         else:
             # Create a minimal project in shared state if it doesn't exist
             try:
@@ -261,9 +325,10 @@ class ArchitectureAgent(BaseAgent):
                 )
                 project = shared_state.get_project_state(project_id)
                 if project:
-                    project.architecture_decisions.append(architecture_decision)
-                    shared_state.update_project(project_id, architecture_decisions=project.architecture_decisions)
-                    self.logger.info(f"[ARCH] Created project and added architecture_decisions: {project.architecture_decisions}")
+                    current_decisions = getattr(project, 'architecture_decisions', [])
+                    current_decisions.append(architecture_decision)
+                    shared_state.update_project(project_id, architecture_decisions=current_decisions)
+                    self.logger.info(f"[ARCH] Created project and added architecture_decisions: {current_decisions}")
             except Exception as e:
                 self.logger.warning(f"[ARCH] Could not create project in shared state: {e}")
                 # Continue anyway - the decision was created
@@ -509,12 +574,17 @@ class ArchitectureAgent(BaseAgent):
         if not project:
             return
         
+        # Defensively access project attributes
+        project_name = getattr(project, 'name', 'Unknown Project')
+        project_description = getattr(project, 'description', 'No description available')
+        project_requirements = getattr(project, 'requirements', [])
+        
         analysis_prompt = f"""
         Analyze this new Flutter project and identify key architectural considerations:
         
-        Project: {project.name}
-        Description: {project.description}
-        Requirements: {project.requirements}
+        Project: {project_name}
+        Description: {project_description}
+        Requirements: {project_requirements}
         
         Identify:
         1. Complexity level (simple, medium, complex)

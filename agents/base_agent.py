@@ -745,7 +745,7 @@ class BaseAgent(ABC):
                 # Fallback if JSON serialization fails
                 task_context_json = str(task_context)
             
-            # Build detailed prompt
+            # Build detailed prompt with defensive access to project_info
             detailed_prompt = f"""
 You are the {full_context.get('agent_name', self.agent_id)} agent in the FlutterSwarm multi-agent system.
 
@@ -755,11 +755,11 @@ AGENT ROLE & CAPABILITIES:
 - Capabilities: {', '.join(full_context.get('agent_capabilities', []))}
 
 PROJECT CONTEXT:
-- Project Name: {project_info['name']}
-- Description: {project_info['description']}
-- Requirements: {', '.join(project_info['requirements']) if project_info['requirements'] else 'None specified'}
-- Current Status: {project_info['status']}
-- Progress: {project_info['progress']*100:.1f}%
+- Project Name: {project_info.get('name', 'Unknown Project')}
+- Description: {project_info.get('description', 'No description available')}
+- Requirements: {', '.join(project_info.get('requirements', [])) if project_info.get('requirements') else 'None specified'}
+- Current Status: {project_info.get('status', 'unknown')}
+- Progress: {project_info.get('progress', 0.0)*100:.1f}%
 
 COLLABORATION CONTEXT:
 {collaboration_info}
@@ -819,8 +819,8 @@ SYSTEM CONTEXT:
 - Provide actionable, practical solutions that integrate well with the broader project
 
 PROJECT INFORMATION:
-- Project: {project_info['name']}
-- Status: {project_info['status']}
+- Project: {project_info.get('name', 'Unknown Project')}
+- Status: {project_info.get('status', 'unknown')}
 
 RESPONSE GUIDELINES:
 1. Be specific and technical in your responses
@@ -1864,7 +1864,9 @@ class AgentToolbox:
                 'name': 'Flutter Project',
                 'description': 'A Flutter application',
                 'requirements': [],
-                'status': 'unknown'
+                'status': 'unknown',
+                'progress': 0.0,
+                'project_id': 'unknown'
             }
         
         # Handle ProjectState dataclass
@@ -1895,5 +1897,7 @@ class AgentToolbox:
                 'name': 'Flutter Project',
                 'description': 'A Flutter application',
                 'requirements': [],
-                'status': 'unknown'
+                'status': 'unknown',
+                'progress': 0.0,
+                'project_id': 'unknown'
             }

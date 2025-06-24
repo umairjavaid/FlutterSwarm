@@ -119,10 +119,13 @@ class DevOpsAgent(BaseAgent):
         java_setup_version = cicd_config.get('java_setup_version', 'v3')
         codecov_version = cicd_config.get('codecov_version', 'v3')
         
+        # Defensively access project attributes
+        project_name = getattr(project, 'name', 'Unknown Project')
+        
         cicd_prompt = f"""
         Create a comprehensive CI/CD pipeline for this Flutter project:
         
-        Project: {project.name}
+        Project: {project_name}
         Platforms: {platforms}
         CI System: {ci_system}
         

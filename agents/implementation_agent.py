@@ -564,23 +564,31 @@ class ImplementationAgent(BaseAgent):
             except (json.JSONDecodeError, KeyError) as e:
                 self.logger.warning(f"Could not parse structure design, creating basic structure: {e}")
                 
-            # Always create basic Clean Architecture structure (fallback)
+            # Create dynamic structure based on project requirements instead of hardcoded 'counter'
+            # Extract first feature from requirements for base structure
+            first_requirement = (project_state.requirements[0] if project_state and project_state.requirements 
+                                else task_data.get("requirements", ["default_feature"])[0])
+            
+            # Convert requirement to feature name (e.g., "User authentication" -> "auth")
+            feature_name = self._extract_feature_name_from_requirement(first_requirement)
+            
+            # Always create basic Clean Architecture structure (fallback) with dynamic feature
             basic_dirs = [
                 "lib/core/constants",
                 "lib/core/errors", 
                 "lib/core/utils",
                 "lib/core/themes",
-                "lib/features/counter/data/models",
-                "lib/features/counter/data/repositories",
-                "lib/features/counter/domain/entities",
-                "lib/features/counter/domain/repositories", 
-                "lib/features/counter/domain/usecases",
-                "lib/features/counter/presentation/pages",
-                "lib/features/counter/presentation/widgets",
-                "lib/features/counter/presentation/providers",
+                f"lib/features/{feature_name}/data/models",
+                f"lib/features/{feature_name}/data/repositories",
+                f"lib/features/{feature_name}/domain/entities",
+                f"lib/features/{feature_name}/domain/repositories", 
+                f"lib/features/{feature_name}/domain/usecases",
+                f"lib/features/{feature_name}/presentation/pages",
+                f"lib/features/{feature_name}/presentation/widgets",
+                f"lib/features/{feature_name}/presentation/providers",
                 "lib/shared/widgets",
                 "lib/shared/utils",
-                "test/features/counter",
+                f"test/features/{feature_name}",
                 "test/core",
                 "assets/images",
                 "assets/icons"
@@ -607,25 +615,54 @@ class ImplementationAgent(BaseAgent):
             self.logger.info(f"🤖 Generating project structure using LLM for {project_name}")
             
             # Generate project structure prompt
+            # Get project requirements for context
+            project_requirements = (project_state.requirements if project_state and project_state.requirements 
+                                  else task_data.get("requirements", []))
+            project_description = (getattr(project_state, 'description', '') if project_state 
+                                 else task_data.get("description", ""))
+            architecture_decisions = (getattr(project_state, 'architecture_decisions', []) if project_state else [])
+            
             project_structure_prompt = f"""
-            Generate a complete Flutter project structure for "{project_name}" with {architecture_style} architecture.
+            Generate a complete, UNIQUE Flutter project structure specifically for "{project_name}".
             
-            Create the following files with complete, production-ready content:
+            ===== PROJECT CONTEXT =====
+            Project Name: {project_name}
+            Description: {project_description}
+            Architecture Style: {architecture_style}
+            Package Name: {sanitized_project_name}
             
-            1. **pubspec.yaml** - Project configuration with appropriate dependencies
-            2. **lib/main.dart** - Main application entry point
-            3. **Basic feature structure** - At least one sample feature to demonstrate the architecture
-            4. **Proper directory structure** - Following Flutter best practices
+            ===== UNIQUE REQUIREMENTS TO IMPLEMENT =====
+            {chr(10).join([f"• {req}" for req in project_requirements])}
             
-            Requirements:
+            ===== ARCHITECTURE DECISIONS TO FOLLOW =====
+            {chr(10).join([f"• {decision.get('description', decision)}" for decision in architecture_decisions]) if architecture_decisions else "• Use Clean Architecture with appropriate state management"}
+            
+            ===== IMPLEMENTATION TASK =====
+            Create a COMPLETE, WORKING Flutter application that specifically implements the above requirements.
+            This should NOT be a generic Flutter app - it must be tailored to {project_name}'s specific needs.
+            
+            Generate the following files with complete, production-ready content:
+            
+            1. **pubspec.yaml** - Include ALL dependencies needed for the specific requirements above
+            2. **lib/main.dart** - App entry point configured for {project_name}'s specific needs
+            3. **Feature implementations** - Create actual features that match the requirements, not generic examples
+            4. **Domain models** - Create models that match the specific data needs of {project_name}
+            5. **Service implementations** - Implement services that handle the specific requirements
+            6. **UI screens** - Create screens that serve the specific purpose of {project_name}
+            7. **State management** - Implement state management for the specific features
+            
+            ===== SPECIFIC IMPLEMENTATION REQUIREMENTS =====
             - Use null safety and latest Dart/Flutter features
-            - Follow {architecture_style} architecture patterns
-            - Include proper error handling
-            - Use Material Design 3
-            - Include basic state management setup
-            - Add appropriate dependencies in pubspec.yaml
-            - Sanitized package name: {sanitized_project_name}
+            - Follow {architecture_style} architecture patterns strictly
+            - Include proper error handling for the specific use cases
+            - Use Material Design 3 with theming appropriate for {project_name}
+            - Implement state management that handles the specific data flows
+            - Add ALL dependencies needed for the requirements in pubspec.yaml
+            - Create realistic, functional code - not placeholder or demo code
+            - Include proper navigation between screens
+            - Implement actual business logic for the requirements
             
+            ===== OUTPUT FORMAT =====
             Generate complete, compilable code for each file.
             Format the response as JSON with this structure:
             {{
@@ -636,6 +673,8 @@ class ImplementationAgent(BaseAgent):
                     }}
                 ]
             }}
+            
+            Remember: This should be a fully functional {project_name} app, not a generic Flutter template!
             """
             
             # Generate project files using LLM
@@ -1673,7 +1712,6 @@ Ensure:
                 "completed_features": [],
                 "failed_features": ["all"]
             }
-        
         # Register with supervision
         await self._register_incremental_process(project_id)
         
@@ -2522,8 +2560,18 @@ Ensure:
             # Get absolute path to ensure files are created in the correct location
             from utils.path_utils import get_absolute_project_path
             try:
-                absolute_project_path = get_absolute_project_path(project_path)
-            except:
+                # Extract just the project name if path includes flutter_projects
+                if project_path.startswith("flutter_projects/"):
+                    project_name = project_path.replace("flutter_projects/", "")
+                    absolute_project_path = get_absolute_project_path(project_name)
+                elif project_path == "flutter_projects":
+                    # Default case - create a default project directory
+                    absolute_project_path = get_absolute_project_path("default_project")
+                else:
+                    # project_path is already just the project name
+                    absolute_project_path = get_absolute_project_path(project_path)
+            except Exception as e:
+                self.logger.warning(f"⚠️ get_absolute_project_path failed: {e}")
                 # Fallback if utils not available
                 absolute_project_path = os.path.abspath(project_path)
             
@@ -2691,149 +2739,69 @@ Ensure:
         """Wrapper for _normalize_flutter_package_name for backward compatibility."""
         return self._normalize_flutter_package_name(name)
     
-    async def _fallback_file_extraction(self, project_path: str, code_content: str) -> List[str]:
-        """Enhanced fallback method to extract files from code content."""
-        created_files = []
-        
-        try:
-            import re
-            
-            # Multiple patterns to try
-            patterns = [
-                # Pattern 1: // lib/path/file.dart followed by code
-                r'(?://\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=//\s*lib/|$)',
-                # Pattern 2: File: lib/path/file.dart followed by code  
-                r'(?:File:\s*)(lib/[^\n]+\.dart)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=File:\s*lib/|$)',
-                # Pattern 3: **lib/path/file.dart** followed by code
-                r'(?:\*\*)(lib/[^\n]+\.dart)(?:\*\*)(?:\n|\r\n)((?:.*(?:\n|\r\n))*?)(?=\*\*lib/|$)',
-            ]
-            
-            for pattern in patterns:
-                matches = re.findall(pattern, code_content, re.MULTILINE | re.DOTALL)
-                
-                for file_path, file_content in matches:
-                    if file_content.strip():
-                        success = await self._create_actual_file(project_path, file_path, file_content.strip(), None)
-                        if success:
-                            created_files.append(file_path)
-                            self.logger.info(f"✅ Created file via fallback: {file_path}")
-                
-                if created_files:  # If we found files with this pattern, stop trying others
-                    break
-                            
-        except Exception as e:
-            self.logger.error(f"❌ Fallback file extraction failed: {e}")
-        
-        return created_files
-
-    async def _ensure_flutter_project_exists(self, project_data: Dict[str, Any]) -> bool:
-        """Enhanced Flutter project initialization with better error handling."""
-        try:
-            project_id = project_data.get("project_id")
-            project_name = project_data.get("name", "flutter_app")
-            
-            # Convert project name to valid Flutter package name
-            flutter_package_name = self._normalize_flutter_package_name(project_name)
-            
-            # Determine project path
-            project_path = os.path.join("flutter_projects", flutter_package_name)
-            
-            # Check if Flutter project exists
-            pubspec_path = os.path.join(project_path, "pubspec.yaml")
-            if not os.path.exists(pubspec_path):
-                self.logger.info(f"🎯 Initializing Flutter project at {project_path}")
-                
-                # Ensure flutter_projects directory exists
-                os.makedirs("flutter_projects", exist_ok=True)
-                
-                # Create Flutter project using tool
-                result = await self.execute_tool(
-                    "flutter",
-                    operation="create",
-                    project_name=flutter_package_name,
-                    project_path=project_path,
-                    description=project_data.get("description", "A Flutter application"),
-                    org="com.flutterswarm"
-                )
-                
-                if result.status != ToolStatus.SUCCESS:
-                    self.logger.error(f"❌ Failed to create Flutter project: {result.error}")
-                    # Try alternative creation method
-                    try:
-                        # Direct flutter create command
-                        cmd_result = await self.run_command(f"flutter create {flutter_package_name}", working_dir="flutter_projects")
-                        if cmd_result.status != ToolStatus.SUCCESS:
-                            self.logger.error(f"❌ Alternative flutter create also failed: {cmd_result.error}")
-                            return False
-                        else:
-                            self.logger.info(f"✅ Flutter project created using direct command")
-                    except Exception as e:
-                        self.logger.error(f"❌ Alternative creation method failed: {e}")
-                        return False
-                
-                # Verify project was created
-                if not os.path.exists(pubspec_path):
-                    self.logger.error(f"❌ pubspec.yaml not found after creation: {pubspec_path}")
-                    return False
-                
-                # Update project state with path
-                shared_state.update_project(project_id, project_path=project_path)
-                self.logger.info(f"✅ Flutter project initialized successfully at {project_path}")
-            else:
-                self.logger.info(f"📁 Flutter project already exists at {project_path}")
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Exception in _ensure_flutter_project_exists: {e}")
-            import traceback
-            self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            return False
-
-    def _normalize_flutter_package_name(self, name: str) -> str:
-        """Convert any string to a valid Flutter package name."""
+    def _extract_feature_name_from_requirement(self, requirement: str) -> str:
+        """Extract a clean feature name from a requirement string."""
         import re
         
-        # Convert to lowercase
-        name = name.lower()
+        # Convert requirement to a clean feature name
+        # e.g., "User authentication and profiles" -> "auth"
+        # e.g., "Music streaming from online sources" -> "music_streaming"
+        # e.g., "Playlist creation and management" -> "playlist"
         
-        # Replace non-alphanumeric characters with underscores
-        name = re.sub(r'[^a-z0-9_]', '_', name)
+        # Common mappings for better feature names
+        feature_mappings = {
+            "authentication": "auth",
+            "user": "user",
+            "music": "music",
+            "audio": "audio",
+            "playlist": "playlist",
+            "streaming": "streaming",
+            "chat": "chat",
+            "message": "messaging",
+            "social": "social",
+            "profile": "profile",
+            "search": "search",
+            "discovery": "discovery",
+            "payment": "payment",
+            "cart": "cart",
+            "shop": "shopping",
+            "product": "product",
+            "order": "order",
+            "notification": "notification",
+            "setting": "settings",
+            "preference": "preferences",
+            "sync": "sync",
+            "backup": "backup",
+            "download": "download",
+            "upload": "upload",
+            "camera": "camera",
+            "photo": "photo",
+            "video": "video",
+            "location": "location",
+            "map": "maps",
+            "navigation": "navigation",
+            "offline": "offline",
+            "cache": "cache"
+        }
         
-        # Remove consecutive underscores
-        name = re.sub(r'_+', '_', name)
+        # Extract key words from requirement
+        requirement_lower = requirement.lower()
         
-        # Remove leading/trailing underscores
-        name = name.strip('_')
+        # Check for known feature patterns
+        for keyword, feature_name in feature_mappings.items():
+            if keyword in requirement_lower:
+                return feature_name
         
-        # Ensure it doesn't start with a digit
-        if name and name[0].isdigit():
-            name = f"app_{name}"
+        # Fallback: clean the first few words
+        words = re.findall(r'\b[a-zA-Z]+\b', requirement)
+        if words:
+            # Take first meaningful word and clean it
+            feature_name = words[0].lower()
+            # Remove common words
+            if feature_name in ['the', 'a', 'an', 'and', 'or', 'for', 'with', 'from']:
+                feature_name = words[1] if len(words) > 1 else "feature"
+            return feature_name
         
-        # Ensure it's not empty
-        if not name:
-            name = "flutter_app"
-            
-        return name
-    
-    def _debug_llm_response(self, response: str, context: str = "") -> None:
-        """Debug helper to log LLM response format for troubleshooting."""
-        self.logger.debug(f"🔍 LLM Response Debug ({context}):")
-        self.logger.debug(f"Length: {len(response)} characters")
-        self.logger.debug(f"First 200 chars: {response[:200]}...")
-        
-        # Check for common patterns
-        import re
-        
-        code_blocks = re.findall(r'```(?:dart|yaml)', response)
-        json_blocks = re.findall(r'```json', response)
-        file_comments = re.findall(r'//\s*lib/', response)
-        
-        self.logger.debug(f"Found {len(code_blocks)} code blocks")
-        self.logger.debug(f"Found {len(json_blocks)} JSON blocks") 
-        self.logger.debug(f"Found {len(file_comments)} file comments")
-        
-        if not code_blocks and not json_blocks and not file_comments:
-            self.logger.warning(f"⚠️ No recognizable patterns found in LLM response")
+        return "feature"  # Ultimate fallback
 
 
