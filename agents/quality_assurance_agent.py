@@ -12,6 +12,7 @@ from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 from tools import ToolResult, ToolStatus
 from utils.function_logger import track_function
+from utils.enhancedLLMResponseParser import parse_llm_response_for_agent
 
 class QualityAssuranceAgent(BaseAgent):
     """
@@ -492,9 +493,31 @@ class QualityAssuranceAgent(BaseAgent):
         return await self._parse_fix_plan(fix_plan)
     
     async def _parse_fix_plan(self, fix_plan_text: str) -> List[Dict[str, Any]]:
-        """Parse the fix plan text into structured tasks."""
-        # This would parse the LLM output into structured fix tasks
-        # For now, create a simple structure
+        """Parse the fix plan text into structured tasks using enhanced parser."""
+        # First try to parse using enhanced parser for structured responses
+        parsed_files, error = parse_llm_response_for_agent(self, fix_plan_text, {
+            "task_type": "fix_plan_parsing"
+        })
+        
+        # If parser found structured data, extract tasks
+        if parsed_files:
+            tasks = []
+            for file_info in parsed_files:
+                # Look for task-like structures in the parsed data
+                if "tasks" in file_info or "fixes" in file_info:
+                    task_data = file_info.get("tasks", file_info.get("fixes", []))
+                    if isinstance(task_data, list):
+                        tasks.extend(task_data)
+                elif "assigned_agent" in file_info:
+                    # This looks like a single task
+                    tasks.append(file_info)
+            
+            if tasks:
+                self.logger.info(f"✅ Parsed {len(tasks)} tasks from fix plan using enhanced parser")
+                return tasks
+        
+        # Fallback to simplified parsing if enhanced parser didn't find structured data
+        self.logger.info("Using fallback parsing for fix plan")
         tasks = []
         
         # Extract tasks from the fix plan (simplified parsing)

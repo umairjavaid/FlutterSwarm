@@ -13,6 +13,7 @@ from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 from tools import ToolResult, ToolStatus
+from utils.enhancedLLMResponseParser import EnhancedLLMResponseParser
 from utils.function_logger import track_function
 
 class ImplementationAgent(BaseAgent):
@@ -511,24 +512,50 @@ class ImplementationAgent(BaseAgent):
                 "name": project_name
             })
             
-            # Parse and create directories
+            # Parse and create directories using enhanced parser
             files_created = []
             try:
-                import json
-                structure_data = json.loads(structure_design)
-                directories = structure_data.get("directories", [])
+                # Try to parse using enhanced parser first
+                parser = EnhancedLLMResponseParser(self.logger)
+                parsed_files, error = parser.parse_llm_response(structure_design, {
+                    "project_id": project_id,
+                    "project_path": project_path,
+                    "agent": self
+                })
                 
-                for directory in directories:
-                    dir_path = directory.get("path", "")
-                    if dir_path:
-                        full_path = f"{project_path}/{dir_path}"
-                        dir_result = await self.execute_tool(
-                            "file", 
-                            operation="create_directory", 
-                            directory=full_path
-                        )
-                        if dir_result.status == ToolStatus.SUCCESS:
-                            files_created.append(full_path)
+                # If enhanced parser found files with directories structure
+                if parsed_files:
+                    for file_info in parsed_files:
+                        if file_info.get("type") == "directory" or "directories" in file_info:
+                            directories = file_info.get("directories", [])
+                            for directory in directories:
+                                dir_path = directory.get("path", "")
+                                if dir_path:
+                                    full_path = f"{project_path}/{dir_path}"
+                                    dir_result = await self.execute_tool(
+                                        "file", 
+                                        operation="create_directory", 
+                                        directory=full_path
+                                    )
+                                    if dir_result.status == ToolStatus.SUCCESS:
+                                        files_created.append(full_path)
+                else:
+                    # Fallback to legacy JSON parsing
+                    import json
+                    structure_data = json.loads(structure_design)
+                    directories = structure_data.get("directories", [])
+                    
+                    for directory in directories:
+                        dir_path = directory.get("path", "")
+                        if dir_path:
+                            full_path = f"{project_path}/{dir_path}"
+                            dir_result = await self.execute_tool(
+                                "file", 
+                                operation="create_directory", 
+                                directory=full_path
+                            )
+                            if dir_result.status == ToolStatus.SUCCESS:
+                                files_created.append(full_path)
                             
             except (json.JSONDecodeError, KeyError) as e:
                 self.logger.warning(f"Could not parse structure design, creating basic structure: {e}")
@@ -671,227 +698,119 @@ class ImplementationAgent(BaseAgent):
             }
     
     async def _parse_and_create_files(self, project_id: str, code_content: str) -> List[str]:
-        """Parse generated code and create actual files in the Flutter project using LLM-generated code only."""
+        """Parse generated code and create actual files in the Flutter project using enhanced parser."""
         if not code_content or not code_content.strip():
             return []
             
-        # Get project state for file paths
-        project_state = shared_state.get_project_state(project_id)
+        # Use the enhanced parser for better error handling and multiple parsing strategies
+        parser = EnhancedLLMResponseParser(self.logger)
         
-        # Determine project path - use project_path if available, otherwise construct from project_id
-        if project_state and hasattr(project_state, 'project_path') and project_state.project_path:
-            project_path = project_state.project_path
-        else:
-            # Fallback to constructing project path from project_id
-            project_name = project_state.name if project_state else "flutter_app"
-            project_path = f"flutter_projects/{project_name}_{project_id[:8]}"
+        # Parse the LLM response
+        parsed_files, error = parser.parse_llm_response(code_content, {
+            "project_id": project_id,
+            "agent": self
+        })
         
-        try:
-            # Use LLM to parse code content into individual files
-            parsing_prompt = f"""
-            Parse this Flutter/Dart code content into individual files with their proper paths.
+        # If parsing failed, try asking LLM to reformat
+        if not parsed_files and error:
+            self.logger.warning(f"⚠️ Initial parsing failed: {error}")
             
-            Code Content:
-            {code_content}
-            
-            IMPORTANT: Return ONLY valid JSON in this exact format (no extra text or explanations):
-            {{
-                "files": [
-                    {{
-                        "path": "lib/features/feature_name/file.dart",
-                        "content": "actual dart code here",
-                        "description": "what this file does"
-                    }}
-                ]
-            }}
-            
-            Ensure:
-            - Proper Flutter/Dart file structure
-            - Correct imports  
-            - Valid Dart syntax
-            - Appropriate file paths for Clean Architecture
-            """
-            
-            parsed_result = await self.think(parsing_prompt, {
-                "project_id": project_id,
-                "project_path": project_path,
-                "code_content": code_content
-            })
-            
-            created_files = []
+            # Ask LLM to reformat the response
+            reformat_prompt = f"""
+Your previous response was not in the correct format. Please reformat it as valid JSON.
+
+Previous response (first 500 chars):
+{code_content[:500]}...
+
+CRITICAL: Return ONLY a valid JSON object with this exact structure (no other text):
+{{
+    "files": [
+        {{
+            "path": "lib/path/to/file.dart",
+            "content": "complete file content here",
+            "description": "what this file does"
+        }}
+    ]
+}}
+
+Ensure:
+- The response starts with {{ and ends with }}
+- No text before or after the JSON
+- Valid JSON syntax
+- Complete file contents
+"""
             
             try:
-                # Use robust JSON extraction
-                files_data = await self._extract_json_from_response(parsed_result)
-                files_list = files_data.get("files", []) if files_data else []
+                reformatted = await self.think(reformat_prompt, {
+                    "original_response": code_content,
+                    "parse_error": error
+                })
                 
-                for file_info in files_list:
-                    file_path = file_info.get("path", "")
-                    file_content = file_info.get("content", "")
-                    
-                    if file_path and file_content:
-                        # Create file using the file tool
-                        full_path = f"{project_path}/{file_path}"
-                        
-                        # Ensure directory exists
-                        import os
-                        dir_path = os.path.dirname(full_path)
-                        dir_result = await self.execute_tool(
-                            "file",
-                            operation="create_directory",
-                            directory=dir_path
-                        )
-                        
-                        # Write the file
-                        file_result = await self.execute_tool(
-                            "file",
-                            operation="write",
-                            file_path=full_path,
-                            content=file_content
-                        )
-                        
-                        if file_result.status == ToolStatus.SUCCESS:
-                            created_files.append(full_path)
-                            self.logger.info(f"✅ Created file: {file_path}")
-                            
-                            # 🔥 FIX: Register file in shared state so other agents know about it
-                            try:
-                                shared_state.add_file_to_project(project_id, file_path, file_content)
-                                self.logger.info(f"📋 Registered file in shared state: {file_path}")
-                            except Exception as e:
-                                self.logger.error(f"❌ Failed to register file in shared state: {e}")
-                        else:
-                            self.logger.error(f"❌ Failed to create file {file_path}: {file_result.error}")
+                # Try parsing the reformatted response
+                parsed_files, error = parser.parse_llm_response(reformatted, {
+                    "project_id": project_id,
+                    "agent": self
+                })
+                
+                if parsed_files:
+                    self.logger.info("✅ Successfully parsed reformatted response")
+                else:
+                    self.logger.error(f"❌ Reformatting failed: {error}")
+            except Exception as e:
+                self.logger.error(f"❌ Error during reformatting: {e}")
+        
+        # Create the actual files
+        created_files = []
+        if parsed_files:
+            project_state = shared_state.get_project_state(project_id)
+            project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id[:8]}"
             
-            except json.JSONDecodeError as e:
-                self.logger.error(f"❌ Failed to parse LLM response as JSON: {e}")
-                # Fallback: try to extract files by common patterns
-                created_files = await self._fallback_file_extraction(project_path, code_content)
-            
-            # Format all created Dart files
-            if created_files:
+            for file_info in parsed_files:
                 try:
-                    format_result = await self.run_command(f"dart format {project_path}/lib/")
-                    if format_result.status == ToolStatus.SUCCESS:
-                        self.logger.info("✅ Formatted generated files")
+                    file_path = file_info["path"]
+                    file_content = file_info["content"]
+                    
+                    # Create the file using existing method
+                    success = await self._create_actual_file(project_path, file_path, file_content, project_id)
+                    if success:
+                        created_files.append(file_path)
+                        self.logger.info(f"✅ Created file: {file_path}")
+                        
+                        # Register file in shared state so other agents know about it
+                        try:
+                            shared_state.add_file_to_project(project_id, file_path, file_content)
+                            self.logger.info(f"📋 Registered file in shared state: {file_path}")
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to register file in shared state: {e}")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Could not format files: {e}")
-            
-            return created_files
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error parsing and creating files: {e}")
-            return []
+                    self.logger.error(f"❌ Error creating file {file_info.get('path', 'unknown')}: {e}")
+        
+        # Format all created Dart files
+        if created_files:
+            try:
+                project_state = shared_state.get_project_state(project_id)
+                project_path = project_state.project_path if project_state else f"flutter_projects/project_{project_id[:8]}"
+                format_result = await self.run_command(f"dart format {project_path}/lib/")
+                if format_result.status == ToolStatus.SUCCESS:
+                    self.logger.info("✅ Formatted generated files")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not format files: {e}")
+        
+        return created_files
 
     async def _extract_json_from_response(self, response: str) -> dict:
-        """Robust JSON extraction from LLM responses with multiple fallback strategies."""
-        import json
-        import re
+        """Deprecated: Use EnhancedLLMResponseParser instead. Kept for backward compatibility."""
+        # This method is deprecated - all JSON parsing should now use EnhancedLLMResponseParser
+        self.logger.warning("⚠️ Using deprecated _extract_json_from_response. Use EnhancedLLMResponseParser instead.")
         
-        if not response or not response.strip():
+        parser = EnhancedLLMResponseParser(self.logger)
+        parsed_files, error = parser.parse_llm_response(response, {"agent": self})
+        
+        if parsed_files:
+            return {"files": parsed_files}
+        else:
+            self.logger.error(f"❌ Failed to parse response: {error}")
             return None
-        
-        response = response.strip()
-        
-        # Strategy 1: Try direct JSON parsing first
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-        
-        # Strategy 2: Extract JSON from code blocks
-        json_block_patterns = [
-            r'```json\s*\n(.*?)\n```',
-            r'```\s*\n(\{.*?\})\s*\n```',
-            r'`(\{.*?\})`'
-        ]
-        
-        for pattern in json_block_patterns:
-            match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
-            if match:
-                try:
-                    return json.loads(match.group(1).strip())
-                except json.JSONDecodeError:
-                    continue
-        
-        # Strategy 3: Find JSON object boundaries
-        # Look for the first { and find its matching }
-        start_idx = response.find('{')
-        if start_idx != -1:
-            brace_count = 0
-            end_idx = len(response)
-            
-            for i in range(start_idx, len(response)):
-                char = response[i]
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end_idx = i + 1
-                        break
-            
-            json_str = response[start_idx:end_idx]
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                pass
-        
-        # Strategy 4: Clean common prefixes and try again
-        clean_prefixes = [
-            "Here's the JSON:",
-            "Here is the JSON:",
-            "The JSON structure is:",
-            "JSON:",
-            "Response:",
-            "Here's the implementation:",
-            "The implementation is:"
-        ]
-        
-        for prefix in clean_prefixes:
-            if response.lower().startswith(prefix.lower()):
-                cleaned = response[len(prefix):].strip()
-                try:
-                    return json.loads(cleaned)
-                except json.JSONDecodeError:
-                    # Try finding JSON in cleaned response
-                    start_idx = cleaned.find('{')
-                    if start_idx != -1:
-                        brace_count = 0
-                        end_idx = len(cleaned)
-                        
-                        for i in range(start_idx, len(cleaned)):
-                            char = cleaned[i]
-                            if char == '{':
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end_idx = i + 1
-                                    break
-                        
-                        json_str = cleaned[start_idx:end_idx]
-                        try:
-                            return json.loads(json_str)
-                        except json.JSONDecodeError:
-                            continue
-        
-        # Strategy 5: Look for array patterns in case it's just a files array
-        array_patterns = [
-            r'\[\s*\{.*?\}\s*\]',
-        ]
-        
-        for pattern in array_patterns:
-            match = re.search(pattern, response, re.DOTALL)
-            if match:
-                try:
-                    files_array = json.loads(match.group(0))
-                    return {"files": files_array}
-                except json.JSONDecodeError:
-                    continue
-        
-        self.logger.error(f"❌ Failed to extract JSON from response. First 200 chars: {response[:200]}")
-        return None
 
     async def _create_actual_file(self, project_path: str, file_path: str, content: str, project_id: str = None) -> bool:
         """Create actual file with enhanced error handling."""
@@ -1704,38 +1623,32 @@ class ImplementationAgent(BaseAgent):
         return files_created
     
     async def _parse_json_format(self, generated_code: str, project_path: str, project_id: str) -> List[str]:
-        """Parse JSON format responses from LLM."""
-        created_files = []
+        """Parse JSON format responses from LLM using enhanced parser."""
+        parser = EnhancedLLMResponseParser(self.logger)
         
-        try:
-            # Try to find JSON in the response
-            import json
-            import re
-            
-            # Look for JSON blocks
-            json_pattern = r'```json\s*(.*?)\s*```'
-            json_matches = re.findall(json_pattern, generated_code, re.DOTALL)
-            
-            for json_str in json_matches:
+        # Parse the LLM response
+        parsed_files, error = parser.parse_llm_response(generated_code, {
+            "project_id": project_id,
+            "project_path": project_path,
+            "agent": self
+        })
+        
+        created_files = []
+        if parsed_files:
+            for file_info in parsed_files:
                 try:
-                    files_data = json.loads(json_str)
-                    files_list = files_data.get("files", [])
+                    file_path = file_info.get("path", "")
+                    file_content = file_info.get("content", "")
                     
-                    for file_info in files_list:
-                        file_path = file_info.get("path", "")
-                        file_content = file_info.get("content", "")
-                        
-                        if file_path and file_content:
-                            success = await self._create_actual_file(project_path, file_path, file_content, project_id)
-                            if success:
-                                created_files.append(file_path)
-                                
-                except json.JSONDecodeError as e:
-                    self.logger.warning(f"Invalid JSON in response: {e}")
-                    continue
-                    
-        except Exception as e:
-            self.logger.error(f"Error parsing JSON format: {e}")
+                    if file_path and file_content:
+                        success = await self._create_actual_file(project_path, file_path, file_content, project_id)
+                        if success:
+                            created_files.append(file_path)
+                            self.logger.info(f"✅ Created file: {file_path}")
+                except Exception as e:
+                    self.logger.error(f"❌ Error creating file {file_info.get('path', 'unknown')}: {e}")
+        else:
+            self.logger.error(f"❌ Failed to parse JSON format response: {error}")
         
         return created_files
     

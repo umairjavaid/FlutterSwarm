@@ -9,6 +9,7 @@ from .base_agent import BaseAgent
 from shared.state import shared_state, AgentStatus, MessageType
 from tools import ToolResult, ToolStatus
 from utils.function_logger import track_function
+from utils.enhancedLLMResponseParser import parse_llm_response_for_agent
 
 class SecurityAgent(BaseAgent):
     """
@@ -357,12 +358,41 @@ class SecurityAgent(BaseAgent):
         }
 
     def _parse_security_findings(self, audit_report: str) -> List[Dict[str, Any]]:
-        """Parse security findings from audit report."""
-        # Simplified parsing - in real implementation, this would be more sophisticated
+        """Parse security findings from audit report using enhanced parser."""
+        # Try to parse using enhanced parser for structured security findings
+        parsed_files, error = parse_llm_response_for_agent(self, audit_report, {
+            "task_type": "security_findings_parsing"
+        })
+        
         findings = []
         
-        # This would parse the LLM output to extract structured findings
-        # For now, create a sample finding
+        # If parser found structured data, extract findings
+        if parsed_files:
+            for file_info in parsed_files:
+                # Look for security findings in the parsed data
+                if "findings" in file_info or "vulnerabilities" in file_info:
+                    security_data = file_info.get("findings", file_info.get("vulnerabilities", []))
+                    if isinstance(security_data, list):
+                        findings.extend(security_data)
+                elif "severity" in file_info or "security_issue" in file_info:
+                    # This looks like a single finding
+                    findings.append(file_info)
+        
+        # If we found structured findings, use them
+        if findings:
+            self.logger.info(f"✅ Parsed {len(findings)} security findings using enhanced parser")
+            # Ensure each finding has required fields
+            for i, finding in enumerate(findings):
+                if "id" not in finding:
+                    finding["id"] = f"SEC-{i + 1}"
+                if "status" not in finding:
+                    finding["status"] = "identified"
+            return findings
+        
+        # Fallback to simplified parsing if enhanced parser didn't find structured data
+        self.logger.info("Using fallback parsing for security findings")
+        
+        # Create a sample finding based on the audit report content
         findings.append({
             "id": f"SEC-{len(findings) + 1}",
             "title": "Security Analysis Completed",
