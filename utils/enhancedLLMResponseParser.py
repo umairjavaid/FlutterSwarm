@@ -1,13 +1,17 @@
 import re
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import logging
+
+# Import the ParsingMonitor for enhanced monitoring and debugging
+from utils.parsingMonitor import ParsingMonitor
 
 class EnhancedLLMResponseParser:
     """Enhanced parser for LLM responses with robust error handling and multiple parsing strategies."""
     
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, monitor: Optional[ParsingMonitor] = None):
         self.logger = logger
+        self.monitor = monitor or ParsingMonitor()
     
     def parse_llm_response(self, response: str, context: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
         """
@@ -23,25 +27,85 @@ class EnhancedLLMResponseParser:
         files, error = self._parse_json_strategy(response)
         if files:
             self.logger.info(f"✅ Successfully parsed {len(files)} files using JSON strategy")
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=True,
+                    parse_method="json",
+                    files_extracted=len(files)
+                )
             return files, ""
+        else:
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=False,
+                    parse_method="json",
+                    error=error
+                )
         
         # Strategy 2: Try to extract code blocks with file paths
         files, error = self._parse_code_blocks_strategy(response)
         if files:
             self.logger.info(f"✅ Successfully parsed {len(files)} files using code blocks strategy")
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=True,
+                    parse_method="code_blocks",
+                    files_extracted=len(files)
+                )
             return files, ""
+        else:
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=False,
+                    parse_method="code_blocks",
+                    error=error
+                )
         
         # Strategy 3: Try to extract files from structured text patterns
         files, error = self._parse_structured_text_strategy(response)
         if files:
             self.logger.info(f"✅ Successfully parsed {len(files)} files using structured text strategy")
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=True,
+                    parse_method="structured_text",
+                    files_extracted=len(files)
+                )
             return files, ""
+        else:
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=False,
+                    parse_method="structured_text",
+                    error=error
+                )
         
         # Strategy 4: Use LLM to reformat the response
         files, error = self._llm_reformat_strategy(response, context)
         if files:
             self.logger.info(f"✅ Successfully parsed {len(files)} files using LLM reformat strategy")
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=True,
+                    parse_method="llm_reformat",
+                    files_extracted=len(files)
+                )
             return files, ""
+        else:
+            if self.monitor:
+                self.monitor.log_parsing_attempt(
+                    response=response, 
+                    success=False,
+                    parse_method="llm_reformat",
+                    error=error
+                )
         
         return [], f"Failed to parse response after all strategies. Last error: {error}"
     
@@ -148,7 +212,6 @@ class EnhancedLLMResponseParser:
                         "content": content,
                         "description": "File extracted from structured text"
                     })
-            
             # If no files found with the above pattern, try alternative patterns
             if not files:
                 # Alternative patterns for different formats
@@ -243,6 +306,18 @@ class EnhancedLLMResponseParser:
                     })
         
         return validated
+    
+    def get_parsing_stats(self) -> Dict[str, Any]:
+        """Get parsing statistics from the monitor."""
+        if not self.monitor:
+            return {"error": "No parsing monitor available"}
+        return self.monitor.get_parsing_stats()
+    
+    def generate_parsing_report(self) -> str:
+        """Generate a detailed parsing analysis report."""
+        if not self.monitor:
+            return "No parsing monitor available"
+        return self.monitor.generate_report()
 
 
 # Enhanced parsing method for Implementation Agent
@@ -252,7 +327,12 @@ async def enhanced_parse_and_create_files(self, project_id: str, llm_response: s
     
     This method replaces _parse_and_create_files in implementation_agent.py
     """
-    parser = EnhancedLLMResponseParser(self.logger)
+    # Import shared_state here to avoid circular imports
+    from shared.state import shared_state
+    
+    # Create parser with monitoring
+    monitor = ParsingMonitor(log_file=f"parsing_monitor_{project_id}.log")
+    parser = EnhancedLLMResponseParser(self.logger, monitor=monitor)
     
     # Parse the LLM response
     parsed_files, error = parser.parse_llm_response(llm_response, {
@@ -330,7 +410,8 @@ Ensure:
     return created_files
 
 # Utility functions for easy integration in agents
-def parse_llm_response_for_agent(agent, llm_response: str, context: Dict[str, Any] = None) -> Tuple[List[Dict[str, Any]], str]:
+def parse_llm_response_for_agent(agent, llm_response: str, context: Dict[str, Any] = None, 
+                                enable_monitoring: bool = True) -> Tuple[List[Dict[str, Any]], str]:
     """
     Convenience function for agents to parse LLM responses.
     
@@ -338,6 +419,7 @@ def parse_llm_response_for_agent(agent, llm_response: str, context: Dict[str, An
         agent: The agent instance (should have a logger)
         llm_response: The LLM response to parse
         context: Additional context for parsing
+        enable_monitoring: Whether to enable parsing monitoring
     
     Returns:
         Tuple of (parsed_files, error_message)
@@ -345,7 +427,13 @@ def parse_llm_response_for_agent(agent, llm_response: str, context: Dict[str, An
     if not hasattr(agent, 'logger'):
         raise ValueError("Agent must have a logger attribute")
     
-    parser = EnhancedLLMResponseParser(agent.logger)
+    # Create parser with optional monitoring
+    monitor = None
+    if enable_monitoring:
+        agent_name = getattr(agent, 'name', 'unknown_agent')
+        monitor = ParsingMonitor(log_file=f"parsing_monitor_{agent_name}.log")
+    
+    parser = EnhancedLLMResponseParser(agent.logger, monitor=monitor)
     
     if context is None:
         context = {"agent": agent}
@@ -417,6 +505,14 @@ def create_files_from_parsed_response(agent, parsed_files: List[Dict[str, Any]],
                     except Exception as e:
                         if hasattr(agent, 'logger'):
                             agent.logger.warning(f"Could not register file in shared state: {e}")
+                # Try to use global shared_state if agent doesn't have it
+                elif project_id:
+                    try:
+                        from shared.state import shared_state
+                        shared_state.add_file_to_project(project_id, file_path, file_content)
+                    except Exception as e:
+                        if hasattr(agent, 'logger'):
+                            agent.logger.warning(f"Could not register file in global shared state: {e}")
                             
             except Exception as e:
                 if hasattr(agent, 'logger'):
@@ -429,3 +525,36 @@ def create_files_from_parsed_response(agent, parsed_files: List[Dict[str, Any]],
         return asyncio.run(_create_files())
     else:
         return asyncio.run(_create_files())
+
+# Integration with ParsingMonitor
+def get_parsing_analysis(log_file: str = "parsing_monitor.log") -> str:
+    """
+    Generate a parsing analysis report from a log file.
+    
+    Args:
+        log_file: Path to the parsing monitor log file
+        
+    Returns:
+        Analysis report as a string
+    """
+    # Import here to avoid circular imports
+    from utils.parsingMonitor import ParsingMonitor
+    
+    # Create a monitor and analyze the log file
+    monitor = ParsingMonitor(log_file=log_file)
+    
+    # Load and analyze the parsing attempts
+    try:
+        with open(log_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        attempt = json.loads(line)
+                        monitor.parsing_attempts.append(attempt)
+                    except json.JSONDecodeError:
+                        continue
+    except FileNotFoundError:
+        return f"No parsing log found at {log_file}. Run the system first to generate logs."
+    
+    # Generate the report
+    return monitor.generate_report()

@@ -108,6 +108,16 @@ class AgentRegistry:
             try:
                 agent_class = self._agent_classes[agent_type]
                 agent = agent_class()
+                
+                # Apply file creation fixes for Implementation Agent
+                if agent_type == "implementation":
+                    try:
+                        from utils.file_creation_fix import apply_file_creation_fixes
+                        apply_file_creation_fixes(agent)
+                        self.logger.info(f"✅ Applied file creation fixes to {agent_type} agent")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not apply file creation fixes to {agent_type}: {e}")
+                
                 self._agents[agent_type] = agent
                 self.logger.info(f"Created new agent instance: {agent_type}")
                 return agent

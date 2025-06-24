@@ -798,3 +798,91 @@ class ArchitectureAgent(BaseAgent):
         elif "rendering" in performance_issue.lower():
             return ["optimize_widget_tree", "implement_proper_keys", "use_const_constructors"]
         return ["general_performance_improvements"]
+
+    def _extract_project_info(self, project_state) -> Dict[str, Any]:
+        """Extract relevant project information for detailed prompt building"""
+        if project_state is None:
+            return {
+                'project_name': 'Flutter Project',
+                'description': 'A Flutter application',
+                'requirements': [],
+                'platforms': ['android', 'ios'],
+                'current_phase': 'planning',
+                'features': {'core_features': [], 'ui_features': [], 'integration_features': [], 'performance_requirements': [], 'security_requirements': []},
+                'complexity_score': 'low'
+            }
+        
+        # Handle ProjectState dataclass
+        if hasattr(project_state, 'name'):
+            requirements = getattr(project_state, 'requirements', [])
+            return {
+                'project_name': getattr(project_state, 'name', 'Flutter Project'),
+                'description': getattr(project_state, 'description', ''),
+                'requirements': requirements,
+                'platforms': getattr(project_state, 'platforms', ['android', 'ios']),
+                'current_phase': getattr(project_state, 'current_phase', 'planning'),
+                'features': self._categorize_requirements(requirements),
+                'complexity_score': self._calculate_complexity(requirements)
+            }
+        
+        # Handle dictionary
+        elif isinstance(project_state, dict):
+            requirements = project_state.get('requirements', [])
+            return {
+                'project_name': project_state.get('name', 'Flutter Project'),
+                'description': project_state.get('description', ''),
+                'requirements': requirements,
+                'platforms': project_state.get('platforms', ['android', 'ios']),
+                'current_phase': project_state.get('current_phase', 'planning'),
+                'features': self._categorize_requirements(requirements),
+                'complexity_score': self._calculate_complexity(requirements)
+            }
+        
+        # Fallback for other types
+        else:
+            return {
+                'project_name': 'Flutter Project',
+                'description': 'A Flutter application',
+                'requirements': [],
+                'platforms': ['android', 'ios'],
+                'current_phase': 'planning',
+                'features': {'core_features': [], 'ui_features': [], 'integration_features': [], 'performance_requirements': [], 'security_requirements': []},
+                'complexity_score': 'low'
+            }
+
+    def _categorize_requirements(self, requirements: list) -> Dict[str, list]:
+        """Categorize requirements by type for better architecture planning"""
+        categories = {
+            'core_features': [],
+            'ui_features': [],
+            'integration_features': [],
+            'performance_requirements': [],
+            'security_requirements': []
+        }
+        
+        for req in requirements:
+            req_lower = req.lower() if isinstance(req, str) else str(req).lower()
+            if any(keyword in req_lower for keyword in ['streaming', 'playback', 'playlist', 'library', 'music', 'audio', 'player']):
+                categories['core_features'].append(req)
+            elif any(keyword in req_lower for keyword in ['theme', 'ui', 'accessibility', 'gesture', 'design', 'interface', 'screen']):
+                categories['ui_features'].append(req)
+            elif any(keyword in req_lower for keyword in ['api', 'integration', 'external', 'sync', 'service', 'backend', 'cloud']):
+                categories['integration_features'].append(req)
+            elif any(keyword in req_lower for keyword in ['performance', 'quality', 'cache', 'optimization', 'speed', 'memory']):
+                categories['performance_requirements'].append(req)
+            elif any(keyword in req_lower for keyword in ['authentication', 'security', 'protection', 'privacy', 'permission']):
+                categories['security_requirements'].append(req)
+            else:
+                # Default to core features if no specific category matches
+                categories['core_features'].append(req)
+        
+        return categories
+
+    def _calculate_complexity(self, requirements: list) -> str:
+        """Calculate project complexity based on requirements"""
+        if len(requirements) > 20:
+            return "high"
+        elif len(requirements) > 10:
+            return "medium"
+        else:
+            return "low"

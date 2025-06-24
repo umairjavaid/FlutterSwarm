@@ -519,7 +519,7 @@ class BaseAgent(ABC):
         temperature = model_config.get('temperature')
         max_tokens = model_config.get('max_tokens')
         
-        # Log LLM request before sending
+        # Generate interaction ID first
         interaction_id = llm_logger.log_llm_request(
             agent_id=self.agent_id,
             model=model,
@@ -531,9 +531,16 @@ class BaseAgent(ABC):
             max_tokens=max_tokens
         )
         
+        # Log LLM request after generating interaction ID
+        self.logger.info(f"🚀 LLM REQUEST [{interaction_id}] - Agent: {self.agent_id}")
+        self.logger.info(f"🧠 Model: {model} ({provider}) | Complexity: {task_complexity}")
+        self.logger.info(f"⚙️ Temperature: {temperature} | Max Tokens: {max_tokens}")
+        self.logger.debug(f"📝 Prompt length: {len(detailed_prompt)} chars")
+        self.logger.debug(f"📄 Prompt preview: {detailed_prompt[:200]}...")
+        
         self.logger.debug(f"🧠 Sending {task_complexity} complexity '{prompt[:50]}...' to {model}")
         
-        # Enhanced retry logic for empty responses
+        # Enhanced retry logic with better logging and verification
         max_retries = 3
         start_time = time.time()
         response = None
@@ -542,6 +549,9 @@ class BaseAgent(ABC):
         
         for attempt in range(max_retries):
             try:
+                # Log attempt
+                self.logger.info(f"🧠 LLM attempt {attempt + 1}/{max_retries} for interaction [{interaction_id}]")
+                
                 # Use safe_execute_with_retry for resilient LLM calls
                 async def _llm_call():
                     return await self.llm.ainvoke(messages)
@@ -551,10 +561,12 @@ class BaseAgent(ABC):
                 
                 # Enhanced validation for empty or invalid responses
                 if self._is_valid_response(response_content, prompt):
-                    self.logger.debug(f"✅ Valid LLM response received on attempt {attempt + 1}")
+                    self.logger.info(f"✅ Valid LLM response received on attempt {attempt + 1} [{interaction_id}]")
+                    self.logger.debug(f"📋 Response length: {len(response_content)} characters")
+                    self.logger.debug(f"📄 Response preview: {response_content}...")
                     break
                 else:
-                    self.logger.warning(f"⚠️ Invalid/empty LLM response on attempt {attempt + 1}: '{response_content[:100]}...'")
+                    self.logger.warning(f"⚠️ Invalid/empty LLM response on attempt {attempt + 1} [{interaction_id}]: '{response_content[:100]}...'")
                     if attempt < max_retries - 1:
                         # Modify prompt slightly for retry
                         detailed_prompt = self._enhance_prompt_for_retry(detailed_prompt, attempt + 1)
@@ -564,14 +576,16 @@ class BaseAgent(ABC):
                     else:
                         # Last attempt, generate fallback
                         error = f"Failed to get valid response after {max_retries} attempts"
+                        self.logger.error(f"❌ All LLM attempts failed [{interaction_id}], using fallback")
                         response_content = self._generate_fallback_response(prompt, full_context, error)
                         
             except Exception as e:
                 error = str(e)
-                self.logger.error(f"❌ LLM request failed on attempt {attempt + 1}: {error}")
+                self.logger.error(f"❌ LLM request failed on attempt {attempt + 1} [{interaction_id}]: {error}")
                 
                 if attempt == max_retries - 1:
                     # Final attempt failed, use fallback
+                    self.logger.error(f"❌ Final LLM attempt failed [{interaction_id}], using fallback")
                     response_content = self._generate_fallback_response(prompt, full_context, error)
                     break
                 else:
@@ -583,6 +597,13 @@ class BaseAgent(ABC):
         
         # Extract token usage if available
         token_usage = self._extract_token_usage(response)
+        
+        # Log comprehensive LLM response with enhanced verification
+        self.logger.info(f"🧠 LLM interaction complete [{interaction_id}] - Duration: {duration:.2f}s")
+        
+        # Verify response quality
+        if len(response_content.strip()) < 50:
+            self.logger.warning(f"⚠️ Short response received [{interaction_id}]: {len(response_content)} chars")
         
         # Log LLM response
         llm_logger.log_llm_response(
@@ -606,9 +627,15 @@ class BaseAgent(ABC):
         # Post-process response with enhanced validation
         processed_response = self._post_process_response(response_content)
         
-        # Final validation - raise exception if we still don't have a valid response
+        # Final comprehensive validation with detailed logging
         if not self._is_valid_response(processed_response, prompt):
-            raise Exception(f"Failed to get valid LLM response after {max_retries} attempts. Last response: '{processed_response[:200]}...'")
+            error_msg = f"Failed to get valid LLM response after {max_retries} attempts. Last response: '{processed_response[:200]}...'"
+            self.logger.error(f"❌ Final validation failed [{interaction_id}]: {error_msg}")
+            raise Exception(error_msg)
+        
+        # Log successful completion
+        self.logger.info(f"✅ LLM Request completed successfully [{interaction_id}]")
+        self.logger.debug(f"📊 Final response: {len(processed_response)} chars, validated and processed")
         
         return processed_response
         
@@ -813,12 +840,14 @@ Remember: You are an expert in your domain. Provide confident, detailed response
             return f"You are {self.agent_id}, a Flutter development agent. Provide detailed, technical responses."
     
     def _is_valid_response(self, response: str, original_prompt: str) -> bool:
-        """Validate that the LLM response is valid and meaningful."""
+        """Validate that the LLM response is valid and meaningful with enhanced logging."""
         if not response or not response.strip():
+            self.logger.debug("🔍 Response validation failed: Empty or None response")
             return False
         
         # Check minimum length
         if len(response.strip()) < 10:
+            self.logger.debug(f"🔍 Response validation failed: Too short ({len(response.strip())} chars)")
             return False
         
         # Check for common empty/error responses
@@ -836,10 +865,12 @@ Remember: You are an expert in your domain. Provide confident, detailed response
         ]
         
         response_lower = response.lower()
-        if any(indicator in response_lower for indicator in empty_indicators):
-            # Allow these if they're part of a longer, more detailed response
-            if len(response.strip()) < 50:
-                return False
+        for indicator in empty_indicators:
+            if indicator in response_lower:
+                # Allow these if they're part of a longer, more detailed response
+                if len(response.strip()) < 50:
+                    self.logger.debug(f"🔍 Response validation failed: Contains empty indicator '{indicator}' and too short")
+                    return False
         
         # Check for code-related prompts - should have some technical content
         if any(keyword in original_prompt.lower() for keyword in ['code', 'implement', 'create', 'build', 'flutter', 'dart']):
@@ -850,8 +881,25 @@ Remember: You are an expert in your domain. Provide confident, detailed response
             ]
             if not any(indicator in response_lower for indicator in technical_indicators):
                 if len(response.strip()) < 100:  # Allow longer explanatory responses
+                    self.logger.debug(f"🔍 Response validation failed: Technical prompt but no technical content found")
                     return False
         
+        # Additional quality checks
+        word_count = len(response.split())
+        if word_count < 5:
+            self.logger.debug(f"🔍 Response validation failed: Too few words ({word_count})")
+            return False
+        
+        # Check for repeated content (potential LLM loop)
+        words = response.split()
+        if len(words) > 10:
+            # Check if more than 50% of words are repeated
+            unique_words = set(words)
+            if len(unique_words) / len(words) < 0.5:
+                self.logger.debug("🔍 Response validation failed: High repetition detected")
+                return False
+        
+        self.logger.debug(f"✅ Response validation passed: {len(response)} chars, {word_count} words")
         return True
     
     def _enhance_prompt_for_retry(self, original_prompt: str, attempt_number: int) -> str:
@@ -909,20 +957,88 @@ Remember: You are an expert in your domain. Provide confident, detailed response
         return token_usage
     
     def _generate_fallback_response(self, prompt: str, context: Dict[str, Any], error: str) -> str:
-        """Generate a fallback response when LLM call fails."""
+        """Generate a fallback response when LLM call fails with enhanced logging."""
         self.logger.warning(f"⚠️ Generating fallback response for failed LLM call: {error}")
+        self.logger.debug(f"📝 Original prompt: {prompt[:200]}...")
         
-        # Basic fallback response that acknowledges the error
-        return f"""
+        # Try to extract key information from prompt for a more relevant fallback
+        agent_name = self.agent_config.get('name', self.agent_id)
+        
+        # Check what type of task this might be based on keywords
+        prompt_lower = prompt.lower()
+        
+        if any(keyword in prompt_lower for keyword in ['architecture', 'design', 'structure']):
+            return f"""
+I apologize, but I encountered an issue while processing your architecture request.
+
+Error: {error}
+
+As {agent_name}, I can provide this basic guidance:
+
+**Fallback Architecture Recommendations:**
+1. Use a layered architecture with clear separation of concerns
+2. Implement the repository pattern for data management
+3. Consider using BLoC or Provider for state management
+4. Structure your project with these directories:
+   - lib/core/ (core functionality)
+   - lib/features/ (feature modules)
+   - lib/shared/ (shared components)
+
+**Next Steps:**
+- Retry the request with more specific requirements
+- Check system connectivity and try again
+- Consult with other agents for detailed architecture decisions
+
+Please contact the system administrator if this problem persists.
+"""
+        
+        elif any(keyword in prompt_lower for keyword in ['code', 'implement', 'create', 'build']):
+            return f"""
+I apologize, but I encountered an issue while processing your code generation request.
+
+Error: {error}
+
+As {agent_name}, I recommend:
+
+**Fallback Implementation Guidance:**
+1. Start with a basic Flutter widget structure
+2. Follow Flutter naming conventions (PascalCase for classes, camelCase for variables)
+3. Use StatelessWidget for static UI, StatefulWidget for dynamic content
+4. Include proper imports and error handling
+
+**Basic Flutter Structure:**
+```dart
+import 'package:flutter/material.dart';
+
+class MyWidget extends StatelessWidget {{
+  @override
+  Widget build(BuildContext context) {{
+    return Container(
+      // Your implementation here
+    );
+  }}
+}}
+```
+
+Please retry with more specific requirements or check system connectivity.
+"""
+        
+        else:
+            return f"""
 I apologize, but I encountered an issue while processing your request.
 
 Error: {error}
 
-As {self.agent_config.get('name', self.agent_id)}, I recommend:
+As {agent_name}, I recommend:
 1. Check if the request can be handled without LLM processing
 2. Try again with a more specific prompt
 3. Consult with other agents in the system for assistance
-4. If the error persists, there might be an issue with the LLM service
+4. Verify system connectivity and configuration
+
+**Available Actions:**
+- Retry the request with different parameters
+- Break down complex requests into smaller parts
+- Contact other specialized agents for assistance
 
 Please contact the system administrator if this problem continues.
 """

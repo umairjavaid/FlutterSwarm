@@ -15,6 +15,7 @@ from shared.state import shared_state, AgentStatus, MessageType
 from tools import ToolResult, ToolStatus
 from utils.enhancedLLMResponseParser import EnhancedLLMResponseParser
 from utils.function_logger import track_function
+from utils.file_creation_fix import apply_file_creation_fixes
 
 class ImplementationAgent(BaseAgent):
     """
@@ -29,6 +30,9 @@ class ImplementationAgent(BaseAgent):
         
         # Task execution tracking
         self._executing_task = False
+        
+        # Apply file creation fixes immediately after initialization
+        apply_file_creation_fixes(self)
         
     @property
     def flutter_templates(self):
