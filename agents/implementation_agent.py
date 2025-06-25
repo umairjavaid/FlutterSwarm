@@ -862,15 +862,20 @@ Ensure:
             return None
 
     async def _create_actual_file(self, project_path: str, file_path: str, content: str, project_id: str = None) -> bool:
-        """Create actual file with enhanced error handling."""
+        """Create actual file with enhanced error handling and proper path resolution."""
         try:
-            full_path = os.path.join(project_path, file_path)
+            # Ensure project_path is absolute
+            abs_project_path = os.path.abspath(project_path)
+            full_path = os.path.join(abs_project_path, file_path)
+            
+            # Ensure the full path is also absolute (redundant safety check)
+            full_path = os.path.abspath(full_path)
             
             # Ensure directory exists
             dir_path = os.path.dirname(full_path)
             os.makedirs(dir_path, exist_ok=True)
             
-            # Write file using tool for consistency
+            # Write file using tool for consistency - pass absolute path
             file_result = await self.execute_tool(
                 "file",
                 operation="write",
@@ -886,7 +891,7 @@ Ensure:
                         with open(full_path, 'r') as f:
                             written_content = f.read()
                         if written_content.strip():
-                            self.logger.info(f"✅ Successfully created and verified: {file_path}")
+                            self.logger.info(f"✅ Successfully created and verified: {file_path} at {full_path}")
                             
                             # Register in shared state if project_id provided
                             if project_id:

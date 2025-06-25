@@ -448,10 +448,8 @@ class FlutterSwarmGovernance:
         if state["gate_statuses"].get("project_initiation") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("project_initiation"):
-                self.logger.warning("🔄 Circuit breaker: Forcing project_initiation to pass")
-                state["gate_statuses"]["project_initiation"] = "passed"
-                state["approval_status"]["project_initiation"] = "approved"
-                return "architecture_approval"
+                self.logger.error("🔄 Circuit breaker triggered for project initiation. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
             return "fallback_coordination"
         
         # Default to architecture approval
@@ -475,10 +473,8 @@ class FlutterSwarmGovernance:
         if state["gate_statuses"].get("architecture_approval") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("architecture_approval"):
-                self.logger.warning("🔄 Circuit breaker: Forcing architecture_approval to pass")
-                state["gate_statuses"]["architecture_approval"] = "passed"
-                state["approval_status"]["architecture_approval"] = "approved"
-                return "implementation_oversight"
+                self.logger.error("🔄 Circuit breaker triggered for architecture approval. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
@@ -501,27 +497,38 @@ class FlutterSwarmGovernance:
             self._reset_consecutive_failures()
             return "quality_verification"
         
+        # Handle rejected status - route to fallback coordination or architecture
+        if state["approval_status"].get("implementation_oversight") == "rejected":
+            # Check if architecture compliance issues
+            if not state["quality_criteria_met"].get("architecture_compliance_verified", True):
+                architecture_failures = self.gate_failure_counts.get("architecture_approval", 0)
+                if architecture_failures < self.max_gate_failures:
+                    return "architecture_approval"
+            return "fallback_coordination"
+        
+        # Handle pending status - route to fallback coordination
+        if state["approval_status"].get("implementation_oversight") == "pending":
+            return "fallback_coordination"
+        
         # Handle repeated failures with circuit breaker
         if state["gate_statuses"].get("implementation_oversight") == "failed":
-            self._increment_global_failure()
+            self._update_failure_tracking("implementation_oversight", state)
             if self._check_circuit_breaker("implementation_oversight"):
-                self.logger.warning("🔄 Circuit breaker: Forcing implementation_oversight to pass")
-                state["gate_statuses"]["implementation_oversight"] = "passed"
-                state["approval_status"]["implementation_oversight"] = "approved"
-                return "quality_verification"
+                self.logger.error("� Circuit breaker triggered for implementation. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
             return "fallback_coordination"
         
         # Return to architecture if architecture compliance issues
-        if not state["quality_criteria_met"].get("architecture_compliance_verified", False):
+        if not state["quality_criteria_met"].get("architecture_compliance_verified", True):
             # Prevent infinite loops between architecture and implementation
             architecture_failures = self.gate_failure_counts.get("architecture_approval", 0)
             if architecture_failures < self.max_gate_failures:
                 return "architecture_approval"
         
-        # Default to quality verification or fallback
+        # Default to fallback coordination to attempt recovery
         return "fallback_coordination"
     
     def _route_from_quality_verification(self, state: ProjectGovernanceState) -> str:
@@ -538,14 +545,20 @@ class FlutterSwarmGovernance:
             self._reset_consecutive_failures()
             return "security_compliance"
         
+        # Handle rejected status - route back to implementation
+        if state["approval_status"].get("quality_verification") == "rejected":
+            return "implementation_oversight"
+        
+        # Handle pending status - route to fallback coordination
+        if state["approval_status"].get("quality_verification") == "pending":
+            return "fallback_coordination"
+        
         # Handle repeated failures with circuit breaker
         if state["gate_statuses"].get("quality_verification") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("quality_verification"):
-                self.logger.warning("🔄 Circuit breaker: Forcing quality_verification to pass")
-                state["gate_statuses"]["quality_verification"] = "passed"
-                state["approval_status"]["quality_verification"] = "approved"
-                return "security_compliance"
+                self.logger.error("🔄 Circuit breaker triggered for quality verification. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
@@ -573,14 +586,20 @@ class FlutterSwarmGovernance:
             self._reset_consecutive_failures()
             return "performance_validation"
         
+        # Handle rejected status - route back to implementation
+        if state["approval_status"].get("security_compliance") == "rejected":
+            return "implementation_oversight"
+        
+        # Handle pending status - route to fallback coordination
+        if state["approval_status"].get("security_compliance") == "pending":
+            return "fallback_coordination"
+        
         # Handle repeated failures with circuit breaker
         if state["gate_statuses"].get("security_compliance") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("security_compliance"):
-                self.logger.warning("🔄 Circuit breaker: Forcing security_compliance to pass")
-                state["gate_statuses"]["security_compliance"] = "passed"
-                state["approval_status"]["security_compliance"] = "approved"
-                return "performance_validation"
+                self.logger.error("🔄 Circuit breaker triggered for security compliance. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
@@ -608,18 +627,32 @@ class FlutterSwarmGovernance:
             self._reset_consecutive_failures()
             return "documentation_review"
         
+        # Handle rejected status - route back to implementation
+        if state["approval_status"].get("performance_validation") == "rejected":
+            return "implementation_oversight"
+        
+        # Handle pending status - route to fallback coordination
+        if state["approval_status"].get("performance_validation") == "pending":
+            return "fallback_coordination"
+        
         # Handle repeated failures with circuit breaker
         if state["gate_statuses"].get("performance_validation") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("performance_validation"):
-                self.logger.warning("🔄 Circuit breaker: Forcing performance_validation to pass")
-                state["gate_statuses"]["performance_validation"] = "passed"
-                state["approval_status"]["performance_validation"] = "approved"
-                return "documentation_review"
+                self.logger.error("🔄 Circuit breaker triggered for performance validation. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
             return "fallback_coordination"
+        
+        # Return to implementation if performance issues, but prevent infinite loops
+        implementation_failures = self.gate_failure_counts.get("implementation_oversight", 0)
+        if implementation_failures < self.max_gate_failures:
+            return "implementation_oversight"
+        
+        # Default to documentation review or fallback
+        return "fallback_coordination"
         
         # Return to implementation if performance issues, but prevent infinite loops
         implementation_failures = self.gate_failure_counts.get("implementation_oversight", 0)
@@ -643,14 +676,20 @@ class FlutterSwarmGovernance:
             self._reset_consecutive_failures()
             return "deployment_approval"
         
+        # Handle rejected status - route back to quality verification
+        if state["approval_status"].get("documentation_review") == "rejected":
+            return "quality_verification"
+        
+        # Handle pending status - route to fallback coordination
+        if state["approval_status"].get("documentation_review") == "pending":
+            return "fallback_coordination"
+        
         # Handle repeated failures with circuit breaker
         if state["gate_statuses"].get("documentation_review") == "failed":
             self._increment_global_failure()
             if self._check_circuit_breaker("documentation_review"):
-                self.logger.warning("🔄 Circuit breaker: Forcing documentation_review to pass")
-                state["gate_statuses"]["documentation_review"] = "passed"
-                state["approval_status"]["documentation_review"] = "approved"
-                return "deployment_approval"
+                self.logger.error("🔄 Circuit breaker triggered for documentation review. Routing to fallback coordination to handle persistent failure.")
+                return "fallback_coordination"
         
         # Check if coordination fallback is needed
         if state.get("stuck_processes") and len(state["stuck_processes"]) > 0:
@@ -677,13 +716,17 @@ class FlutterSwarmGovernance:
             return "architecture_approval"
         
         if "quality_gate_failures" in state.get("stuck_processes", []):
-            return "implementation_oversight"
+            return "architecture_approval"
         
         if "agent_collaboration_breakdown" in state.get("stuck_processes", []):
-            return "quality_verification"
+            return "implementation_oversight"
         
-        # Default to implementation oversight
-        return "implementation_oversight"
+        # If no specific stuck processes, end the workflow
+        if not state.get("stuck_processes", []):
+            return "end"
+        
+        # Default to end for unhandled cases
+        return "end"
     
     # Governance Gate Implementations
     @track_function(agent_id="governance", log_args=True, log_return=True)
