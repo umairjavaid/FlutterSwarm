@@ -55,10 +55,17 @@ class FixedImplementationAgent:
                 )
             else:
                 # Create project in shared state if it doesn't exist
-                shared_state.create_project(
+                shared_state.create_project_with_id(
                     project_id=project_id,
                     name=project_name,
-                    project_path=absolute_project_path
+                    description=task_data.get("description", ""),
+                    requirements=task_data.get("requirements", [])
+                )
+                # Then update with path info
+                shared_state.update_project(
+                    project_id,
+                    project_path=absolute_project_path,
+                    sanitized_name=sanitized_name
                 )
         
         # Store project context in agent for easy access
@@ -146,7 +153,15 @@ Extract the files from your previous response and format them correctly.
             project_path = self.agent._current_project_path
             if not project_path:
                 self.logger.error("❌ No project path set")
-                return False, ""
+                # Try to recover by getting from shared state
+                project_state = shared_state.get_project_state(project_id)
+                if project_state and hasattr(project_state, 'project_path') and project_state.project_path:
+                    project_path = project_state.project_path
+                    self.agent._current_project_path = project_path
+                    self.logger.info(f"🔄 Recovered project path from shared state: {project_path}")
+                else:
+                    self.logger.error("❌ Could not recover project path from shared state either")
+                    return False, ""
             
             # Construct full file path
             full_path = os.path.join(project_path, relative_path)
@@ -222,7 +237,14 @@ Extract the files from your previous response and format them correctly.
             project_path = self.agent._current_project_path
             if not project_path:
                 self.logger.error("❌ No project path set")
-                return False
+                # Try to set up project context if it's missing
+                self.logger.info("🔄 Attempting to set up project context...")
+                context = await self.setup_project_context(task_data)
+                project_path = context.get("absolute_project_path")
+                if not project_path:
+                    self.logger.error("❌ Failed to establish project path even after context setup")
+                    return False
+                self.logger.info(f"✅ Project path established: {project_path}")
             
             # Check if pubspec.yaml exists
             pubspec_path = os.path.join(project_path, "pubspec.yaml")
@@ -474,18 +496,37 @@ def apply_file_creation_fixes(implementation_agent):
         from utils.file_creation_fix import apply_file_creation_fixes
         apply_file_creation_fixes(implementation_agent)
     """
-    fixed_agent = FixedImplementationAgent(implementation_agent)
-    
-    # Replace methods with fixed versions
-    implementation_agent._parse_and_create_files = fixed_agent.parse_and_create_files
-    implementation_agent.implement_specific_features = fixed_agent.implement_feature_with_fixes
-    implementation_agent._setup_project_context = fixed_agent.setup_project_context
-    implementation_agent._create_single_file = fixed_agent.create_single_file
-    
-    # Ensure agent has required attributes
+    # Ensure agent has required attributes first
     if not hasattr(implementation_agent, '_current_project_id'):
         implementation_agent._current_project_id = None
     if not hasattr(implementation_agent, '_current_project_path'):
         implementation_agent._current_project_path = None
+    
+    fixed_agent = FixedImplementationAgent(implementation_agent)
+    
+    # Create bound methods that properly reference the agent instance
+    import types
+    
+    async def bound_setup_project_context(task_data):
+        return await fixed_agent.setup_project_context(task_data)
+    
+    async def bound_ensure_flutter_project_exists(task_data):
+        return await fixed_agent.ensure_flutter_project_exists(task_data)
+    
+    async def bound_parse_and_create_files(project_id, llm_response):
+        return await fixed_agent.parse_and_create_files(project_id, llm_response)
+    
+    async def bound_create_single_file(relative_path, content, project_id):
+        return await fixed_agent.create_single_file(relative_path, content, project_id)
+    
+    async def bound_implement_feature_with_fixes(task_data):
+        return await fixed_agent.implement_feature_with_fixes(task_data)
+    
+    # Replace methods with properly bound versions
+    implementation_agent._parse_and_create_files = bound_parse_and_create_files
+    implementation_agent.implement_specific_features = bound_implement_feature_with_fixes
+    implementation_agent._setup_project_context = bound_setup_project_context
+    implementation_agent._create_single_file = bound_create_single_file
+    implementation_agent._ensure_flutter_project_exists = bound_ensure_flutter_project_exists
     
     return implementation_agent

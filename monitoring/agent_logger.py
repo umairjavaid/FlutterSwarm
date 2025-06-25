@@ -29,6 +29,12 @@ class LogEntry:
     status: Optional[str] = None
 
 
+class FlushingFileHandler(logging.FileHandler):
+    """A file handler that flushes after every log record is emitted."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
 class AgentLogger:
     """
     Comprehensive logging system for FlutterSwarm agents.
@@ -69,7 +75,7 @@ class AgentLogger:
         # File handler for detailed logs
         if self.enable_file_logging:
             log_file = self.log_dir / f"flutter_swarm_{self.session_id}.log"
-            file_handler = logging.FileHandler(log_file)
+            file_handler = FlushingFileHandler(log_file)
             file_handler.setLevel(logging.DEBUG)
             
             # Detailed file formatter

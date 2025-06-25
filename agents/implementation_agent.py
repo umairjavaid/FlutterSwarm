@@ -49,6 +49,11 @@ class ImplementationAgent(BaseAgent):
             # Store current project ID for file operations
             self._current_project_id = task_data.get("project_id")
             
+            # First set up project context to ensure _current_project_path is set
+            if hasattr(self, '_setup_project_context'):
+                await self._setup_project_context(task_data)
+                self.logger.debug(f"🔧 Project context setup - path: {getattr(self, '_current_project_path', 'Not set')}")
+            
             # Analyze task using LLM to understand implementation requirements
             analysis = await self.think(f"Analyze this implementation task: {task_description}", {
                 "task_data": task_data,
@@ -622,60 +627,61 @@ class ImplementationAgent(BaseAgent):
                                  else task_data.get("description", ""))
             architecture_decisions = (getattr(project_state, 'architecture_decisions', []) if project_state else [])
             
+            # DEPRECATED PROMPT: The old prompt was too open-ended, leading to malformed output.
+            # project_structure_prompt = f"""..."""
+
+            # NEW, MORE RESTRICTIVE PROMPT
             project_structure_prompt = f"""
-            Generate a complete, UNIQUE Flutter project structure specifically for "{project_name}".
-            
-            ===== PROJECT CONTEXT =====
-            Project Name: {project_name}
-            Description: {project_description}
-            Architecture Style: {architecture_style}
-            Package Name: {sanitized_project_name}
-            
-            ===== UNIQUE REQUIREMENTS TO IMPLEMENT =====
-            {chr(10).join([f"• {req}" for req in project_requirements])}
-            
-            ===== ARCHITECTURE DECISIONS TO FOLLOW =====
-            {chr(10).join([f"• {decision.get('description', decision)}" for decision in architecture_decisions]) if architecture_decisions else "• Use Clean Architecture with appropriate state management"}
-            
-            ===== IMPLEMENTATION TASK =====
-            Create a COMPLETE, WORKING Flutter application that specifically implements the above requirements.
-            This should NOT be a generic Flutter app - it must be tailored to {project_name}'s specific needs.
-            
-            Generate the following files with complete, production-ready content:
-            
-            1. **pubspec.yaml** - Include ALL dependencies needed for the specific requirements above
-            2. **lib/main.dart** - App entry point configured for {project_name}'s specific needs
-            3. **Feature implementations** - Create actual features that match the requirements, not generic examples
-            4. **Domain models** - Create models that match the specific data needs of {project_name}
-            5. **Service implementations** - Implement services that handle the specific requirements
-            6. **UI screens** - Create screens that serve the specific purpose of {project_name}
-            7. **State management** - Implement state management for the specific features
-            
-            ===== SPECIFIC IMPLEMENTATION REQUIREMENTS =====
-            - Use null safety and latest Dart/Flutter features
-            - Follow {architecture_style} architecture patterns strictly
-            - Include proper error handling for the specific use cases
-            - Use Material Design 3 with theming appropriate for {project_name}
-            - Implement state management that handles the specific data flows
-            - Add ALL dependencies needed for the requirements in pubspec.yaml
-            - Create realistic, functional code - not placeholder or demo code
-            - Include proper navigation between screens
-            - Implement actual business logic for the requirements
-            
-            ===== OUTPUT FORMAT =====
-            Generate complete, compilable code for each file.
-            Format the response as JSON with this structure:
-            {{
-                "files": [
-                    {{
-                        "path": "relative/path/to/file.dart",
-                        "content": "complete file content here"
-                    }}
-                ]
-            }}
-            
-            Remember: This should be a fully functional {project_name} app, not a generic Flutter template!
-            """
+You are an expert Flutter developer AI. Your SOLE task is to generate the complete file structure and content for a new Flutter application based on the provided context.
+
+===== PROJECT CONTEXT =====
+Project Name: {project_name}
+Description: {project_description}
+Architecture Style: {architecture_style}
+Package Name: {sanitized_project_name}
+Project Requirements: {project_requirements}
+Architecture Decisions: {architecture_decisions}
+
+===== YOUR TASK =====
+Generate all the necessary files to create a complete, working, and compilable Flutter application that meets the specified requirements.
+
+===== STRICT OUTPUT FORMAT =====
+Your response MUST be a single, valid JSON object and nothing else. No introductory text, no explanations, no markdown.
+
+The JSON object must have a single key: "files".
+The "files" key must contain a list of file objects.
+Each file object MUST have two keys: "path" and "content".
+
+- "path": A string representing the file's path RELATIVE to the project root (e.g., "lib/main.dart", "pubspec.yaml").
+- "content": A string containing the FULL, COMPLETE, and COMPILABLE code for that file. Include all necessary imports. Do not use placeholders or "TODO" comments.
+
+===== EXAMPLE OF CORRECT OUTPUT =====
+{{
+    "files": [
+        {{
+            "path": "pubspec.yaml",
+            "content": "name: {sanitized_project_name}\\ndescription: {project_description}\\n..."
+        }},
+        {{
+            "path": "lib/main.dart",
+            "content": "import 'package:flutter/material.dart';\\n\\nvoid main() {{ runApp(const MyApp()); }}\\n..."
+        }},
+        {{
+            "path": "lib/features/auth/presentation/pages/login_page.dart",
+            "content": "import 'package:flutter/material.dart';\\n\\nclass LoginPage extends StatelessWidget {{...}}"
+        }}
+    ]
+}}
+
+===== CRITICAL INSTRUCTIONS =====
+1.  **JSON ONLY:** Your entire response must be only the JSON object.
+2.  **RELATIVE PATHS:** All paths must be relative to the project root. Do NOT use absolute paths.
+3.  **COMPLETE CONTENT:** File content must be 100% complete and ready to be written to disk.
+4.  **NO PLACEHOLDERS:** Do not use "..." or TODO comments. Write the actual code.
+5.  **IMPLEMENT REQUIREMENTS:** The generated code must reflect the specific project requirements, not a generic template.
+
+Generate the JSON for the "{project_name}" application now.
+"""
             
             # Generate project files using LLM
             project_files_response = await self.think(project_structure_prompt, {
@@ -2735,6 +2741,39 @@ Ensure:
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
     
+    def _normalize_flutter_package_name(self, name: str) -> str:
+        """Normalize a project name to be a valid Flutter/Dart package name."""
+        import re
+        
+        if not name:
+            return "flutter_app"
+        
+        # Convert to lowercase
+        normalized = name.lower()
+        
+        # Replace spaces and special characters with underscores
+        normalized = re.sub(r'[^a-z0-9_]', '_', normalized)
+        
+        # Remove consecutive underscores
+        normalized = re.sub(r'_+', '_', normalized)
+        
+        # Remove leading/trailing underscores
+        normalized = normalized.strip('_')
+        
+        # Ensure it starts with a letter or underscore (not a number)
+        if normalized and normalized[0].isdigit():
+            normalized = f"app_{normalized}"
+        
+        # Ensure it's not empty
+        if not normalized:
+            normalized = "flutter_app"
+        
+        # Ensure it's not too long (pub.dev has limits)
+        if len(normalized) > 50:
+            normalized = normalized[:50].rstrip('_')
+        
+        return normalized
+
     def _sanitize_dart_package_name(self, name: str) -> str:
         """Wrapper for _normalize_flutter_package_name for backward compatibility."""
         return self._normalize_flutter_package_name(name)

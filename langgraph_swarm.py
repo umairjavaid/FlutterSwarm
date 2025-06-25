@@ -1558,7 +1558,19 @@ class FlutterSwarmGovernance:
         try:
             self.logger.info(f"🚀 Executing implementation phase for project {project_id}")
             
-            # First ensure Flutter project is initialized
+            # First set up project context (this will set _current_project_path)
+            if hasattr(implementation_agent, '_setup_project_context'):
+                try:
+                    await implementation_agent._setup_project_context({
+                        "project_id": project_id,
+                        "name": state["name"],
+                        "description": state["description"]
+                    })
+                    self.logger.debug("✅ Project context set up successfully")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to set up project context: {e}")
+            
+            # Now ensure Flutter project is initialized
             project_init_result = await implementation_agent._ensure_flutter_project_exists({
                 "project_id": project_id,
                 "name": state["name"],

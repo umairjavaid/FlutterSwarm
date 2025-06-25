@@ -244,7 +244,21 @@ class SharedState:
     Provides real-time synchronization and communication.
     """
     
-    def __init__(self):
+    def __init__(self, logger=None):
+        # Initialize logger first
+        if logger is None:
+            import logging
+            self.logger = logging.getLogger("FlutterSwarm.SharedState")
+            # Set a default handler if none exists
+            if not self.logger.handlers:
+                handler = logging.StreamHandler()
+                formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')
+                handler.setFormatter(formatter)
+                self.logger.addHandler(handler)
+                self.logger.setLevel(logging.INFO)
+        else:
+            self.logger = logger
+            
         # Initialize event loop and async-safe locking
         try:
             self._config = get_config()
@@ -1543,4 +1557,6 @@ class SharedState:
             return False
 
 # Global shared state instance
-shared_state = SharedState()
+import logging
+_shared_state_logger = logging.getLogger("FlutterSwarm.SharedState")
+shared_state = SharedState(logger=_shared_state_logger)

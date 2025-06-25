@@ -732,7 +732,18 @@ class BaseAgent(ABC):
         try:
             # Get project information safely
             project_state = full_context.get("project_state")
-            project_info = self._extract_project_info(project_state)
+            try:
+                project_info = self._extract_project_info(project_state)
+            except Exception as extract_error:
+                self.logger.warning(f"Error extracting project info: {extract_error}")
+                project_info = {
+                    'name': 'Flutter Project',
+                    'description': 'A Flutter application',
+                    'requirements': [],
+                    'status': 'unknown',
+                    'progress': 0.0,
+                    'project_id': 'unknown'
+                }
             
             # Format collaboration context
             collaboration_info = self._format_collaboration_context(full_context)
@@ -802,7 +813,18 @@ Provide a detailed response with actionable recommendations and code if applicab
             
             # Get project information safely
             project_state = full_context.get('project_state')
-            project_info = self._extract_project_info(project_state)
+            try:
+                project_info = self._extract_project_info(project_state)
+            except Exception as extract_error:
+                self.logger.warning(f"Error extracting project info in system prompt: {extract_error}")
+                project_info = {
+                    'name': 'Flutter Project',
+                    'description': 'A Flutter application',
+                    'requirements': [],
+                    'status': 'unknown',
+                    'progress': 0.0,
+                    'project_id': 'unknown'
+                }
             
             system_prompt = f"""
 You are {agent_name}, a specialized agent in the FlutterSwarm multi-agent Flutter development system.
@@ -1859,40 +1881,53 @@ class AgentToolbox:
 
     def _extract_project_info(self, project_state) -> Dict[str, Any]:
         """Safely extract project information from ProjectState dataclass or dict."""
-        if project_state is None:
-            return {
-                'name': 'Flutter Project',
-                'description': 'A Flutter application',
-                'requirements': [],
-                'status': 'unknown',
-                'progress': 0.0,
-                'project_id': 'unknown'
-            }
-        
-        # Handle ProjectState dataclass
-        if hasattr(project_state, 'name'):
-            return {
-                'name': getattr(project_state, 'name', 'Flutter Project'),
-                'description': getattr(project_state, 'description', 'A Flutter application'),
-                'requirements': getattr(project_state, 'requirements', []),
-                'status': getattr(project_state, 'current_phase', 'unknown'),
-                'progress': getattr(project_state, 'progress', 0.0),
-                'project_id': getattr(project_state, 'project_id', 'unknown')
-            }
-        
-        # Handle dictionary
-        elif isinstance(project_state, dict):
-            return {
-                'name': project_state.get('name', 'Flutter Project'),
-                'description': project_state.get('description', 'A Flutter application'),
-                'requirements': project_state.get('requirements', []),
-                'status': project_state.get('status', project_state.get('current_phase', 'unknown')),
-                'progress': project_state.get('progress', 0.0),
-                'project_id': project_state.get('project_id', 'unknown')
-            }
-        
-        # Fallback for other types
-        else:
+        try:
+            if project_state is None:
+                return {
+                    'name': 'Flutter Project',
+                    'description': 'A Flutter application',
+                    'requirements': [],
+                    'status': 'unknown',
+                    'progress': 0.0,
+                    'project_id': 'unknown'
+                }
+            
+            # Handle ProjectState dataclass
+            if hasattr(project_state, 'name'):
+                return {
+                    'name': getattr(project_state, 'name', 'Flutter Project'),
+                    'description': getattr(project_state, 'description', 'A Flutter application'),
+                    'requirements': getattr(project_state, 'requirements', []),
+                    'status': getattr(project_state, 'current_phase', 'unknown'),
+                    'progress': getattr(project_state, 'progress', 0.0),
+                    'project_id': getattr(project_state, 'project_id', 'unknown')
+                }
+            
+            # Handle dictionary
+            elif isinstance(project_state, dict):
+                return {
+                    'name': project_state.get('name', 'Flutter Project'),
+                    'description': project_state.get('description', 'A Flutter application'),
+                    'requirements': project_state.get('requirements', []),
+                    'status': project_state.get('status', project_state.get('current_phase', 'unknown')),
+                    'progress': project_state.get('progress', 0.0),
+                    'project_id': project_state.get('project_id', 'unknown')
+                }
+            
+            # Fallback for other types
+            else:
+                return {
+                    'name': 'Flutter Project',
+                    'description': 'A Flutter application',
+                    'requirements': [],
+                    'status': 'unknown',
+                    'progress': 0.0,
+                    'project_id': 'unknown'
+                }
+        except Exception as e:
+            # Log the error and return safe defaults
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Exception in _extract_project_info: {e}")
             return {
                 'name': 'Flutter Project',
                 'description': 'A Flutter application',
