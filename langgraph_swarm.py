@@ -183,9 +183,9 @@ class FlutterSwarmGovernance:
         
         # Comprehensive circuit breaker system to prevent infinite loops
         self.gate_failure_counts = {}  # gate_name -> failure_count
-        self.max_gate_failures = 1  # Maximum failures before forcing pass (AGGRESSIVE)
+        self.max_gate_failures = 3  # Maximum failures before forcing pass (AGGRESSIVE)
         self.total_routing_steps = 0  # Track total routing steps
-        self.max_routing_steps = 10  # Maximum routing steps before emergency exit (AGGRESSIVE)
+        self.max_routing_steps = 30  # Maximum routing steps before emergency exit (AGGRESSIVE)
         
         # Global failure tracking
         self.consecutive_failures = 0  # Track consecutive gate failures
