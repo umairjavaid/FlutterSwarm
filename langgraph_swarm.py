@@ -242,6 +242,24 @@ class FlutterSwarmGovernance:
         print("🤝 Integrated with real-time agent collaboration system")
         print("🤖 LLM interactions will be logged for all governance decisions")
     
+
+    def _update_failure_tracking(self, gate_name: str, state: dict):
+        """
+        Update various failure counters to prevent infinite loops and track system health.
+        """
+        self.logger.warning(f"Failure detected at gate: {gate_name}. Updating failure tracking.")
+        
+        # Increment consecutive and global failure counts
+        self.consecutive_failures += 1
+        self.global_failure_count += 1
+        
+        # Increment failure count for the specific gate
+        self.gate_failure_counts[gate_name] = self.gate_failure_counts.get(gate_name, 0) + 1
+        
+        self.logger.info(f"Consecutive failures: {self.consecutive_failures}/{self.max_consecutive_failures}")
+        self.logger.info(f"Global failures: {self.global_failure_count}/{self.max_global_failures}")
+        self.logger.info(f"Failures for gate '{gate_name}': {self.gate_failure_counts.get(gate_name, 0)}/{self.max_gate_failures}")
+
     
     def _initialize_all_agents(self):
         """Initialize all agents during startup to ensure they're registered."""
