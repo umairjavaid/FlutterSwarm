@@ -917,15 +917,45 @@ class SharedState:
         # COMPLETELY DISABLED: Real-time activity broadcasting was causing endless loops
         # that prevent actual task execution. Only enable for specific debug purposes.
         if not self._broadcast_enabled:
+            # Still log activities for testing and monitoring purposes
+            self._log_activity_for_testing(event)
             return
             
         # Skip all broadcasts except absolutely critical file creation events
         if event.activity_type not in ["file_created"]:
+            self._log_activity_for_testing(event)
             return
             
         # Log the activity locally but don't broadcast
         self.logger.debug(f"Activity logged (not broadcasted): {event.agent_id} -> {event.activity_type}")
         return
+    
+    def _log_activity_for_testing(self, event: AgentActivityEvent) -> None:
+        """Log activity for testing purposes without triggering broadcasts."""
+        try:
+            # Ensure agent has activity stream
+            if event.agent_id not in self._awareness_state.agent_activity_streams:
+                self._awareness_state.agent_activity_streams[event.agent_id] = []
+            
+            # Add activity to stream
+            activity_record = {
+                "activity_type": event.activity_type,
+                "activity_details": event.activity_details,
+                "timestamp": event.timestamp.isoformat(),
+                "project_id": event.project_id,
+                "impact_level": event.impact_level,
+                "collaboration_relevance": event.collaboration_relevance
+            }
+            
+            self._awareness_state.agent_activity_streams[event.agent_id].append(activity_record)
+            
+            # Keep only last 50 activities per agent
+            if len(self._awareness_state.agent_activity_streams[event.agent_id]) > 50:
+                self._awareness_state.agent_activity_streams[event.agent_id] = \
+                    self._awareness_state.agent_activity_streams[event.agent_id][-50:]
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to log activity for testing: {e}")
     
     def _detect_collaboration_opportunities(self, event: AgentActivityEvent) -> None:
         """Detect proactive collaboration opportunities based on activity events."""

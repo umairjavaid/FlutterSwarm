@@ -1507,7 +1507,7 @@ Please contact the system administrator if this problem continues.
             # Only broadcast truly important activities
             important_activities = {
                 "file_created", "task_completed", "error_detected", 
-                "architecture_decision", "feature_completed", "test_passed"
+                "architecture_decision", "architecture_decision_made", "feature_completed", "test_passed"
             }
             
             if activity_type not in important_activities:

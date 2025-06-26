@@ -2556,38 +2556,54 @@ Ensure:
                 self.logger.error(f"❌ Cannot create file {file_path}: empty content")
                 return False
             
-            # Get project state for base path
+            # ENHANCED: Ensure we always have a valid project context before attempting file operations
             project_id = getattr(self, '_current_project_id', None)
-            if project_id:
-                project_state = shared_state.get_project_state(project_id)
-                if project_state and hasattr(project_state, 'project_path') and project_state.project_path:
-                    project_path = project_state.project_path
-                else:
-                    # Construct path using project ID
-                    project_path = os.path.join("flutter_projects", f"project_{project_id}")
-            else:
-                project_path = "flutter_projects"
+            current_project_path = getattr(self, '_current_project_path', None)
             
-            # Get absolute path to ensure files are created in the correct location
-            from utils.path_utils import get_absolute_project_path
-            try:
-                # Extract just the project name if path includes flutter_projects
-                if project_path.startswith("flutter_projects/"):
-                    project_name = project_path.replace("flutter_projects/", "")
-                    absolute_project_path = get_absolute_project_path(project_name)
-                elif project_path == "flutter_projects":
-                    # Default case - create a default project directory
-                    absolute_project_path = get_absolute_project_path("default_project")
+            # If we don't have a current project path, try to establish one
+            if not current_project_path:
+                if project_id:
+                    project_state = shared_state.get_project_state(project_id)
+                    if project_state and hasattr(project_state, 'project_path') and project_state.project_path:
+                        current_project_path = project_state.project_path
+                        self._current_project_path = current_project_path  # Cache it
+                        self.logger.debug(f"🔄 Recovered project path from shared state: {current_project_path}")
+                    else:
+                        # Construct path using project ID and ensure it's absolute
+                        project_name = f"project_{project_id}"
+                        try:
+                            from utils.path_utils import get_absolute_project_path
+                            current_project_path = get_absolute_project_path(project_name)
+                            self._current_project_path = current_project_path
+                            self.logger.debug(f"🔄 Constructed absolute project path: {current_project_path}")
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to construct absolute project path: {e}")
+                            return False
                 else:
-                    # project_path is already just the project name
-                    absolute_project_path = get_absolute_project_path(project_path)
-            except Exception as e:
-                self.logger.warning(f"⚠️ get_absolute_project_path failed: {e}")
-                # Fallback if utils not available
-                absolute_project_path = os.path.abspath(project_path)
+                    self.logger.error(f"❌ Cannot create file {file_path}: no project context available (no project_id)")
+                    return False
             
-            # Create full path - join absolute project path with relative file path
-            full_path = os.path.join(absolute_project_path, file_path)
+            # Ensure we have an absolute path
+            if not os.path.isabs(current_project_path):
+                try:
+                    from utils.path_utils import get_absolute_project_path
+                    # Extract project name from the path
+                    if current_project_path.startswith("flutter_projects/"):
+                        project_name = current_project_path.replace("flutter_projects/", "")
+                    elif current_project_path == "flutter_projects":
+                        project_name = "default_project"
+                    else:
+                        project_name = os.path.basename(current_project_path)
+                    
+                    current_project_path = get_absolute_project_path(project_name)
+                    self._current_project_path = current_project_path
+                    self.logger.debug(f"🔄 Converted to absolute path: {current_project_path}")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to convert to absolute path: {e}")
+                    return False
+            
+            # Create full path - join absolute project path with relative file path from LLM  
+            full_path = os.path.join(current_project_path, file_path)
             
             self.logger.info(f"📁 Creating file: {file_path} at {full_path}")
             
