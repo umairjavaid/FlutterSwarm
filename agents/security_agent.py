@@ -145,10 +145,11 @@ class SecurityAgent(BaseAgent):
         # Generate security report
         security_report = await self._generate_security_report(all_findings)
         
-        # Store findings in project state
-        if hasattr(project, 'security_findings'):
-            project.security_findings.extend(all_findings)
-            shared_state.update_project(project_id, security_findings=project.security_findings)
+        # Store findings in project state with defensive access
+        if project:
+            security_findings = getattr(project, 'security_findings', [])
+            security_findings.extend(all_findings)
+            shared_state.update_project(project_id, security_findings=security_findings)
         
         return {
             "audit_report": security_report,
@@ -446,8 +447,9 @@ class SecurityAgent(BaseAgent):
             project_id = change_data.get("project_id")
             if project_id:
                 project = shared_state.get_project_state(project_id)
-                if project and filename in project.files_created:
-                    file_content = project.files_created[filename]
+                files_created = getattr(project, 'files_created', {}) if project else {}
+                if project and filename in files_created:
+                    file_content = files_created[filename]
                     await self._analyze_code_security(file_content, filename, project_id)
     
     async def _analyze_code_security(self, code: str, filename: str, project_id: str) -> None:
@@ -487,8 +489,9 @@ class SecurityAgent(BaseAgent):
             
             project = shared_state.get_project_state(project_id)
             if project:
-                project.security_findings.append(finding)
-                shared_state.update_project(project_id, security_findings=project.security_findings)
+                security_findings = getattr(project, 'security_findings', [])
+                security_findings.append(finding)
+                shared_state.update_project(project_id, security_findings=security_findings)
     
     async def _handle_general_security_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle general security tasks."""

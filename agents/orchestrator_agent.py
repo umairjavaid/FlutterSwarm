@@ -117,7 +117,7 @@ class OrchestratorAgent(BaseAgent):
         project = shared_state.get_project_state(project_id)
         if not project:
             return
-        current_phase = project.current_phase
+        current_phase = getattr(project, 'current_phase', 'planning')
         try:
             current_phase_index = self.workflow_phases.index(current_phase)
         except ValueError:
@@ -140,7 +140,8 @@ class OrchestratorAgent(BaseAgent):
         # Find existing project by name
         project_id = None
         for pid, project in shared_state._projects.items():
-            if project.name == name:
+            project_name = getattr(project, 'name', '')
+            if project_name == name:
                 project_id = pid
                 break
         
@@ -346,9 +347,9 @@ class OrchestratorAgent(BaseAgent):
                     "task_description": "design_flutter_architecture_with_context",
                     "task_data": {
                         "project_id": project_id,
-                        "project_name": project.name if project else "",
-                        "description": project.description if project else "",
-                        "requirements": project.requirements if project else [],
+                        "project_name": getattr(project, 'name', 'Unknown Project') if project else 'Unknown Project',
+                        "description": getattr(project, 'description', 'No description available') if project else 'No description available',
+                        "requirements": getattr(project, 'requirements', []) if project else [],
                         "planning_output": plan,
                         "architecture_goals": [
                             "scalable_architecture",
@@ -429,15 +430,17 @@ class OrchestratorAgent(BaseAgent):
         
         project = self.get_project_state()
         if project:
-            current_phase_index = self.workflow_phases.index(project.current_phase)
+            current_phase = getattr(project, 'current_phase', 'planning')
+            current_phase_index = self.workflow_phases.index(current_phase)
             if current_phase_index < len(self.workflow_phases) - 1:
                 next_phase = self.workflow_phases[current_phase_index + 1]
-                shared_state.update_project(project.project_id, current_phase=next_phase)
+                project_id = getattr(project, 'project_id', 'unknown')
+                shared_state.update_project(project_id, current_phase=next_phase)
                 
                 # Coordinate the next phase
                 await self._coordinate_phase({
                     "phase": next_phase,
-                    "project_id": project.project_id
+                    "project_id": project_id
                 })
     
     async def _prioritize_tasks(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -504,10 +507,12 @@ class OrchestratorAgent(BaseAgent):
         if project:
             # Calculate overall progress
             total_phases = len(self.workflow_phases)
-            current_phase_index = self.workflow_phases.index(project.current_phase)
+            current_phase = getattr(project, 'current_phase', 'planning')
+            current_phase_index = self.workflow_phases.index(current_phase)
             progress = (current_phase_index + 1) / total_phases
             
-            shared_state.update_project(project.project_id, progress=progress)
+            project_id = getattr(project, 'project_id', 'unknown')
+            shared_state.update_project(project_id, progress=progress)
     
     async def _wait_for_task_completion(self, task_id: str, timeout: int = 300) -> bool:
         """
@@ -585,16 +590,16 @@ class OrchestratorAgent(BaseAgent):
         """Assign specific implementation task with full context."""
         project = shared_state.get_project_state(project_id)
         
-        # Get architecture decisions from architecture agent
-        architecture_decisions = project.architecture_decisions if project else []
+        # Get architecture decisions from architecture agent using defensive access
+        architecture_decisions = getattr(project, 'architecture_decisions', []) if project else []
         
         # Create specific implementation task
         implementation_task = {
             "task_type": "implement_features",
             "project_id": project_id,
-            "project_name": project.name,
-            "description": project.description,
-            "requirements": project.requirements,
+            "project_name": getattr(project, 'name', 'Unknown Project') if project else 'Unknown Project',
+            "description": getattr(project, 'description', 'No description available') if project else 'No description available',
+            "requirements": getattr(project, 'requirements', []) if project else [],
             "architecture_decisions": architecture_decisions,
             "specific_features": [
                 {
@@ -634,9 +639,9 @@ class OrchestratorAgent(BaseAgent):
         setup_task = {
             "task_type": "setup_project_structure",
             "project_id": project_id,
-            "project_name": project.name,
-            "description": project.description,
-            "requirements": project.requirements,
+            "project_name": getattr(project, 'name', 'Unknown Project') if project else 'Unknown Project',
+            "description": getattr(project, 'description', 'No description available') if project else 'No description available',
+            "requirements": getattr(project, 'requirements', []) if project else [],
             "architecture_style": "clean_architecture",
             "planning_output": plan,
             "specific_setup_actions": [

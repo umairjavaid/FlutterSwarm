@@ -1864,9 +1864,10 @@ class FlutterSwarmGovernance:
     
     def _check_architecture_design_completion(self, project) -> bool:
         """Check if architecture design is complete."""
-        if not project or not hasattr(project, 'architecture_decisions'):
+        if not project:
             return False
-        return len(project.architecture_decisions) > 0
+        architecture_decisions = getattr(project, 'architecture_decisions', [])
+        return len(architecture_decisions) > 0
 
     def _check_security_approval(self, project) -> bool:
         """Check if security reviews are complete."""

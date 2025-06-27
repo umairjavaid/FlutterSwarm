@@ -559,8 +559,9 @@ class E2ETestingAgent(BaseAgent):
                 category_result["failures"].append("Project not found")
                 return category_result
             
-            # Use flutter tool to run tests
-            project_path = f"flutter_projects/{project.name}"
+            # Use flutter tool to run tests with defensive access
+            project_name = getattr(project, 'name', 'default_project')
+            project_path = f"flutter_projects/{project_name}"
             
             if category == "startup_performance":
                 result = await self._test_startup_performance(platform, project_path)

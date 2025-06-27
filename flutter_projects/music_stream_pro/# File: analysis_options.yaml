@@ -1,0 +1,29 @@
+include: package:flutter_lints/flutter_lints.yaml
+
+linter:
+  rules:
+    - always_declare_return_types
+    - annotate_overrides
+    - avoid_empty_else
+    - avoid_print
+    - avoid_unused_constructor_parameters
+    - camel_case_types
+    - constant_identifier_names
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_fields
+    - prefer_is_empty
+    - prefer_is_not_empty
+    - sized_box_for_whitespace
+    - unnecessary_const
+    - unnecessary_new
+    - unnecessary_null_checks
+    - unnecessary_this
+    - use_key_in_widget_constructors
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    invalid_annotation_target: ignore

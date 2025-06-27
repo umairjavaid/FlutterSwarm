@@ -106,17 +106,23 @@ class DocumentationAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         
+        # Defensive access to project attributes with task_data fallbacks
+        project_name = getattr(project, 'name', task_data.get('name', 'Unknown Project')) if project else task_data.get('name', 'Unknown Project')
+        project_description = getattr(project, 'description', task_data.get('description', 'No description available')) if project else task_data.get('description', 'No description available')
+        project_requirements = getattr(project, 'requirements', task_data.get('requirements', [])) if project else task_data.get('requirements', [])
+        architecture_decisions = getattr(project, 'architecture_decisions', []) if project else []
+        
         readme_prompt = f"""
         Generate a comprehensive README.md for this Flutter project:
         
-        Project: {project.name}
-        Description: {project.description}
-        Requirements: {project.requirements}
-        Architecture: {project.architecture_decisions}
+        Project: {project_name}
+        Description: {project_description}
+        Requirements: {project_requirements}
+        Architecture: {architecture_decisions}
         
         Create a professional README.md with these sections:
         
-        # {project.name}
+        # {project_name}
         
         ## 📱 Overview
         [Brief description of the app and its purpose]
@@ -138,10 +144,10 @@ class DocumentationAgent(BaseAgent):
         ### Installation
         ```bash
         # Clone the repository
-        git clone https://github.com/username/{project.name.lower().replace(' ', '_')}.git
+        git clone https://github.com/username/{project_name.lower().replace(' ', '_')}.git
         
         # Navigate to project directory
-        cd {project.name.lower().replace(' ', '_')}
+        cd {project_name.lower().replace(' ', '_')}
         
         # Install dependencies
         flutter pub get
@@ -263,10 +269,11 @@ class DocumentationAgent(BaseAgent):
             "doc_types": self.doc_types
         })
         
-        # Store in project documentation
+        # Store in project documentation with defensive access
         if project:
-            project.documentation["README.md"] = readme_content
-            shared_state.update_project(project_id, documentation=project.documentation)
+            documentation = getattr(project, 'documentation', {})
+            documentation["README.md"] = readme_content
+            shared_state.update_project(project_id, documentation=documentation)
         
         return {
             "document_type": "README",
@@ -609,11 +616,15 @@ class DocumentationAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         
+        # Defensive access to project attributes
+        project_name = getattr(project, 'name', task_data.get('name', 'Unknown Project')) if project else task_data.get('name', 'Unknown Project')
+        architecture_decisions = getattr(project, 'architecture_decisions', []) if project else []
+        
         architecture_docs_prompt = f"""
         Create comprehensive architecture documentation:
         
-        Project: {project.name}
-        Architecture Decisions: {project.architecture_decisions}
+        Project: {project_name}
+        Architecture Decisions: {architecture_decisions}
         
         Generate technical architecture documentation:
         

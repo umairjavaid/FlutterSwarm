@@ -111,12 +111,16 @@ class PerformanceAgent(BaseAgent):
         
         project = shared_state.get_project_state(project_id)
         
+        # Defensive access to project attributes
+        project_name = getattr(project, 'name', task_data.get('name', 'Unknown Project')) if project else task_data.get('name', 'Unknown Project')
+        project_files = getattr(project, 'files_created', {}) if project else {}
+        
         audit_prompt = f"""
         Perform a comprehensive performance audit for this Flutter application:
         
-        Project: {project.name}
+        Project: {project_name}
         Focus Areas: {focus_areas}
-        Files: {list(project.files_created.keys()) if project.files_created else []}
+        Files: {list(project_files.keys()) if project_files else []}
         
         Analyze the following performance aspects:
         
@@ -194,8 +198,10 @@ class PerformanceAgent(BaseAgent):
             "status": "completed"
         }
         
-        project.performance_metrics.update(performance_data)
-        shared_state.update_project(project_id, performance_metrics=project.performance_metrics)
+        # Use defensive access to performance_metrics
+        performance_metrics = getattr(project, 'performance_metrics', {}) if project else {}
+        performance_metrics.update(performance_data)
+        shared_state.update_project(project_id, performance_metrics=performance_metrics)
         
         return {
             "audit_report": audit_report,
@@ -389,8 +395,9 @@ class PerformanceAgent(BaseAgent):
             project_id = change_data.get("project_id")
             if project_id:
                 project = shared_state.get_project_state(project_id)
-                if project and filename in project.files_created:
-                    file_content = project.files_created[filename]
+                files_created = getattr(project, 'files_created', {}) if project else {}
+                if project and filename in files_created:
+                    file_content = files_created[filename]
                     await self._analyze_code_performance(file_content, filename, project_id)
     
     async def _analyze_code_performance(self, code: str, filename: str, project_id: str) -> None:
@@ -417,16 +424,17 @@ class PerformanceAgent(BaseAgent):
             "optimization_areas": self.optimization_areas
         })
         
-        # Store performance analysis
+        # Store performance analysis with defensive access
         project = shared_state.get_project_state(project_id)
         if project:
             if "performance_issue" in analysis.lower() or "optimization" in analysis.lower():
-                project.performance_metrics[f"{filename}_analysis"] = {
+                performance_metrics = getattr(project, 'performance_metrics', {})
+                performance_metrics[f"{filename}_analysis"] = {
                     "analysis": analysis,
                     "status": "analyzed",
                     "file": filename
                 }
-                shared_state.update_project(project_id, performance_metrics=project.performance_metrics)
+                shared_state.update_project(project_id, performance_metrics=performance_metrics)
     
     async def _handle_general_performance_task(self, task_description: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle general performance tasks."""

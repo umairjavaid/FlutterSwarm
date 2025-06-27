@@ -140,7 +140,9 @@ class QualityAssuranceAgent(BaseAgent):
         project_id = task_data["project_id"]
         project = shared_state.get_project_state(project_id)
         
-        self.logger.info(f"🔍 Validating project: {project.name}")
+        # Defensive access to project name
+        project_name = getattr(project, 'name', task_data.get('name', 'Unknown Project')) if project else task_data.get('name', 'Unknown Project')
+        self.logger.info(f"🔍 Validating project: {project_name}")
         
         validation_results = {}
         issues = []
